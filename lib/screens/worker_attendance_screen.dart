@@ -282,31 +282,6 @@ class _WorkerAttendanceScreenState extends State<WorkerAttendanceScreen>
               color: Colors.black87),
         ),
         centerTitle: true,
-        actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: 12),
-            child: ElevatedButton.icon(
-              onPressed: _showEarlyOutDialog,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFFA63228),
-                elevation: 0,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8)),
-              ),
-              icon: const Icon(Icons.exit_to_app_rounded,
-                  size: 14, color: Colors.white),
-              label: Text(
-                'Early Out',
-                style: GoogleFonts.inter(
-                    fontSize: 11,
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold),
-              ),
-            ),
-          ),
-        ],
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(40),
           child: Center(
@@ -496,6 +471,16 @@ class _WorkerAttendanceScreenState extends State<WorkerAttendanceScreen>
                 );
               },
             ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _showEarlyOutDialog,
+        backgroundColor: const Color(0xFFA63228),
+        elevation: 3,
+        icon: const Icon(Icons.exit_to_app_rounded, size: 16, color: Colors.white),
+        label: Text(
+          'Early Out',
+          style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white),
+        ),
+      ),
     );
   }
 
