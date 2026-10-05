@@ -45,7 +45,7 @@ class _WalkthroughScreenState extends State<WalkthroughScreen> {
         curve: Curves.easeInOut,
       );
     } else {
-      Navigator.pushReplacementNamed(context, '/login');
+      Navigator.pushReplacementNamed(context, '/register');
     }
   }
 
@@ -87,7 +87,7 @@ class _WalkthroughScreenState extends State<WalkthroughScreen> {
                 Align(
                   alignment: Alignment.topRight,
                   child: TextButton(
-                    onPressed: () => Navigator.pushReplacementNamed(context, '/login'),
+                    onPressed: () => Navigator.pushReplacementNamed(context, '/register'),
                     child: Text(
                       'Skip',
                       style: GoogleFonts.inter(color: Colors.white70, fontWeight: FontWeight.bold),
@@ -238,7 +238,7 @@ class _WalkthroughScreenState extends State<WalkthroughScreen> {
                                         ),
                                         child: Text(
                                           _currentIndex == _slides.length - 1
-                                              ? 'Continue to Login'
+                                              ? 'Continue to Registration'
                                               : 'Next',
                                           style: GoogleFonts.inter(
                                             fontSize: 16,

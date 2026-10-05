@@ -171,7 +171,11 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       final list = await ApiService.getWorkers();
       if (mounted) {
         setState(() {
-          _allWorkers = List<Map<String, dynamic>>.from(list);
+          final all = List<Map<String, dynamic>>.from(list);
+          _allWorkers = all.where((w) {
+            final status = (w['approval_status'] ?? w['status'] ?? '').toString().toLowerCase();
+            return status != 'pending';
+          }).toList();
           _isLoadingWorkers = false;
         });
       }
@@ -236,12 +240,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
   Future<void> _handleAccountApproval(int index, bool isApproved) async {
     final applicant = _pendingRegistrations[index];
-    final dynamic idRaw = applicant['id'];
-    final int? workerId = idRaw is int
-        ? idRaw
-        : int.tryParse(idRaw?.toString() ?? '');
+    final dynamic workerId = applicant['id'];
 
-    if (workerId == null) return;
+    if (workerId == null || workerId.toString().isEmpty) return;
 
     final String name = (applicant['full_name'] as String?)?.isNotEmpty == true
         ? applicant['full_name']
@@ -2241,7 +2242,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  'Pending Registrations',
+                  'Pending Account Approvals',
                   style: GoogleFonts.inter(
                     fontSize: 12.5,
                     fontWeight: FontWeight.bold,

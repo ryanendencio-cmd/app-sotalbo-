@@ -29,13 +29,13 @@ class _WorkersScreenState extends State<WorkersScreen> {
     }
   }
 
-  Future<void> _updateStatus(int id, String status) async {
+  Future<void> _updateStatus(dynamic id, String status) async {
     try {
       await ApiService.approveWorker(id, status);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Worker registration $status successfully'),
+            content: Text('Account $status successfully'),
             backgroundColor: status == 'Approved' ? Colors.green : const Color(0xFFA63228),
           ),
         );
@@ -61,7 +61,7 @@ class _WorkersScreenState extends State<WorkersScreen> {
         centerTitle: true,
         iconTheme: const IconThemeData(color: Colors.black87),
         title: Text(
-          'Worker Registrations',
+          'Account Approvals',
           style: GoogleFonts.inter(
             fontSize: 16,
             fontWeight: FontWeight.bold,
@@ -94,7 +94,7 @@ class _WorkersScreenState extends State<WorkersScreen> {
                   children: [
                     const Icon(Icons.error_outline, size: 40, color: Color(0xFFA63228)),
                     const SizedBox(height: 8),
-                    Text('Failed to load registrations', style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.bold)),
+                    Text('Failed to load account approvals', style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.bold)),
                     const SizedBox(height: 4),
                     Text(snapshot.error.toString(), style: GoogleFonts.inter(fontSize: 11, color: Colors.grey.shade600), textAlign: TextAlign.center),
                     const SizedBox(height: 12),
@@ -146,7 +146,7 @@ class _WorkersScreenState extends State<WorkersScreen> {
                             const SizedBox(height: 12),
                             Text('All caught up!', style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.bold)),
                             const SizedBox(height: 4),
-                            Text('No pending worker registrations.', style: GoogleFonts.inter(fontSize: 13, color: Colors.grey.shade600)),
+                            Text('No pending account approvals.', style: GoogleFonts.inter(fontSize: 13, color: Colors.grey.shade600)),
                           ],
                         ),
                       )

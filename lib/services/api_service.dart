@@ -203,11 +203,36 @@ class ApiService {
 
     // List of identifiers to try (normalized +639... first if phone number, then raw)
     final identifiersToTry = <String>[];
+
+    // Attempt to lookup real username if the input is a phone number
+    try {
+      final workersRes = await http.get(Uri.parse('$baseUrl/workers'));
+      if (workersRes.statusCode == 200) {
+        final List<dynamic> workers = jsonDecode(workersRes.body);
+        for (var w in workers) {
+          final wPhone = (w['phone'] ?? '').toString();
+          if (wPhone == raw || wPhone == normalized || wPhone == '+63$raw') {
+            final wUsername = (w['username'] ?? w['user_name'] ?? '').toString();
+            if (wUsername.isNotEmpty) {
+              identifiersToTry.add(wUsername);
+            }
+          }
+        }
+      }
+    } catch (_) {
+      // ignore
+    }
+
     if (normalized != raw) {
       identifiersToTry.add(normalized);
       identifiersToTry.add(raw);
     } else {
       identifiersToTry.add(raw);
+    }
+    
+    // Also try adding +63 to the raw input in case it was stored as +6309... during registration
+    if (!raw.startsWith('+63')) {
+      identifiersToTry.add('+63$raw');
     }
 
     http.Response? lastWorkerRes;
@@ -250,6 +275,17 @@ class ApiService {
         if (body['error'] == 'pending_approval') throw Exception('pending_approval');
         if (body['error'] == 'rejected') throw Exception('Account was rejected');
       }
+
+      if (res.statusCode == 401) {
+        try {
+          final body = jsonDecode(res.body);
+          if (body['error'] == 'Invalid password') {
+            throw Exception('Wrong Password');
+          }
+        } catch (e) {
+          if (e is! FormatException) rethrow;
+        }
+      }
     }
 
     // Try admin login
@@ -278,7 +314,11 @@ class ApiService {
     if (lastWorkerRes != null && lastWorkerRes.statusCode == 401) {
       try {
         final body = jsonDecode(lastWorkerRes.body);
-        throw Exception(body['error'] ?? 'Invalid username or password');
+        final err = body['error'];
+        if (err == 'Account not found') {
+          throw Exception('Account not existing');
+        }
+        throw Exception(err ?? 'Invalid username or password');
       } catch (e) {
         if (e is! FormatException) rethrow;
       }
@@ -296,17 +336,35 @@ class ApiService {
   static Future<List<dynamic>> getPendingRegistrations() =>
       _get('/pending-registrations').then((v) => v as List);
 
-  static Future<void> approveWorker(int id, String status) =>
+  static Future<void> approveWorker(dynamic id, String status) =>
       _put('/workers/$id/approve', {'status': status});
 
-  static Future<Map<String, dynamic>> getWorker(int id) =>
+  static Future<Map<String, dynamic>> getWorker(dynamic id) =>
       _get('/workers').then((v) {
         if (v is List) {
-          final worker = v.firstWhere((w) => w['id'] == id, orElse: () => null);
+          final worker = v.firstWhere((w) => w['id']?.toString() == id?.toString(), orElse: () => null);
           if (worker != null) {
             return worker as Map<String, dynamic>;
           }
         }
         throw Exception('Worker not found');
       });
+
+  static Future<bool> checkPhoneExists(String phone) async {
+    final raw = phone.trim();
+    final normalized = normalizePhone(raw);
+    try {
+      final res = await http.get(Uri.parse('$baseUrl/workers'));
+      if (res.statusCode == 200) {
+        final List<dynamic> workers = jsonDecode(res.body);
+        for (var w in workers) {
+          final wPhone = (w['phone'] ?? '').toString();
+          if (wPhone == raw || wPhone == normalized || wPhone == '+63$raw') {
+            return true;
+          }
+        }
+      }
+    } catch (_) {}
+    return false;
+  }
 }

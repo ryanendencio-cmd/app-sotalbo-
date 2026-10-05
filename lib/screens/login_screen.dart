@@ -1,6 +1,7 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:flutter/services.dart';
 import '../services/api_service.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -220,6 +221,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             // USERNAME / PHONE
                             TextFormField(
                               controller: _usernameController,
+                              inputFormatters: [LengthLimitingTextInputFormatter(20)],
                               style: GoogleFonts.inter(fontSize: 14, color: Colors.black87),
                               decoration: InputDecoration(
                                 isDense: true,
@@ -263,6 +265,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             TextFormField(
                               controller: _passwordController,
                               obscureText: _obscurePassword,
+                              inputFormatters: [LengthLimitingTextInputFormatter(20)],
                               style: GoogleFonts.inter(fontSize: 14, color: Colors.black87),
                               decoration: InputDecoration(
                                 isDense: true,

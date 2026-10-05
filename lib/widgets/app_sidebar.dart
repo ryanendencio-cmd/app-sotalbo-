@@ -107,7 +107,7 @@ class AppSidebar extends StatelessWidget {
                       currentRoute,
                       route: '/workers',
                       icon: Icons.people_outline,
-                      label: 'Worker Registrations',
+                      label: 'Account Approvals',
                     ),
                   ],
                 ],

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../services/api_service.dart';
 import '../widgets/app_sidebar.dart';
 
 class ForgotPasswordScreen extends StatefulWidget {
@@ -14,6 +15,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
   final _formKey = GlobalKey<FormState>();
 
   int _currentStep = 0;
+  bool _isLoading = false;
 
   final TextEditingController _phoneController = TextEditingController();
   final TextEditingController _newPasswordController = TextEditingController();
@@ -39,13 +41,30 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
     super.dispose();
   }
 
-  void _handleSendOtp() {
-    if (_phoneController.text.trim().length < 10) {
+  void _handleSendOtp() async {
+    final phone = _phoneController.text.trim();
+    if (phone.length < 10) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please enter a valid 10-digit phone number (e.g. 9XXXXXXXXX)')),
       );
       return;
     }
+
+    setState(() => _isLoading = true);
+    final exists = await ApiService.checkPhoneExists(phone);
+    if (!mounted) return;
+    setState(() => _isLoading = false);
+
+    if (!exists) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Phone Number not existing'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
     setState(() => _currentStep = 1);
   }
 
@@ -103,8 +122,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                     elevation: 0,
                   ),
                   onPressed: () {
-                    Navigator.pop(context);
-                    Navigator.pop(context);
+                    Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
                   },
                   child: Text('Back to Login', style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.bold)),
                 ),
@@ -264,20 +282,26 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                         width: double.infinity,
                         height: screenHeight * (isSmall ? 0.055 : 0.058),
                         child: ElevatedButton(
-                          onPressed: _handleSendOtp,
+                          onPressed: _isLoading ? null : _handleSendOtp,
                           style: ElevatedButton.styleFrom(
                             backgroundColor: const Color(0xFFA63228),
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                             elevation: 0,
                           ),
-                          child: Text(
-                            'Send OTP Code',
-                            style: GoogleFonts.inter(
-                              fontSize: screenWidth < 360 ? 14 : 15,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.white,
-                            ),
-                          ),
+                          child: _isLoading
+                              ? const SizedBox(
+                                  height: 20,
+                                  width: 20,
+                                  child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                                )
+                              : Text(
+                                  'Send OTP Code',
+                                  style: GoogleFonts.inter(
+                                    fontSize: screenWidth < 360 ? 14 : 15,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.white,
+                                  ),
+                                ),
                         ),
                       ),
                     ],
@@ -485,6 +509,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                             borderSide: const BorderSide(color: Color(0xFFA63228), width: 1.5),
                           ),
                         ),
+                        inputFormatters: [LengthLimitingTextInputFormatter(20)],
                         validator: (value) {
                           if (value == null || value.isEmpty) return 'Required';
                           if (value != _newPasswordController.text) return 'Passwords do not match';

@@ -993,15 +993,15 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         icon: Icons.alternate_email_outlined,
                         controller: _usernameController,
                         inputFormatters: [
-                          LengthLimitingTextInputFormatter(30),
-                          FilteringTextInputFormatter.allow(RegExp(r'[a-zA-Z0-9._]')),
+                          LengthLimitingTextInputFormatter(20),
+                          FilteringTextInputFormatter.allow(RegExp(r'[a-z0-9]')),
                         ],
                         validator: (value) {
                           final trimmed = value?.trim() ?? '';
                           if (trimmed.isEmpty) return 'Required';
-                          if (trimmed.length < 3) return 'At least 3 characters';
-                          if (!RegExp(r'^[a-zA-Z0-9._]+$').hasMatch(trimmed)) {
-                            return 'Letters, numbers, . and _ only';
+                          if (trimmed.length < 8) return 'Must be 8 to 20 characters';
+                          if (!RegExp(r'^[a-z0-9]+$').hasMatch(trimmed)) {
+                            return 'Small letters and numbers only';
                           }
                           return null;
                         },
