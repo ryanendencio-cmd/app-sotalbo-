@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'history_screen.dart';
-import 'payslip_screen.dart';
+import 'worker_attendance_screen.dart';
+import 'worker_tools_screen.dart';
+import 'worker_salary_screen.dart';
 import 'worker_profile_screen.dart';
-import '../widgets/app_sidebar.dart';
 import '../services/api_service.dart';
 
 class WorkerDashboard extends StatefulWidget {
@@ -496,13 +496,23 @@ class _WorkerDashboardState extends State<WorkerDashboard> {
   }
 
   Widget _buildHomeView(BuildContext context) {
+    final now = DateTime.now();
+    final hour = now.hour;
+    final String greeting = hour < 12 ? 'Good Morning' : hour < 17 ? 'Good Afternoon' : 'Good Evening';
+    final workerName = _user?['name'] ?? _user?['full_name'] ??
+        ((_user?['firstName'] ?? _user?['first_name']) != null
+            ? '${_user!['firstName'] ?? _user!['first_name']} ${_user!['lastName'] ?? _user!['last_name']}'
+            : 'Worker');
+    final firstName = workerName.split(' ').first;
+
     return Scaffold(
       backgroundColor: const Color(0xFFF3EFEA),
       appBar: AppBar(
         automaticallyImplyLeading: false,
         backgroundColor: Colors.white,
         elevation: 0,
-        title: Image.asset('assets/logo.png', height: 26),
+        toolbarHeight: 44,
+        title: Image.asset('assets/logo.png', height: 24),
         centerTitle: true,
         actions: [
           Stack(
@@ -533,67 +543,132 @@ class _WorkerDashboardState extends State<WorkerDashboard> {
       ),
       body: LayoutBuilder(
         builder: (context, constraints) {
-          final double horizontalPadding = constraints.maxWidth > 600 ? 20.0 : 12.0;
+          final double hp = constraints.maxWidth > 600 ? 20.0 : 12.0;
 
           return Center(
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 550),
               child: SingleChildScrollView(
                 physics: const BouncingScrollPhysics(),
-                padding: EdgeInsets.symmetric(horizontal: horizontalPadding, vertical: 10),
+                padding: EdgeInsets.fromLTRB(hp, 8, hp, 14),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // GREETING & STATUS BADGE
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      children: [
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Shift Overview',
-                              style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w500, color: Colors.grey.shade600),
-                            ),
-                            const SizedBox(height: 1),
-                            Text(
-                              _user?['name'] ?? _user?['full_name'] ?? 
-                              ((_user?['firstName'] ?? _user?['first_name']) != null 
-                                  ? '${_user!['firstName'] ?? _user!['first_name']} ${_user!['lastName'] ?? _user!['last_name']}' 
-                                  : 'Worker'),
-                              style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w800, color: Colors.black87),
-                            ),
-                          ],
+
+                    // ── HERO GREETING CARD ──────────────────────────────
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          colors: [Color(0xFFA63228), Color(0xFFD94F3D)],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
                         ),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                          decoration: BoxDecoration(
-                            color: Colors.green.shade50,
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(color: Colors.green.shade200),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              Container(
-                                width: 5,
-                                height: 5,
-                                decoration: const BoxDecoration(color: Colors.green, shape: BoxShape.circle),
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    greeting,
+                                    style: GoogleFonts.inter(
+                                        fontSize: 11,
+                                        color: Colors.white.withValues(alpha: 0.8),
+                                        fontWeight: FontWeight.w500),
+                                  ),
+                                  Text(
+                                    firstName,
+                                    style: GoogleFonts.inter(
+                                        fontSize: 20,
+                                        fontWeight: FontWeight.w800,
+                                        color: Colors.white),
+                                  ),
+                                ],
                               ),
-                              const SizedBox(width: 4),
-                              Text(
-                                'On Site',
-                                style: GoogleFonts.inter(fontSize: 10.5, fontWeight: FontWeight.bold, color: Colors.green.shade800),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withValues(alpha: 0.2),
+                                  borderRadius: BorderRadius.circular(20),
+                                  border: Border.all(color: Colors.white.withValues(alpha: 0.3)),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Container(
+                                      width: 5,
+                                      height: 5,
+                                      decoration: const BoxDecoration(color: Color(0xFF7CFC00), shape: BoxShape.circle),
+                                    ),
+                                    const SizedBox(width: 5),
+                                    Text('On Site',
+                                        style: GoogleFonts.inter(
+                                            fontSize: 10.5,
+                                            fontWeight: FontWeight.bold,
+                                            color: Colors.white)),
+                                  ],
+                                ),
                               ),
                             ],
                           ),
+                          const SizedBox(height: 12),
+                          // Stats Row
+                          Row(
+                            children: [
+                              _buildHeroStat(Icons.schedule_rounded, 'Time In', _timeIn == '--:-- AM' ? '—' : _timeIn),
+                              Container(width: 1, height: 28, color: Colors.white.withValues(alpha: 0.25), margin: const EdgeInsets.symmetric(horizontal: 12)),
+                              _buildHeroStat(Icons.logout_rounded, 'Time Out', _timeOut == '--:-- PM' ? '—' : _timeOut),
+                              Container(width: 1, height: 28, color: Colors.white.withValues(alpha: 0.25), margin: const EdgeInsets.symmetric(horizontal: 12)),
+                              _buildHeroStat(Icons.today_rounded, 'Today', '${_months[now.month - 1]} ${now.day}'),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+
+                    // ── QUICK ACTIONS ────────────────────────────────────
+                    Row(
+                      children: [
+                        _buildQuickAction(
+                          icon: Icons.access_time_filled,
+                          label: 'Attendance',
+                          color: const Color(0xFF2563EB),
+                          onTap: () => setState(() => _currentNavIndex = 1),
+                        ),
+                        const SizedBox(width: 8),
+                        _buildQuickAction(
+                          icon: Icons.handyman_rounded,
+                          label: 'Tools',
+                          color: const Color(0xFF059669),
+                          onTap: () => setState(() => _currentNavIndex = 2),
+                        ),
+                        const SizedBox(width: 8),
+                        _buildQuickAction(
+                          icon: Icons.account_balance_wallet_rounded,
+                          label: 'Salary',
+                          color: const Color(0xFFD97706),
+                          onTap: () => setState(() => _currentNavIndex = 3),
+                        ),
+                        const SizedBox(width: 8),
+                        _buildQuickAction(
+                          icon: Icons.person_rounded,
+                          label: 'Profile',
+                          color: const Color(0xFF7C3AED),
+                          onTap: () => setState(() => _currentNavIndex = 4),
                         ),
                       ],
                     ),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 10),
 
-                    // DATE FILTER ROW
+                    // ── DAILY RECORD SECTION HEADER ───────────────────────
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
@@ -630,7 +705,7 @@ class _WorkerDashboardState extends State<WorkerDashboard> {
                     ),
                     const SizedBox(height: 8),
 
-                    // ATTENDANCE LOG (RFID / BIOMETRICS)
+                    // ── ATTENDANCE LOG ────────────────────────────────────
                     Container(
                       width: double.infinity,
                       padding: const EdgeInsets.all(12),
@@ -692,7 +767,7 @@ class _WorkerDashboardState extends State<WorkerDashboard> {
                     ),
                     const SizedBox(height: 10),
 
-                    // --- INTERACTIVE WEEKLY ANALYTICS CHART WITH TOGGLE ---
+                    // ── WEEKLY PERFORMANCE CHART ──────────────────────────
                     Container(
                       width: double.infinity,
                       padding: const EdgeInsets.all(12),
@@ -713,7 +788,6 @@ class _WorkerDashboardState extends State<WorkerDashboard> {
                                 'Weekly Performance',
                                 style: GoogleFonts.inter(fontSize: 12.5, fontWeight: FontWeight.bold, color: Colors.black87),
                               ),
-                              // TOGGLE CHIPS
                               Container(
                                 padding: const EdgeInsets.all(2),
                                 decoration: BoxDecoration(
@@ -765,46 +839,53 @@ class _WorkerDashboardState extends State<WorkerDashboard> {
                             ],
                           ),
                           const SizedBox(height: 12),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceAround,
-                            crossAxisAlignment: CrossAxisAlignment.end,
-                            children: _weeklyData.map((data) {
-                              final bool isHours = _selectedGraphMetric == 'hours';
-                              final double value = isHours ? data['hours'] : data['earnings'];
-                              // Scale calculation
-                              final double maxValue = isHours ? 10.0 : 700.0;
-                              final double barHeight = (value / maxValue) * 70;
+                          _weeklyData.isEmpty
+                              ? Center(
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(vertical: 16),
+                                    child: Text('No weekly data available',
+                                        style: GoogleFonts.inter(fontSize: 11, color: Colors.grey.shade500)),
+                                  ),
+                                )
+                              : Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+                                  crossAxisAlignment: CrossAxisAlignment.end,
+                                  children: _weeklyData.map((data) {
+                                    final bool isHours = _selectedGraphMetric == 'hours';
+                                    final double value = isHours ? data['hours'] : data['earnings'];
+                                    final double maxValue = isHours ? 10.0 : 700.0;
+                                    final double barHeight = (value / maxValue) * 70;
 
-                              return Column(
-                                children: [
-                                  Text(
-                                    isHours ? data['labelHours'] : data['labelEarnings'],
-                                    style: GoogleFonts.inter(fontSize: 8.5, fontWeight: FontWeight.bold, color: Colors.grey.shade600),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Container(
-                                    width: 22,
-                                    height: barHeight > 10 ? barHeight : 10,
-                                    decoration: BoxDecoration(
-                                      color: data['day'] == 'Thu' ? const Color(0xFFA63228) : const Color(0xFFA63228).withValues(alpha: 0.25),
-                                      borderRadius: BorderRadius.circular(6),
-                                    ),
-                                  ),
-                                  const SizedBox(height: 6),
-                                  Text(
-                                    data['day'],
-                                    style: GoogleFonts.inter(fontSize: 10.5, fontWeight: FontWeight.w600, color: Colors.black87),
-                                  ),
-                                ],
-                              );
-                            }).toList(),
-                          ),
+                                    return Column(
+                                      children: [
+                                        Text(
+                                          isHours ? data['labelHours'] : data['labelEarnings'],
+                                          style: GoogleFonts.inter(fontSize: 8.5, fontWeight: FontWeight.bold, color: Colors.grey.shade600),
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Container(
+                                          width: 22,
+                                          height: barHeight > 10 ? barHeight : 10,
+                                          decoration: BoxDecoration(
+                                            color: data['day'] == 'Thu' ? const Color(0xFFA63228) : const Color(0xFFA63228).withValues(alpha: 0.25),
+                                            borderRadius: BorderRadius.circular(6),
+                                          ),
+                                        ),
+                                        const SizedBox(height: 6),
+                                        Text(
+                                          data['day'],
+                                          style: GoogleFonts.inter(fontSize: 10.5, fontWeight: FontWeight.w600, color: Colors.black87),
+                                        ),
+                                      ],
+                                    );
+                                  }).toList(),
+                                ),
                         ],
                       ),
                     ),
                     const SizedBox(height: 10),
 
-                    // CASH ADVANCE (VALE) CARD
+                    // ── CASH ADVANCE (VALE) CARD ─────────────────────────
                     Container(
                       width: double.infinity,
                       padding: const EdgeInsets.all(12),
@@ -874,7 +955,7 @@ class _WorkerDashboardState extends State<WorkerDashboard> {
                     ),
                     const SizedBox(height: 10),
 
-                    // ISSUED TOOLS CARD
+                    // ── ISSUED TOOLS CARD ─────────────────────────────────
                     Container(
                       width: double.infinity,
                       padding: const EdgeInsets.all(12),
@@ -895,58 +976,67 @@ class _WorkerDashboardState extends State<WorkerDashboard> {
                                 'ISSUED TOOLS (${_borrowedTools.length})',
                                 style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w700, color: Colors.grey.shade600, letterSpacing: 0.5),
                               ),
-                              Text(
-                                '',
-                                style: GoogleFonts.inter(fontSize: 9.5, color: Colors.grey.shade500),
+                              GestureDetector(
+                                onTap: () => setState(() => _currentNavIndex = 2),
+                                child: Text(
+                                  'See All →',
+                                  style: GoogleFonts.inter(fontSize: 10, color: const Color(0xFFA63228), fontWeight: FontWeight.w600),
+                                ),
                               ),
                             ],
                           ),
                           const SizedBox(height: 8),
-                          ListView.separated(
-                            shrinkWrap: true,
-                            physics: const NeverScrollableScrollPhysics(),
-                            itemCount: _borrowedTools.length,
-                            separatorBuilder: (_, __) => Divider(height: 10, color: Colors.grey.shade100),
-                            itemBuilder: (context, index) {
-                              final tool = _borrowedTools[index];
-                              return Row(
-                                children: [
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
+                          _borrowedTools.isEmpty
+                              ? Center(
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(vertical: 8),
+                                    child: Text('No tools currently issued',
+                                        style: GoogleFonts.inter(fontSize: 11, color: Colors.grey.shade500)),
+                                  ),
+                                )
+                              : ListView.separated(
+                                  shrinkWrap: true,
+                                  physics: const NeverScrollableScrollPhysics(),
+                                  itemCount: _borrowedTools.length,
+                                  separatorBuilder: (_, __) => Divider(height: 10, color: Colors.grey.shade100),
+                                  itemBuilder: (context, index) {
+                                    final tool = _borrowedTools[index];
+                                    return Row(
                                       children: [
-                                        Text(
-                                          tool['name']!,
-                                          style: GoogleFonts.inter(fontSize: 11.5, fontWeight: FontWeight.w600, color: Colors.black87),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                tool['name']!,
+                                                style: GoogleFonts.inter(fontSize: 11.5, fontWeight: FontWeight.w600, color: Colors.black87),
+                                              ),
+                                              Text(
+                                                '${tool['code']} · Assigned ${tool['time']}',
+                                                style: GoogleFonts.inter(fontSize: 10, color: Colors.grey.shade600),
+                                              ),
+                                            ],
+                                          ),
                                         ),
-                                        Text(
-                                          '${tool['code']} · Assigned ${tool['time']}',
-                                          style: GoogleFonts.inter(fontSize: 10, color: Colors.grey.shade600),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                                          decoration: BoxDecoration(
+                                            color: Colors.orange.shade50,
+                                            borderRadius: BorderRadius.circular(6),
+                                            border: Border.all(color: Colors.orange.shade200),
+                                          ),
+                                          child: Text(
+                                            tool['status']!,
+                                            style: GoogleFonts.inter(fontSize: 9.5, fontWeight: FontWeight.bold, color: Colors.orange.shade800),
+                                          ),
                                         ),
                                       ],
-                                    ),
-                                  ),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                                    decoration: BoxDecoration(
-                                      color: Colors.orange.shade50,
-                                      borderRadius: BorderRadius.circular(6),
-                                      border: Border.all(color: Colors.orange.shade200),
-                                    ),
-                                    child: Text(
-                                      tool['status']!,
-                                      style: GoogleFonts.inter(fontSize: 9.5, fontWeight: FontWeight.bold, color: Colors.orange.shade800),
-                                    ),
-                                  ),
-                                ],
-                              );
-                            },
-                          ),
+                                    );
+                                  },
+                                ),
                         ],
                       ),
                     ),
-                    const SizedBox(height: 14),
-
 
                   ],
                 ),
@@ -958,6 +1048,77 @@ class _WorkerDashboardState extends State<WorkerDashboard> {
     );
   }
 
+  Widget _buildHeroStat(IconData icon, String label, String value) {
+    return Expanded(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, size: 11, color: Colors.white.withValues(alpha: 0.7)),
+              const SizedBox(width: 3),
+              Text(label,
+                  style: GoogleFonts.inter(
+                      fontSize: 9.5,
+                      color: Colors.white.withValues(alpha: 0.75))),
+            ],
+          ),
+          const SizedBox(height: 2),
+          Text(value,
+              style: GoogleFonts.inter(
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildQuickAction({
+    required IconData icon,
+    required String label,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return Expanded(
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            boxShadow: [
+              BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.03),
+                  blurRadius: 4,
+                  offset: const Offset(0, 1)),
+            ],
+          ),
+          child: Column(
+            children: [
+              Container(
+                width: 34,
+                height: 34,
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(icon, size: 18, color: color),
+              ),
+              const SizedBox(height: 5),
+              Text(label,
+                  style: GoogleFonts.inter(
+                      fontSize: 9.5,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.black87)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -965,8 +1126,9 @@ class _WorkerDashboardState extends State<WorkerDashboard> {
         index: _currentNavIndex,
         children: [
           _buildHomeView(context),
-          const HistoryScreen(),
-          const PayslipScreen(),
+          const WorkerAttendanceScreen(),
+          const WorkerToolsScreen(),
+          const WorkerSalaryScreen(),
           const WorkerProfileScreen(),
         ],
       ),
@@ -981,13 +1143,34 @@ class _WorkerDashboardState extends State<WorkerDashboard> {
         unselectedItemColor: Colors.grey,
         showUnselectedLabels: true,
         type: BottomNavigationBarType.fixed,
-        selectedLabelStyle: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600),
-        unselectedLabelStyle: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.normal),
+        selectedLabelStyle: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w600),
+        unselectedLabelStyle: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.normal),
         items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.dashboard_outlined), activeIcon: Icon(Icons.dashboard_rounded), label: 'Home'),
-          BottomNavigationBarItem(icon: Icon(Icons.schedule_outlined), activeIcon: Icon(Icons.schedule_rounded), label: 'History'),
-          BottomNavigationBarItem(icon: Icon(Icons.receipt_long_outlined), activeIcon: Icon(Icons.receipt_long_rounded), label: 'Payslip'),
-          BottomNavigationBarItem(icon: Icon(Icons.person_outline_rounded), activeIcon: Icon(Icons.person_rounded), label: 'Profile'),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.dashboard_outlined),
+            activeIcon: Icon(Icons.dashboard_rounded),
+            label: 'Home',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.access_time_outlined),
+            activeIcon: Icon(Icons.access_time_filled),
+            label: 'Attendance',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.handyman_outlined),
+            activeIcon: Icon(Icons.handyman_rounded),
+            label: 'Tools',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.account_balance_wallet_outlined),
+            activeIcon: Icon(Icons.account_balance_wallet_rounded),
+            label: 'Salary',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.person_outline_rounded),
+            activeIcon: Icon(Icons.person_rounded),
+            label: 'Settings',
+          ),
         ],
       ),
     );

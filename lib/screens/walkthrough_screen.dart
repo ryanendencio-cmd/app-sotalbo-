@@ -21,7 +21,7 @@ class _WalkthroughScreenState extends State<WalkthroughScreen> {
     },
     {
       'title': 'Our Expertise',
-      'subtitle': 'From Concept to Completion, We Build Your Blessings.\n\n• Pre & General Construction\n• Renovation & Extension\n• Fabrication & Fitouts',
+      'subtitle': 'From Concept to Completion, We Build their Blessings.\n\n• Pre & General Construction\n• Renovation & Extension\n• Fabrication & Fitouts',
       'icon': Icons.engineering_outlined,
     },
     {
@@ -45,7 +45,7 @@ class _WalkthroughScreenState extends State<WalkthroughScreen> {
         curve: Curves.easeInOut,
       );
     } else {
-      Navigator.pushReplacementNamed(context, '/register');
+      Navigator.pushReplacementNamed(context, '/login');
     }
   }
 
@@ -87,7 +87,7 @@ class _WalkthroughScreenState extends State<WalkthroughScreen> {
                 Align(
                   alignment: Alignment.topRight,
                   child: TextButton(
-                    onPressed: () => Navigator.pushReplacementNamed(context, '/register'),
+                    onPressed: () => Navigator.pushReplacementNamed(context, '/login'),
                     child: Text(
                       'Skip',
                       style: GoogleFonts.inter(color: Colors.white70, fontWeight: FontWeight.bold),
@@ -238,7 +238,7 @@ class _WalkthroughScreenState extends State<WalkthroughScreen> {
                                         ),
                                         child: Text(
                                           _currentIndex == _slides.length - 1
-                                              ? 'Continue to Registration'
+                                              ? 'Continue to Login'
                                               : 'Next',
                                           style: GoogleFonts.inter(
                                             fontSize: 16,

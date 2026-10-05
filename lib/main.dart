@@ -20,6 +20,9 @@ import 'screens/timekeeper_profile_screen.dart';
 import 'screens/admin_profile_screen.dart';
 import 'screens/workers_screen.dart';
 import 'screens/cash_advance_screen.dart';
+import 'screens/worker_attendance_screen.dart';
+import 'screens/worker_tools_screen.dart';
+import 'screens/worker_salary_screen.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -65,6 +68,9 @@ class BuildTrackApp extends StatelessWidget {
         '/payslip': (context) => const PayslipScreen(),
         '/timesheet': (context) => const TimesheetScreen(),
         '/worker_profile': (context) => const WorkerProfileScreen(),
+        '/worker_attendance': (context) => const WorkerAttendanceScreen(),
+        '/worker_tools': (context) => const WorkerToolsScreen(),
+        '/worker_salary': (context) => const WorkerSalaryScreen(),
 
         // Attendance Staff / Timekeeper Routes
         '/timekeeper': (context) => const TimekeeperDashboard(),
