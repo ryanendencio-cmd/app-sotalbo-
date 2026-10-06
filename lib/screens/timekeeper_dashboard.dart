@@ -29,6 +29,45 @@ class _TimekeeperDashboardState extends State<TimekeeperDashboard> {
   void initState() {
     super.initState();
     _loadWorkers();
+    _loadRecentLogs();
+  }
+
+  Future<void> _loadRecentLogs() async {
+    try {
+      final records = await ApiService.getAttendance('ALL');
+      final todayStr = DateTime.now().toIso8601String().split('T')[0];
+      final List<Map<String, dynamic>> loaded = [];
+      for (final r in records) {
+        if (r['date'] == todayStr) {
+          final timeIn = r['timeIn'] ?? r['morningIn'] ?? r['afternoonIn'];
+          final timeOut = r['timeOut'] ?? r['afternoonOut'] ?? r['morningOut'];
+          if (timeIn != null && timeIn != '—') {
+            loaded.add({
+              'name': r['worker_name'] ?? r['name'] ?? 'Worker',
+              'role': r['role'] ?? 'Laborer',
+              'time': timeIn,
+              'status': r['status'] ?? 'Present',
+              'type': 'IN',
+            });
+          }
+          if (timeOut != null && timeOut != '—') {
+            loaded.add({
+              'name': r['worker_name'] ?? r['name'] ?? 'Worker',
+              'role': r['role'] ?? 'Laborer',
+              'time': timeOut,
+              'status': r['status'] ?? 'Present',
+              'type': 'OUT',
+            });
+          }
+        }
+      }
+      if (mounted && loaded.isNotEmpty) {
+        setState(() {
+          _recentLogs.clear();
+          _recentLogs.addAll(loaded);
+        });
+      }
+    } catch (_) {}
   }
 
   Future<void> _loadWorkers() async {
@@ -281,6 +320,26 @@ class _TimekeeperDashboardState extends State<TimekeeperDashboard> {
                             'type': selectedType,
                           });
                         });
+
+                        final matchedWorker = _allWorkers.firstWhere(
+                          (w) => '${w['first_name'] ?? ''} ${w['last_name'] ?? ''}'.trim().toLowerCase() == workerName.toLowerCase(),
+                          orElse: () => <String, dynamic>{},
+                        );
+                        final workerId = matchedWorker['id']?.toString();
+                        final workerRate = matchedWorker['daily_rate'] ?? 600;
+
+                        ApiService.saveAttendance({
+                          'project_id': matchedWorker['project_id'] ?? '1',
+                          'worker_id': workerId,
+                          'worker_name': workerName,
+                          'name': workerName,
+                          'role': roleController.text,
+                          'date': DateTime.now().toIso8601String().split('T')[0],
+                          if (selectedType == 'IN') 'timeIn': timeString,
+                          if (selectedType == 'OUT') 'timeOut': timeString,
+                          'rate': workerRate,
+                        }).catchError((_) {});
+
                         Navigator.pop(context);
 
                         ScaffoldMessenger.of(context).showSnackBar(

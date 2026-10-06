@@ -22,16 +22,13 @@ class _WorkerProfileScreenState extends State<WorkerProfileScreen> {
   }
 
   Future<void> _fetchProfile() async {
-    final currentId = ApiService.currentUser?['id'];
-    if (currentId == null) return;
-    
-    final id = int.tryParse(currentId.toString());
-    if (id == null) return;
+    final currentId = ApiService.currentUser?['id']?.toString();
+    if (currentId == null || currentId.isEmpty) return;
 
     try {
-      final freshData = await ApiService.getWorker(id);
+      final freshData = await ApiService.getWorker(currentId);
       try {
-        final valesData = await ApiService.getWorkerCashAdvances(id);
+        final valesData = await ApiService.getWorkerCashAdvances(currentId);
         if (mounted) {
           setState(() {
             _vales = List<Map<String, dynamic>>.from(valesData)

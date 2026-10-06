@@ -23,6 +23,109 @@ class _WorkerDashboardState extends State<WorkerDashboard> {
   void initState() {
     super.initState();
     _user = ApiService.currentUser;
+    _loadDashboardData();
+  }
+
+  Future<void> _loadDashboardData() async {
+    final user = ApiService.currentUser;
+    final userId = user?['id']?.toString();
+    final userName = (user?['full_name'] ?? user?['name'] ?? '${user?['first_name'] ?? ''} ${user?['last_name'] ?? ''}').toString().trim().toLowerCase();
+
+    // 1. Fetch attendance
+    try {
+      final records = await ApiService.getAttendance('ALL');
+      final todayStr = DateTime.now().toIso8601String().split('T')[0];
+
+      String timeIn = "--:-- AM";
+      String timeOut = "--:-- PM";
+
+      final days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+      final Map<String, double> dayHours = {for (var d in days) d: 0.0};
+      final double dailyRate = (user?['daily_rate'] is num) ? (user!['daily_rate'] as num).toDouble() : 600.0;
+
+      for (final r in records) {
+        final wId = r['worker_id']?.toString();
+        final wName = (r['worker_name'] ?? r['name'] ?? '').toString().trim().toLowerCase();
+
+        if (userId != null && wId != null && wId != userId) continue;
+        if (userId == null && userName.isNotEmpty && wName.isNotEmpty && !wName.contains(userName) && !userName.contains(wName)) continue;
+
+        final dStr = (r['date'] ?? '').toString();
+        if (dStr == todayStr) {
+          timeIn = (r['morningIn'] ?? r['timeIn'] ?? r['afternoonIn'] ?? "--:-- AM").toString();
+          timeOut = (r['afternoonOut'] ?? r['timeOut'] ?? r['morningOut'] ?? "--:-- PM").toString();
+        }
+
+        final dt = DateTime.tryParse(dStr);
+        if (dt != null) {
+          final dayName = days[dt.weekday - 1];
+          final hrs = (r['hours'] is num) ? (r['hours'] as num).toDouble() : 8.0;
+          dayHours[dayName] = (dayHours[dayName] ?? 0.0) + hrs;
+        }
+      }
+
+      final List<Map<String, dynamic>> weekly = days.map((d) {
+        final hrs = dayHours[d] ?? 0.0;
+        final earn = (hrs / 8.0) * dailyRate;
+        return {
+          'day': d,
+          'hours': hrs,
+          'earnings': earn,
+          'labelHours': hrs > 0 ? '${hrs.toStringAsFixed(0)}h' : '0h',
+          'labelEarnings': earn > 0 ? '₱${earn.toStringAsFixed(0)}' : '₱0',
+        };
+      }).toList();
+
+      if (mounted) {
+        setState(() {
+          _timeIn = timeIn;
+          _timeOut = timeOut;
+          _weeklyData.clear();
+          _weeklyData.addAll(weekly);
+        });
+      }
+    } catch (_) {}
+
+    // 2. Fetch cash advances
+    if (userId != null && userId.isNotEmpty) {
+      try {
+        final vales = await ApiService.getWorkerCashAdvances(userId);
+        if (vales.isNotEmpty && mounted) {
+          final latest = vales.first;
+          final amt = (latest['amount'] ?? 0).toString();
+          final st = (latest['status'] ?? 'Pending').toString();
+          setState(() {
+            _cashAdvance = "₱ $amt";
+            _caStatus = st;
+          });
+        }
+      } catch (_) {}
+    }
+
+    // 3. Fetch borrowed tools
+    try {
+      final tools = await ApiService.getBorrowHistory('ALL');
+      final List<Map<String, String>> myTools = [];
+      for (final t in tools) {
+        final bId = t['worker_id']?.toString();
+        final bName = (t['borrower_name'] ?? t['borrower'] ?? '').toString().trim().toLowerCase();
+        if (userId != null && bId != null && bId != userId) continue;
+        if (userId == null && userName.isNotEmpty && bName.isNotEmpty && !bName.contains(userName) && !userName.contains(bName)) continue;
+
+        if (t['action'] == 'Borrowed' || t['status'] == 'In Use') {
+          myTools.add({
+            'name': (t['tool_name'] ?? t['name'] ?? 'Tool').toString(),
+            'status': 'In Use',
+          });
+        }
+      }
+      if (mounted) {
+        setState(() {
+          _borrowedTools.clear();
+          _borrowedTools.addAll(myTools);
+        });
+      }
+    } catch (_) {}
   }
 
   String _timeIn = "--:-- AM";

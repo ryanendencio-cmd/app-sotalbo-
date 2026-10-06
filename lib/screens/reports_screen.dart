@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../services/api_service.dart';
 import '../widgets/app_sidebar.dart';
 
 class ReportsScreen extends StatefulWidget {
@@ -12,6 +13,7 @@ class ReportsScreen extends StatefulWidget {
 class _ReportsScreenState extends State<ReportsScreen> {
   String _selectedPeriod = 'This Cut-off';
   bool _isExporting = false;
+  bool _isLoading = false;
 
   final Map<String, Map<String, dynamic>> _periodReports = {
     'This Cut-off': {
@@ -42,6 +44,99 @@ class _ReportsScreenState extends State<ReportsScreen> {
       'highOtWorkers': [],
     },
   };
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchReports();
+  }
+
+  Future<void> _fetchReports() async {
+    setState(() => _isLoading = true);
+    try {
+      final manpower = await ApiService.getManpowerReport();
+      final expenses = await ApiService.getExpensesReport();
+
+      double totalLaborCost = 0;
+      double totalHours = 0;
+      double totalOt = 0;
+
+      final Map<String, int> tradeCounts = {};
+      final List<Map<String, String>> missingOuts = [];
+      final List<Map<String, String>> highOtWorkers = [];
+
+      for (final m in manpower) {
+        final hrs = (m['hours'] is num) ? (m['hours'] as num).toDouble() : 8.0;
+        final ot = (m['ot'] is num) ? (m['ot'] as num).toDouble() : 0.0;
+        final rate = (m['rate'] is num) ? (m['rate'] as num).toDouble() : 600.0;
+        final cost = (hrs / 8.0) * rate;
+
+        totalLaborCost += cost;
+        totalHours += hrs;
+        totalOt += ot;
+
+        final role = (m['role'] ?? 'Laborer').toString();
+        tradeCounts[role] = (tradeCounts[role] ?? 0) + 1;
+
+        final name = (m['worker_name'] ?? m['name'] ?? 'Worker').toString();
+        final inTime = m['morningIn'] ?? m['timeIn'];
+        final outTime = m['afternoonOut'] ?? m['timeOut'];
+
+        if (inTime != null && (outTime == null || outTime == '—')) {
+          missingOuts.add({
+            'name': name,
+            'role': role,
+            'timeIn': inTime.toString(),
+            'date': (m['date'] ?? 'Today').toString(),
+          });
+        }
+
+        if (ot >= 2.0) {
+          highOtWorkers.add({
+            'name': name,
+            'role': role,
+            'otHours': '${ot.toStringAsFixed(1)} hrs',
+            'reason': 'Extended Shift',
+          });
+        }
+      }
+
+      for (final e in expenses) {
+        final cat = (e['category'] ?? '').toString().toLowerCase();
+        if (cat.contains('labor') || cat.contains('payroll') || cat.contains('salary')) {
+          final amt = (e['amount'] is num) ? (e['amount'] as num).toDouble() : 0.0;
+          totalLaborCost += amt;
+        }
+      }
+
+      final tradesList = tradeCounts.entries.map((e) => {
+        'name': e.key,
+        'count': e.value,
+        'share': tradeCounts.values.isEmpty ? 0.0 : e.value / tradeCounts.values.reduce((a, b) => a + b),
+      }).toList();
+
+      final reportData = {
+        'totalHours': '${totalHours.toStringAsFixed(0)} hrs',
+        'overtime': '${totalOt.toStringAsFixed(0)} hrs',
+        'attendanceRate': manpower.isNotEmpty ? '${((manpower.length / (manpower.length + 1)) * 100).toStringAsFixed(0)}%' : '92%',
+        'laborCost': '₱ ${totalLaborCost.toStringAsFixed(0)}',
+        'trades': tradesList,
+        'missingOuts': missingOuts,
+        'highOtWorkers': highOtWorkers,
+      };
+
+      if (mounted) {
+        setState(() {
+          _periodReports['This Cut-off'] = reportData;
+          _periodReports['Previous Cut-off'] = reportData;
+          _periodReports['Current Month'] = reportData;
+          _isLoading = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
 
   void _triggerExport(String format) async {
     setState(() => _isExporting = true);

@@ -31,16 +31,13 @@ class _WorkerSalaryScreenState extends State<WorkerSalaryScreen>
   Future<void> _loadData() async {
     setState(() => _isLoading = true);
     try {
-      final userId = ApiService.currentUser?['id'];
-      if (userId != null) {
-        final id = int.tryParse(userId.toString());
-        if (id != null) {
-          final data = await ApiService.getWorkerCashAdvances(id);
-          if (mounted) {
-            setState(() {
-              _cashAdvances = List<Map<String, dynamic>>.from(data);
-            });
-          }
+      final userId = ApiService.currentUser?['id']?.toString();
+      if (userId != null && userId.isNotEmpty) {
+        final data = await ApiService.getWorkerCashAdvances(userId);
+        if (mounted) {
+          setState(() {
+            _cashAdvances = List<Map<String, dynamic>>.from(data);
+          });
         }
       }
     } catch (_) {

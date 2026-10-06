@@ -31,7 +31,7 @@ class _WorkerAttendanceScreenState extends State<WorkerAttendanceScreen>
   Future<void> _loadAttendance() async {
     setState(() => _isLoading = true);
     try {
-      final data = await ApiService.getAttendance(1);
+      final data = await ApiService.getAttendance('ALL');
       final userId = ApiService.currentUser?['id']?.toString();
       if (mounted) {
         setState(() {

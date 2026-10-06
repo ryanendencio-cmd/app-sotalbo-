@@ -13,13 +13,14 @@ class _WorkerToolsScreenState extends State<WorkerToolsScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
   bool _isLoading = false;
-  List<Map<String, dynamic>> _borrowHistory = [];
+  List<Map<String, dynamic>> _activeTools = [];
+  List<Map<String, dynamic>> _historyTools = [];
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
-    _loadBorrowHistory();
+    _loadToolsData();
   }
 
   @override
@@ -28,17 +29,107 @@ class _WorkerToolsScreenState extends State<WorkerToolsScreen>
     super.dispose();
   }
 
-  Future<void> _loadBorrowHistory() async {
+  Future<void> _loadToolsData() async {
     setState(() => _isLoading = true);
     try {
-      final data = await ApiService.getBorrowHistory(1);
-      final userId = ApiService.currentUser?['id']?.toString();
+      final user = ApiService.currentUser;
+      final userId = user?['id']?.toString();
+      final userName = (user?['full_name'] ?? user?['name'] ?? '${user?['first_name'] ?? ''} ${user?['last_name'] ?? ''}').toString().trim().toLowerCase();
+      final firstName = (user?['first_name'] ?? '').toString().trim().toLowerCase();
+      final lastName = (user?['last_name'] ?? '').toString().trim().toLowerCase();
+      final position = (user?['position'] ?? '').toString().toLowerCase();
+      final isCustodian = position.contains('tool') || position.contains('admin') || ApiService.currentUserRole?.toLowerCase() == 'admin';
+
+      bool matchesUser(String? name) {
+        if (name == null || name.trim().isEmpty) return false;
+        if (isCustodian) return true;
+        if (userName.isEmpty) return true;
+        final n = name.trim().toLowerCase();
+        if (n == userName || n.contains(userName) || userName.contains(n)) return true;
+        if (firstName.isNotEmpty && n.contains(firstName)) return true;
+        if (lastName.isNotEmpty && n.contains(lastName)) return true;
+        return false;
+      }
+
+      // 1. Fetch currently borrowed tools from Assets across all projects
+      final projects = await ApiService.getProjects();
+      final List<Map<String, dynamic>> borrowedAssets = [];
+
+      await Future.wait(projects.map((p) async {
+        final projectId = p['id']?.toString();
+        if (projectId == null) return;
+        List<dynamic> assets = [];
+        try {
+          assets = await ApiService.getProjectAssets(projectId);
+        } catch (_) {
+          return;
+        }
+        for (final a in assets) {
+          final asset = Map<String, dynamic>.from(a as Map);
+          final status = (asset['status'] ?? '').toString();
+          final borrower = asset['assigned_to']?.toString();
+          final isOut = status == 'In Use' ||
+              status == 'Checked Out' ||
+              (borrower != null && borrower.trim().isNotEmpty && status != 'Available' && status != 'Needs Repair');
+          if (isOut && matchesUser(borrower)) {
+            borrowedAssets.add({
+              'id': asset['id']?.toString(),
+              'name': (asset['name'] ?? 'Unnamed Tool').toString(),
+              'tool_name': (asset['name'] ?? 'Unnamed Tool').toString(),
+              'borrower': borrower ?? 'Unknown',
+              'borrower_name': borrower ?? 'Unknown',
+              'borrow_date': asset['borrow_at'],
+              'condition': (asset['condition'] ?? asset['type'] ?? 'Good').toString(),
+              'status': 'In Use',
+              'project_id': projectId,
+            });
+          }
+        }
+      }));
+
+      // Group identical currently borrowed tools
+      final Map<String, Map<String, dynamic>> groupedActive = {};
+      for (final t in borrowedAssets) {
+        final key = [
+          t['name'].toString().trim().toLowerCase(),
+          t['borrower'].toString().trim().toLowerCase(),
+          t['condition'].toString().trim().toLowerCase(),
+        ].join('|');
+        final existing = groupedActive.putIfAbsent(key, () => {
+          ...t,
+          'quantity': 0,
+        });
+        existing['quantity'] = (existing['quantity'] as int) + 1;
+      }
+
+      // 2. Fetch history logs from Borrow History
+      List<dynamic> historyData = [];
+      try {
+        historyData = await ApiService.getBorrowHistory('ALL');
+      } catch (_) {}
+
+      final List<Map<String, dynamic>> historyList = [];
+      for (final h in historyData) {
+        final rec = Map<String, dynamic>.from(h as Map);
+        final bName = (rec['borrower_name'] ?? rec['borrower'] ?? '').toString();
+        if (matchesUser(bName)) {
+          historyList.add({
+            'name': (rec['tool_name'] ?? rec['name'] ?? 'Tool').toString(),
+            'tool_name': (rec['tool_name'] ?? rec['name'] ?? 'Tool').toString(),
+            'borrower': bName,
+            'borrower_name': bName,
+            'borrow_date': rec['date_time'] ?? rec['created_at'],
+            'status': (rec['action'] ?? rec['status'] ?? 'Returned').toString(),
+            'condition': (rec['condition_status'] ?? rec['condition'] ?? 'Good').toString(),
+            'quantity': rec['quantity'] ?? 1,
+          });
+        }
+      }
+
       if (mounted) {
         setState(() {
-          _borrowHistory = List<Map<String, dynamic>>.from(data)
-              .where((r) =>
-                  r['worker_id']?.toString() == userId || userId == null)
-              .toList();
+          _activeTools = groupedActive.values.toList();
+          _historyTools = historyList;
         });
       }
     } catch (_) {
@@ -47,39 +138,38 @@ class _WorkerToolsScreenState extends State<WorkerToolsScreen>
     }
   }
 
-  String _formatDate(String? raw) {
+  String _formatDate(dynamic raw) {
     if (raw == null) return '—';
-    try {
-      final datePart =
-          raw.contains('T') ? raw.split('T')[0] : raw.split(' ')[0];
-      final parts = datePart.split('-');
-      if (parts.length < 3) return raw;
-      final months = [
-        'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-        'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
-      ];
-      final m = int.tryParse(parts[1]);
-      final d = int.tryParse(parts[2]);
-      if (m == null || d == null) return raw;
-      return '${months[m - 1]} $d, ${parts[0]}';
-    } catch (_) {
-      return raw;
+    if (raw is Map) {
+      final secs = raw['_seconds'] ?? raw['seconds'];
+      if (secs is num) {
+        final dt = DateTime.fromMillisecondsSinceEpoch((secs * 1000).toInt()).toLocal();
+        return _formatDateTime(dt);
+      }
     }
+    final str = raw.toString();
+    final dt = DateTime.tryParse(str)?.toLocal();
+    if (dt != null) {
+      return _formatDateTime(dt);
+    }
+    return str;
+  }
+
+  String _formatDateTime(DateTime dt) {
+    final months = [
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+    ];
+    final h = dt.hour % 12 == 0 ? 12 : dt.hour % 12;
+    final m = dt.minute.toString().padLeft(2, '0');
+    final ampm = dt.hour < 12 ? 'AM' : 'PM';
+    return '${months[dt.month - 1]} ${dt.day}, ${dt.year} $h:$m $ampm';
   }
 
   @override
   Widget build(BuildContext context) {
-    // Separate active vs returned
-    final activeTools = _borrowHistory
-        .where((t) =>
-            (t['status']?.toString().toLowerCase() ?? '') == 'borrowed' ||
-            (t['status']?.toString().toLowerCase() ?? '') == 'in use')
-        .toList();
-    final historyTools = _borrowHistory
-        .where((t) =>
-            (t['status']?.toString().toLowerCase() ?? '') != 'borrowed' &&
-            (t['status']?.toString().toLowerCase() ?? '') != 'in use')
-        .toList();
+    final position = (ApiService.currentUser?['position'] ?? '').toString().toLowerCase();
+    final isCustodian = position.contains('tool') || position.contains('admin') || ApiService.currentUserRole?.toLowerCase() == 'admin';
 
     return Scaffold(
       backgroundColor: const Color(0xFFF3EFEA),
@@ -109,7 +199,7 @@ class _WorkerToolsScreenState extends State<WorkerToolsScreen>
                 labelStyle: GoogleFonts.inter(
                     fontWeight: FontWeight.bold, fontSize: 12),
                 tabs: [
-                  Tab(text: 'Currently Borrowed (${activeTools.length})'),
+                  Tab(text: 'Currently Borrowed (${_activeTools.length})'),
                   const Tab(text: 'History'),
                 ],
               ),
@@ -117,6 +207,19 @@ class _WorkerToolsScreenState extends State<WorkerToolsScreen>
           ),
         ),
       ),
+      floatingActionButton: isCustodian
+          ? FloatingActionButton.extended(
+              onPressed: () async {
+                await Navigator.pushNamed(context, '/tools_monitoring');
+                _loadToolsData();
+              },
+              backgroundColor: const Color(0xFFA63228),
+              icon: const Icon(Icons.admin_panel_settings, color: Colors.white),
+              label: Text('Manage All Tools',
+                  style: GoogleFonts.inter(
+                      fontWeight: FontWeight.bold, color: Colors.white)),
+            )
+          : null,
       body: _isLoading
           ? const Center(
               child: CircularProgressIndicator(color: Color(0xFFA63228)))
@@ -132,44 +235,44 @@ class _WorkerToolsScreenState extends State<WorkerToolsScreen>
                         // --- TAB 1: CURRENTLY BORROWED ---
                         RefreshIndicator(
                           color: const Color(0xFFA63228),
-                          onRefresh: _loadBorrowHistory,
-                          child: activeTools.isEmpty
+                          onRefresh: _loadToolsData,
+                          child: _activeTools.isEmpty
                               ? _buildEmpty(
                                   Icons.handyman_outlined,
                                   'No tools currently borrowed',
                                   'Tools issued to you will appear here.',
                                 )
                               : ListView.separated(
-                                  physics: const BouncingScrollPhysics(),
-                                  padding: EdgeInsets.symmetric(
-                                      horizontal: hp, vertical: 10),
-                                  itemCount: activeTools.length,
+                                  physics: const AlwaysScrollableScrollPhysics(
+                                      parent: BouncingScrollPhysics()),
+                                  padding: EdgeInsets.fromLTRB(hp, 10, hp, 80),
+                                  itemCount: _activeTools.length,
                                   separatorBuilder: (_, __) =>
                                       const SizedBox(height: 8),
                                   itemBuilder: (ctx, i) =>
-                                      _buildToolCard(activeTools[i]),
+                                      _buildToolCard(_activeTools[i], isCurrentlyBorrowed: true),
                                 ),
                         ),
 
                         // --- TAB 2: BORROW HISTORY ---
                         RefreshIndicator(
                           color: const Color(0xFFA63228),
-                          onRefresh: _loadBorrowHistory,
-                          child: historyTools.isEmpty
+                          onRefresh: _loadToolsData,
+                          child: _historyTools.isEmpty
                               ? _buildEmpty(
                                   Icons.history_rounded,
                                   'No tool history yet',
                                   'Past tool records will appear here.',
                                 )
                               : ListView.separated(
-                                  physics: const BouncingScrollPhysics(),
-                                  padding: EdgeInsets.symmetric(
-                                      horizontal: hp, vertical: 10),
-                                  itemCount: historyTools.length,
+                                  physics: const AlwaysScrollableScrollPhysics(
+                                      parent: BouncingScrollPhysics()),
+                                  padding: EdgeInsets.fromLTRB(hp, 10, hp, 80),
+                                  itemCount: _historyTools.length,
                                   separatorBuilder: (_, __) =>
                                       const SizedBox(height: 8),
                                   itemBuilder: (ctx, i) =>
-                                      _buildToolCard(historyTools[i]),
+                                      _buildToolCard(_historyTools[i], isCurrentlyBorrowed: false),
                                 ),
                         ),
                       ],
@@ -181,11 +284,12 @@ class _WorkerToolsScreenState extends State<WorkerToolsScreen>
     );
   }
 
-  Widget _buildToolCard(Map<String, dynamic> tool) {
-    final status = tool['status']?.toString() ?? 'Unknown';
-    final isBorrowed =
-        status.toLowerCase() == 'borrowed' || status.toLowerCase() == 'in use';
-    final isReturned = status.toLowerCase() == 'returned';
+  Widget _buildToolCard(Map<String, dynamic> tool, {required bool isCurrentlyBorrowed}) {
+    final status = tool['status']?.toString() ?? (isCurrentlyBorrowed ? 'In Use' : 'Returned');
+    final isBorrowed = isCurrentlyBorrowed ||
+        status.toLowerCase() == 'borrowed' ||
+        status.toLowerCase() == 'in use';
+    final isReturned = !isCurrentlyBorrowed && status.toLowerCase() == 'returned';
 
     Color statusBg = isReturned
         ? Colors.green.shade50
@@ -202,6 +306,8 @@ class _WorkerToolsScreenState extends State<WorkerToolsScreen>
         : isBorrowed
             ? Colors.orange.shade800
             : Colors.grey.shade700;
+
+    final borrower = (tool['borrower'] ?? tool['borrower_name'] ?? '').toString();
 
     return Container(
       padding: const EdgeInsets.all(12),
@@ -243,29 +349,32 @@ class _WorkerToolsScreenState extends State<WorkerToolsScreen>
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  '${tool['tool_code']?.toString() ?? tool['code']?.toString() ?? '—'} • ${_formatDate(tool['borrow_date']?.toString() ?? tool['date']?.toString())}',
+                  'Qty: ${tool['quantity'] ?? 1} • Cond: ${tool['condition'] ?? 'Good'} • ${_formatDate(tool['borrow_date'] ?? tool['date_time'] ?? tool['created_at'])}',
                   style: GoogleFonts.inter(
                       fontSize: 10.5, color: Colors.grey.shade600),
                 ),
-                if (tool['return_date'] != null && !isBorrowed)
+                if (borrower.isNotEmpty) ...[
+                  const SizedBox(height: 2),
                   Text(
-                    'Returned: ${_formatDate(tool['return_date'].toString())}',
+                    'Borrower: $borrower',
                     style: GoogleFonts.inter(
-                        fontSize: 10, color: Colors.green.shade700),
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.black87),
                   ),
+                ],
               ],
             ),
           ),
           Container(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
             decoration: BoxDecoration(
               color: statusBg,
               borderRadius: BorderRadius.circular(6),
               border: Border.all(color: statusBorder),
             ),
             child: Text(
-              status,
+              isBorrowed ? 'In Use' : status,
               style: GoogleFonts.inter(
                   fontSize: 10,
                   fontWeight: FontWeight.bold,

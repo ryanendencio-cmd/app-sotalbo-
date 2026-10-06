@@ -29,7 +29,7 @@ class _CashAdvanceScreenState extends State<CashAdvanceScreen> {
     }
   }
 
-  Future<void> _updateStatus(int id, String status) async {
+  Future<void> _updateStatus(dynamic id, String status) async {
     try {
       await ApiService.approveCashAdvance(id, status);
       if (mounted) {

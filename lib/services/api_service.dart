@@ -59,36 +59,36 @@ class ApiService {
   // Projects
   static Future<List<dynamic>> getProjects() => _get('/projects').then((v) => v as List);
   static Future<dynamic> createProject(Map<String, dynamic> data) => _post('/projects', data);
-  static Future<dynamic> updateProject(int id, Map<String, dynamic> data) => _put('/projects/$id', data);
-  static Future<void> deleteProject(int id) => _delete('/projects/$id');
+  static Future<dynamic> updateProject(dynamic id, Map<String, dynamic> data) => _put('/projects/$id', data);
+  static Future<void> deleteProject(dynamic id) => _delete('/projects/$id');
 
   // Schedules
   static Future<List<dynamic>> getSchedules() => _get('/schedules').then((v) => v as List);
   static Future<dynamic> createSchedule(Map<String, dynamic> data) => _post('/schedules', data);
-  static Future<dynamic> updateSchedule(int id, Map<String, dynamic> data) => _put('/schedules/$id', data);
-  static Future<void> deleteSchedule(int id) => _delete('/schedules/$id');
+  static Future<dynamic> updateSchedule(dynamic id, Map<String, dynamic> data) => _put('/schedules/$id', data);
+  static Future<void> deleteSchedule(dynamic id) => _delete('/schedules/$id');
 
   // Workers
   static Future<List<dynamic>> getWorkers() => _get('/workers').then((v) => v as List);
   static Future<dynamic> createWorker(Map<String, dynamic> data) => _post('/workers', data);
-  static Future<dynamic> updateWorker(int id, Map<String, dynamic> data) => _put('/workers/$id', data);
-  static Future<void> deleteWorker(int id) => _delete('/workers/$id');
+  static Future<dynamic> updateWorker(dynamic id, Map<String, dynamic> data) => _put('/workers/$id', data);
+  static Future<void> deleteWorker(dynamic id) => _delete('/workers/$id');
 
   // Budget Additions
-  static Future<List<dynamic>> getBudgetAdditions(int projectId) =>
+  static Future<List<dynamic>> getBudgetAdditions(dynamic projectId) =>
       _get('/projects/$projectId/budget-additions').then((v) => v as List);
-  static Future<dynamic> createBudgetAddition(int projectId, Map<String, dynamic> data) =>
+  static Future<dynamic> createBudgetAddition(dynamic projectId, Map<String, dynamic> data) =>
       _post('/projects/$projectId/budget-additions', data);
 
   // Project-scoped endpoints
-  static Future<List<dynamic>> getAttendance(int projectId) =>
+  static Future<List<dynamic>> getAttendance(dynamic projectId) =>
       _get('/attendance/$projectId').then((v) => v as List);
   static Future<dynamic> saveAttendance(Map<String, dynamic> data) =>
       _post('/attendance', data);
-  static Future<dynamic> updateAttendanceRecord(int id, Map<String, dynamic> data) =>
+  static Future<dynamic> updateAttendanceRecord(dynamic id, Map<String, dynamic> data) =>
       _put('/attendance/$id', data);
 
-  static Future<List<dynamic>> getExpenses(int projectId) =>
+  static Future<List<dynamic>> getExpenses(dynamic projectId) =>
       _get('/expenses/$projectId').then((v) => v as List);
   static Future<List<dynamic>> getAllExpenses() =>
       _get('/expenses').then((v) => v as List);
@@ -104,37 +104,49 @@ class ApiService {
       _get('/expenses/monthly').then((v) => v as List);
   static Future<dynamic> createExpense(Map<String, dynamic> data) =>
       _post('/expenses', data);
-  static Future<dynamic> updateExpense(int id, Map<String, dynamic> data) =>
+  static Future<dynamic> updateExpense(dynamic id, Map<String, dynamic> data) =>
       _put('/expenses/$id', data);
-  static Future<void> deleteExpense(int id) =>
+  static Future<void> deleteExpense(dynamic id) =>
       _delete('/expenses/$id');
 
-  static Future<List<dynamic>> getMaterials(int projectId) =>
+  static Future<List<dynamic>> getMaterials(dynamic projectId) =>
       _get('/materials/$projectId').then((v) => v as List);
-  static Future<dynamic> createMaterial(int projectId, Map<String, dynamic> data) =>
-      _post('/materials/$projectId', data);
-  static Future<dynamic> updateMaterial(int id, Map<String, dynamic> data) =>
+  static Future<dynamic> createMaterial(Map<String, dynamic> data) =>
+      _post('/materials', data);
+  static Future<dynamic> updateMaterial(dynamic id, Map<String, dynamic> data) =>
       _put('/materials/$id', data);
-  static Future<void> deleteMaterial(int id) =>
+  static Future<void> deleteMaterial(dynamic id) =>
       _delete('/materials/$id');
 
-  static Future<List<dynamic>> getAssets(int projectId) =>
+  static Future<List<dynamic>> getAssets(dynamic projectId) =>
       _get('/assets/$projectId').then((v) => v as List);
-  static Future<dynamic> createAsset(int projectId, Map<String, dynamic> data) =>
-      _post('/assets/$projectId', data);
-  static Future<dynamic> updateAsset(int id, Map<String, dynamic> data) =>
+  static Future<dynamic> createAsset(Map<String, dynamic> data) =>
+      _post('/assets', data);
+  static Future<dynamic> updateAsset(dynamic id, Map<String, dynamic> data) =>
       _put('/assets/$id', data);
-  static Future<void> deleteAsset(int id) =>
+  static Future<void> deleteAsset(dynamic id) =>
       _delete('/assets/$id');
 
   // Borrow History
-  static Future<List<dynamic>> getBorrowHistory(int projectId) =>
+  static Future<List<dynamic>> getBorrowHistory(dynamic projectId) =>
       _get('/borrow-history/$projectId').then((v) => v as List);
-  static Future<dynamic> createBorrowRecord(int projectId, Map<String, dynamic> data) =>
-      _post('/borrow-history/$projectId', data);
+  static Future<dynamic> createBorrowRecord(Map<String, dynamic> data) =>
+      _post('/borrow-history', data);
+
+  // Firestore-backed (string document IDs) asset helpers used by Tools Monitoring
+  static Future<List<dynamic>> getProjectAssets(dynamic projectId) =>
+      _get('/assets/$projectId').then((v) => v as List);
+  static Future<dynamic> createAssetDoc(Map<String, dynamic> data) =>
+      _post('/assets', data);
+  static Future<dynamic> updateAssetDoc(dynamic id, Map<String, dynamic> data) =>
+      _put('/assets/$id', data);
+  static Future<List<dynamic>> getProjectBorrowHistory(dynamic projectId) =>
+      _get('/borrow-history/$projectId').then((v) => v as List);
+  static Future<dynamic> logBorrowHistory(Map<String, dynamic> data) =>
+      _post('/borrow-history', data);
 
   // Reports
-  static Future<List<dynamic>> getExpensesReport({int? projectId, String? startDate, String? endDate}) {
+  static Future<List<dynamic>> getExpensesReport({dynamic projectId, String? startDate, String? endDate}) {
     String query = '';
     final params = <String>[];
     if (projectId != null) params.add('project_id=$projectId');
@@ -144,7 +156,7 @@ class ApiService {
     return _get('/reports/expenses$query').then((v) => v as List);
   }
 
-  static Future<List<dynamic>> getManpowerReport({int? projectId, String? startDate, String? endDate}) {
+  static Future<List<dynamic>> getManpowerReport({dynamic projectId, String? startDate, String? endDate}) {
     String query = '';
     final params = <String>[];
     if (projectId != null) params.add('project_id=$projectId');
@@ -154,25 +166,26 @@ class ApiService {
     return _get('/reports/manpower$query').then((v) => v as List);
   }
 
-  static Future<List<dynamic>> getMaterialsReport({int? projectId}) {
+  static Future<List<dynamic>> getMaterialsReport({dynamic projectId}) {
     final query = projectId != null ? '?project_id=$projectId' : '';
     return _get('/reports/materials$query').then((v) => v as List);
   }
 
-  static Future<List<dynamic>> getAssetsReport({int? projectId}) {
+  static Future<List<dynamic>> getAssetsReport({dynamic projectId}) {
     final query = projectId != null ? '?project_id=$projectId' : '';
     return _get('/reports/assets$query').then((v) => v as List);
   }
 
-  static Future<List<dynamic>> getCashAdvances(int projectId) =>
+  static Future<List<dynamic>> getCashAdvances(dynamic projectId) =>
       _get('/cash-advances/$projectId').then((v) => v as List);
+
   static Future<dynamic> createCashAdvance(Map<String, dynamic> data) =>
       _post('/cash-advances', data);
   static Future<List<dynamic>> getPendingCashAdvances() =>
       _get('/cash-advances/pending').then((v) => v as List);
-  static Future<void> approveCashAdvance(int id, String status) =>
+  static Future<void> approveCashAdvance(dynamic id, String status) =>
       _put('/cash-advances/$id/approve', {'status': status});
-  static Future<List<dynamic>> getWorkerCashAdvances(int workerId) =>
+  static Future<List<dynamic>> getWorkerCashAdvances(dynamic workerId) =>
       _get('/workers/$workerId/cash-advances').then((v) => v as List);
 
   // Notifications

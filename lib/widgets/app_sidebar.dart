@@ -17,10 +17,14 @@ class AppSidebar extends StatelessWidget {
   Widget build(BuildContext context) {
     final currentRoute = ModalRoute.of(context)?.settings.name;
     final role = ApiService.currentUserRole ?? 'worker';
+    final position = (ApiService.currentUser?['position'] ?? '').toString();
     final isAdmin = role == 'admin';
     final isStaff = role == 'staff';
     final isTool = role == 'tool';
     final isWorker = role == 'worker';
+
+    final bool showAttendanceMonitoring = isAdmin || isStaff || (isWorker && position.contains('Attendance Monitoring'));
+    final bool showToolsMonitoring = isAdmin || isTool || (isWorker && position.contains('Tools Monitoring'));
 
     return Drawer(
       backgroundColor: Colors.white,
@@ -64,14 +68,14 @@ class AppSidebar extends StatelessWidget {
                     icon: Icons.dashboard_outlined,
                     label: 'Worker Dashboard',
                   ),
-                  if (isStaff) _item(
+                  if (showAttendanceMonitoring) _item(
                     context,
                     currentRoute,
                     route: '/timekeeper_dashboard',
                     icon: Icons.fact_check_outlined,
-                    label: 'Timekeeper Dashboard',
+                    label: isStaff ? 'Timekeeper Dashboard' : 'Manage Attendance',
                   ),
-                  if (isTool) _item(
+                  if (showToolsMonitoring) _item(
                     context,
                     currentRoute,
                     route: '/tools_monitoring',
@@ -106,8 +110,8 @@ class AppSidebar extends StatelessWidget {
                       context,
                       currentRoute,
                       route: '/workers',
-                      icon: Icons.people_outline,
-                      label: 'Account Approvals',
+                      icon: Icons.badge_outlined,
+                      label: 'Manpower Directory',
                     ),
                   ],
                 ],

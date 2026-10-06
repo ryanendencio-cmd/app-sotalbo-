@@ -90,12 +90,6 @@ class _LoginScreenState extends State<LoginScreen> {
         if (role.toLowerCase() == 'admin' || username == 'admin') {
           ApiService.currentUserRole = 'admin';
           Navigator.pushReplacementNamed(context, '/admin_dashboard');
-        } else if (position.toLowerCase().contains('tool')) {
-          ApiService.currentUserRole = 'tool';
-          Navigator.pushReplacementNamed(context, '/tools_monitoring');
-        } else if (position.toLowerCase().contains('attendance') || position.toLowerCase().contains('timekeeper')) {
-          ApiService.currentUserRole = 'staff';
-          Navigator.pushReplacementNamed(context, '/timekeeper_dashboard');
         } else {
           ApiService.currentUserRole = 'worker';
           Navigator.pushReplacementNamed(context, '/dashboard');

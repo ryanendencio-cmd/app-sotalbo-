@@ -29,9 +29,56 @@ class _TimesheetScreenState extends State<TimesheetScreen> {
     setState(() => _isLoadingWorkers = true);
     try {
       final workersList = await ApiService.getWorkers();
+      final records = await ApiService.getAttendance('ALL');
+      final dateStr = _selectedDate.toIso8601String().split('T')[0];
+
+      final Map<String, Map<String, dynamic>> attendanceMap = {};
+      for (final r in records) {
+        if ((r['date'] ?? '').toString() == dateStr) {
+          final wId = (r['worker_id'] ?? '').toString();
+          final wName = (r['worker_name'] ?? r['name'] ?? '').toString().trim().toLowerCase();
+          if (wId.isNotEmpty) attendanceMap[wId] = Map<String, dynamic>.from(r as Map);
+          if (wName.isNotEmpty) attendanceMap[wName] = Map<String, dynamic>.from(r as Map);
+        }
+      }
+
+      final List<Map<String, dynamic>> timesheet = [];
+      for (final w in workersList) {
+        final wMap = Map<String, dynamic>.from(w as Map);
+        final wId = (wMap['id'] ?? '').toString();
+        final firstName = (wMap['first_name'] ?? '').toString();
+        final lastName = (wMap['last_name'] ?? '').toString();
+        final fullName = (wMap['full_name'] ?? '$firstName $lastName').toString().trim();
+        final role = (wMap['role'] ?? wMap['position'] ?? 'Laborer').toString();
+        final dailyRate = (wMap['daily_rate'] is num) ? (wMap['daily_rate'] as num).toDouble() : 600.0;
+
+        final att = attendanceMap[wId] ?? attendanceMap[fullName.toLowerCase()];
+
+        final morningIn = att?['morningIn'] ?? att?['timeIn'] ?? '—';
+        final morningOut = att?['morningOut'] ?? '—';
+        final afternoonIn = att?['afternoonIn'] ?? '—';
+        final afternoonOut = att?['afternoonOut'] ?? att?['timeOut'] ?? '—';
+        final status = att?['status'] ?? (att != null ? 'Present' : 'Not Recorded');
+
+        timesheet.add({
+          'id': wId,
+          'name': fullName.isEmpty ? 'Worker' : fullName,
+          'role': role,
+          'dailyRate': dailyRate,
+          'morningIn': morningIn,
+          'morningOut': morningOut,
+          'afternoonIn': afternoonIn,
+          'afternoonOut': afternoonOut,
+          'status': status,
+          'overtimeHrs': att?['ot'] ?? 0,
+        });
+      }
+
       if (mounted) {
         setState(() {
           _allWorkers = List<Map<String, dynamic>>.from(workersList);
+          _timesheetData.clear();
+          _timesheetData.addAll(timesheet);
           _isLoadingWorkers = false;
         });
       }

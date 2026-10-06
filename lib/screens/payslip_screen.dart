@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import '../widgets/app_sidebar.dart';
+import '../services/api_service.dart';
 
 class PayslipScreen extends StatefulWidget {
   const PayslipScreen({super.key});
@@ -12,11 +12,72 @@ class PayslipScreen extends StatefulWidget {
 class _PayslipScreenState extends State<PayslipScreen> {
   final Map<String, Set<int>> _monthlyWorkDays = {};
   final Map<String, Map<int, String>> _monthlyValeDays = {};
+  bool _isLoading = false;
 
   final List<String> _monthNames = [
     'January', 'February', 'March', 'April', 'May', 'June',
     'July', 'August', 'September', 'October', 'November', 'December'
   ];
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchPayslipData();
+  }
+
+  Future<void> _fetchPayslipData() async {
+    setState(() => _isLoading = true);
+    try {
+      final user = ApiService.currentUser;
+      final userId = user?['id']?.toString();
+      final userName = (user?['full_name'] ?? user?['name'] ?? '${user?['first_name'] ?? ''} ${user?['last_name'] ?? ''}').toString().trim().toLowerCase();
+
+      final records = await ApiService.getAttendance('ALL');
+      final Map<String, Set<int>> workDays = {};
+
+      for (final r in records) {
+        final wId = r['worker_id']?.toString();
+        final wName = (r['worker_name'] ?? r['name'] ?? '').toString().trim().toLowerCase();
+        if (userId != null && wId != null && wId != userId) continue;
+        if (userId == null && userName.isNotEmpty && wName.isNotEmpty && !wName.contains(userName) && !userName.contains(wName)) continue;
+
+        final dStr = (r['date'] ?? '').toString();
+        final dt = DateTime.tryParse(dStr);
+        if (dt != null && (r['status'] == 'Present' || r['status'] == null || r['morningIn'] != null)) {
+          final mKey = '${dt.year}-${dt.month.toString().padLeft(2, '0')}';
+          workDays.putIfAbsent(mKey, () => {}).add(dt.day);
+        }
+      }
+
+      final Map<String, Map<int, String>> valeDays = {};
+      if (userId != null && userId.isNotEmpty) {
+        try {
+          final vales = await ApiService.getWorkerCashAdvances(userId);
+          for (final v in vales) {
+            final dStr = (v['date'] ?? '').toString();
+            final dt = DateTime.tryParse(dStr);
+            if (dt != null) {
+              final mKey = '${dt.year}-${dt.month.toString().padLeft(2, '0')}';
+              final amt = (v['amount'] ?? 0).toString();
+              valeDays.putIfAbsent(mKey, () => {})[dt.day] = '₱$amt';
+            }
+          }
+        } catch (_) {}
+      }
+
+      if (mounted) {
+        setState(() {
+          _monthlyWorkDays.clear();
+          _monthlyWorkDays.addAll(workDays);
+          _monthlyValeDays.clear();
+          _monthlyValeDays.addAll(valeDays);
+          _isLoading = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
 
   void _showMonthlyCalendarDialog() {
     DateTime displayedMonth = DateTime(2026, 9, 1);

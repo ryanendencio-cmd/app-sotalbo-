@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import '../widgets/app_sidebar.dart';
 import '../services/api_service.dart';
 class ToolsMonitoringScreen extends StatefulWidget {
   final Map<String, String>? initialUserData;
+  final bool hideAppBar;
 
-  const ToolsMonitoringScreen({super.key, this.initialUserData});
+  const ToolsMonitoringScreen({super.key, this.initialUserData, this.hideAppBar = false});
 
   @override
   State<ToolsMonitoringScreen> createState() => _ToolsMonitoringScreenState();
@@ -18,23 +18,192 @@ class _ToolsMonitoringScreenState extends State<ToolsMonitoringScreen> {
 
   final TextEditingController _searchController = TextEditingController();
 
-  late Map<String, String> _userProfile;
-  late List<Map<String, dynamic>> _toolsData;
+  List<Map<String, dynamic>> _toolsData = [];
+  List<Map<String, dynamic>> _workers = [];
+  bool _isLoading = true;
+  String? _loadError;
 
   @override
   void initState() {
     super.initState();
-    _userProfile = {
-      'fullName': widget.initialUserData?['fullName'] ?? 'Ryan Breganza Endencio',
-      'role': widget.initialUserData?['role'] ?? 'Tool Keeper / Warehouse Custodian',
-      'phone': widget.initialUserData?['phone'] ?? '09123456789',
-      'site': widget.initialUserData?['site'] ?? 'S-CON Residential Phase 2 (Santa Cruz)',
-      'emergencyContact': widget.initialUserData?['emergencyContact'] ?? '09987654321',
-      'idNumber': widget.initialUserData?['idNumber'] ?? 'SCON-STF-2026-08',
-      'status': 'Verified / Approved by Admin',
-    };
+    _fetchTools();
+    _fetchWorkers();
+  }
 
-    _toolsData = [];
+  String _workerName(Map<String, dynamic> w) {
+    final full = (w['full_name'] ?? w['name'])?.toString().trim() ?? '';
+    if (full.isNotEmpty) return full;
+    return '${w['first_name'] ?? ''} ${w['last_name'] ?? ''}'.trim();
+  }
+
+  Future<void> _fetchWorkers() async {
+    try {
+      final list = await ApiService.getWorkers();
+      if (!mounted) return;
+      setState(() {
+        _workers = list
+            .map((w) => Map<String, dynamic>.from(w as Map))
+            .where((w) => _workerName(w).isNotEmpty)
+            .toList();
+      });
+    } catch (_) {
+      // Autocomplete is optional; manual typing still works.
+    }
+  }
+
+  // ── Firestore (via backend API) integration ──
+
+  static const Duration _overdueAfter = Duration(hours: 24);
+
+  String _uiStatus(String? backendStatus, String? condition) {
+    if (backendStatus == 'In Use' || backendStatus == 'Checked Out') {
+      return 'Checked Out';
+    }
+    final cond = (condition ?? '').toLowerCase();
+    final isRepair = backendStatus == 'Maintenance' ||
+        backendStatus == 'Needs Repair' ||
+        backendStatus == 'Under Repair' ||
+        cond.contains('repair') ||
+        cond.contains('broken') ||
+        cond.contains('damag') ||
+        cond.contains('maint');
+    if (isRepair) {
+      return 'Needs Repair';
+    }
+    return 'In Storage';
+  }
+
+  DateTime? _parseDate(dynamic v) {
+    if (v == null) return null;
+    if (v is String) return DateTime.tryParse(v)?.toLocal();
+    if (v is Map) {
+      final secs = v['_seconds'] ?? v['seconds'];
+      if (secs is num) {
+        return DateTime.fromMillisecondsSinceEpoch((secs * 1000).toInt());
+      }
+    }
+    return null;
+  }
+
+  String _formatTime(DateTime? dt) {
+    if (dt == null) return '—';
+    final now = DateTime.now();
+    final h = dt.hour % 12 == 0 ? 12 : dt.hour % 12;
+    final m = dt.minute.toString().padLeft(2, '0');
+    final ampm = dt.hour < 12 ? 'AM' : 'PM';
+    final time = '$h:$m $ampm';
+    final today = DateTime(now.year, now.month, now.day);
+    final day = DateTime(dt.year, dt.month, dt.day);
+    final diff = today.difference(day).inDays;
+    if (diff == 0) return 'Today $time';
+    if (diff == 1) return 'Yesterday $time';
+    return '${dt.month}/${dt.day}/${dt.year} $time';
+  }
+
+  Future<void> _fetchTools() async {
+    setState(() {
+      _isLoading = true;
+      _loadError = null;
+    });
+    try {
+      final projects = await ApiService.getProjects();
+      final List<Map<String, dynamic>> tools = [];
+
+      await Future.wait(projects.map((p) async {
+        final projectId = p['id']?.toString();
+        if (projectId == null) return;
+        final projectName = (p['name'] ?? 'Project').toString();
+        List<dynamic> assets = [];
+        try {
+          assets = await ApiService.getProjectAssets(projectId);
+        } catch (_) {
+          return;
+        }
+        for (final a in assets) {
+          final asset = Map<String, dynamic>.from(a as Map);
+          final id = asset['id'].toString();
+          final condition = (asset['condition'] ?? asset['type'] ?? 'Good').toString();
+          final rawStatus = asset['status']?.toString();
+          final status = _uiStatus(rawStatus, condition);
+          final borrowAt = _parseDate(asset['borrow_at']);
+          final borrower = asset['assigned_to']?.toString();
+          final isOut = status == 'Checked Out';
+          final dynamic rawQty = asset['quantity'] ?? asset['qty'];
+          final int quantity = rawQty != null ? (int.tryParse(rawQty.toString()) ?? 1) : 1;
+          tools.add({
+            'id': id,
+            'projectId': projectId,
+            'projectName': projectName,
+            'name': (asset['name'] ?? 'Unnamed Tool').toString(),
+            'category': projectName,
+            'quantity': quantity,
+            'status': status,
+            'condition': condition,
+            'borrower': isOut && borrower != null && borrower.isNotEmpty ? borrower : null,
+            'checkoutTime': isOut ? _formatTime(borrowAt) : null,
+            'isOverdue': isOut &&
+                borrowAt != null &&
+                DateTime.now().difference(borrowAt) > _overdueAfter,
+          });
+        }
+      }));
+
+      tools.sort((a, b) => a['name'].toString().toLowerCase()
+          .compareTo(b['name'].toString().toLowerCase()));
+
+      if (!mounted) return;
+      setState(() {
+        _toolsData = tools;
+        _isLoading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _loadError = 'Unable to load tools from the database.\n$e';
+      });
+    }
+  }
+
+  Future<bool> _saveAsset(Map<String, dynamic> tool, {
+    required String status,
+    required String condition,
+    String? assignedTo,
+    String? borrowAt,
+  }) async {
+    try {
+      await ApiService.updateAssetDoc(tool['id'], {
+        'name': tool['name'],
+        'condition': condition,
+        'status': status,
+        'assigned_to': assignedTo,
+        'borrow_at': borrowAt,
+      });
+      return true;
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to update tool: $e')),
+        );
+      }
+      return false;
+    }
+  }
+
+  Future<void> _logHistory(Map<String, dynamic> tool, String borrower, String action, String condition) async {
+    try {
+      await ApiService.logBorrowHistory({
+        'project_id': tool['projectId'],
+        'tool_name': tool['name'],
+        'borrower_name': borrower,
+        'quantity': 1,
+        'action': action,
+        'condition_status': condition,
+        'date_time': DateTime.now().toIso8601String(),
+      });
+    } catch (_) {
+      // History logging is best-effort; asset status is already saved.
+    }
   }
 
   @override
@@ -49,19 +218,98 @@ class _ToolsMonitoringScreenState extends State<ToolsMonitoringScreen> {
         return false;
       }
       final matchesCat = _selectedCategory == 'All' || t['category'] == _selectedCategory;
-      final matchesStatus = _selectedStatusFilter == 'All' ||
-          (_selectedStatusFilter == 'Overdue' ? t['isOverdue'] == true : t['status'] == _selectedStatusFilter);
+      final cond = t['condition'].toString().toLowerCase();
+      final isToolNeedsRepair = t['status'] == 'Needs Repair' ||
+          cond.contains('repair') ||
+          cond.contains('broken') ||
+          cond.contains('damag') ||
+          cond.contains('maint');
+
+      bool matchesStatus;
+      if (_selectedStatusFilter == 'All') {
+        matchesStatus = true;
+      } else if (_selectedStatusFilter == 'Overdue') {
+        matchesStatus = t['isOverdue'] == true;
+      } else if (_selectedStatusFilter == 'Needs Repair') {
+        matchesStatus = isToolNeedsRepair;
+      } else {
+        matchesStatus = t['status'] == _selectedStatusFilter;
+      }
+
       final query = _searchController.text.trim().toLowerCase();
       final matchesQuery = query.isEmpty ||
           t['name'].toString().toLowerCase().contains(query) ||
-          t['code'].toString().toLowerCase().contains(query) ||
+          t['condition'].toString().toLowerCase().contains(query) ||
+          t['status'].toString().toLowerCase().contains(query) ||
           (t['borrower'] != null && t['borrower'].toString().toLowerCase().contains(query));
       return matchesCat && matchesStatus && matchesQuery;
     }).toList();
   }
 
+  /// Merges tools that have identical details (name, status, condition,
+  /// borrower, checkout time) into a single entry. The merged entry keeps the
+  /// underlying records in `items` and exposes their count as `quantity`.
+  List<Map<String, dynamic>> _groupTools(List<Map<String, dynamic>> tools) {
+    final Map<String, Map<String, dynamic>> groups = {};
+    for (final t in tools) {
+      final key = [
+        t['name'].toString().trim().toLowerCase(),
+        t['status'],
+        t['condition'].toString().trim().toLowerCase(),
+        t['borrower'] ?? '',
+        t['checkoutTime'] ?? '',
+        t['isOverdue'] == true,
+      ].join('|');
+      final group = groups.putIfAbsent(
+        key,
+        () => <String, dynamic>{
+          ...t,
+          'groupKey': key,
+          'items': <Map<String, dynamic>>[],
+        },
+      );
+      final items = group['items'] as List<Map<String, dynamic>>;
+      items.add(t);
+      group['quantity'] = items.length;
+    }
+    return groups.values.toList();
+  }
+
+  List<Map<String, dynamic>> get _displayTools => _groupTools(_filteredTools);
+
+  Widget _buildQtyStepper({
+    required int value,
+    required int max,
+    required ValueChanged<int> onChanged,
+  }) {
+    final canDecrease = value > 1;
+    final canIncrease = value < max;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        InkWell(
+          onTap: canDecrease ? () => onChanged(value - 1) : null,
+          child: Icon(Icons.remove_circle_outline,
+              size: 22, color: canDecrease ? Colors.black87 : Colors.grey.shade400),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          child: Text('$value',
+              style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.bold)),
+        ),
+        InkWell(
+          onTap: canIncrease ? () => onChanged(value + 1) : null,
+          child: Icon(Icons.add_circle_outline,
+              size: 22, color: canIncrease ? Colors.black87 : Colors.grey.shade400),
+        ),
+      ],
+    );
+  }
+
   void _checkInTool(Map<String, dynamic> tool) {
     String selectedCondition = 'Good';
+    final int maxQty = (tool['items'] as List?)?.length ?? 1;
+    int returnQty = maxQty;
 
     showDialog(
       context: context,
@@ -82,8 +330,23 @@ class _ToolsMonitoringScreenState extends State<ToolsMonitoringScreen> {
                 Text('Returning: ${tool['name']}',
                     style: GoogleFonts.inter(fontSize: screenWidth * 0.032, fontWeight: FontWeight.w600)),
                 const SizedBox(height: 2),
-                Text('Borrower: ${tool['borrower']} (${tool['role'] ?? "Worker"})',
+                Text('Borrower: ${tool['borrower'] ?? "Unknown"}',
                     style: GoogleFonts.inter(fontSize: screenWidth * 0.028, color: Colors.grey.shade600)),
+                if (maxQty > 1) ...[
+                  const SizedBox(height: 12),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('Quantity to return (of $maxQty):',
+                          style: GoogleFonts.inter(fontSize: screenWidth * 0.03, fontWeight: FontWeight.bold)),
+                      _buildQtyStepper(
+                        value: returnQty,
+                        max: maxQty,
+                        onChanged: (v) => setDialogState(() => returnQty = v),
+                      ),
+                    ],
+                  ),
+                ],
                 const SizedBox(height: 12),
                 Text('Equipment Condition:',
                     style: GoogleFonts.inter(fontSize: screenWidth * 0.03, fontWeight: FontWeight.bold)),
@@ -105,8 +368,8 @@ class _ToolsMonitoringScreenState extends State<ToolsMonitoringScreen> {
                       child: Text('Broken / Damaged', style: GoogleFonts.inter(fontSize: screenWidth * 0.03)),
                     ),
                     DropdownMenuItem(
-                      value: 'Needs Maintenance',
-                      child: Text('Needs Maintenance', style: GoogleFonts.inter(fontSize: screenWidth * 0.03)),
+                      value: 'Needs Repair',
+                      child: Text('Needs Repair', style: GoogleFonts.inter(fontSize: screenWidth * 0.03)),
                     ),
                   ],
                   onChanged: (val) => setDialogState(() => selectedCondition = val ?? 'Good'),
@@ -127,24 +390,35 @@ class _ToolsMonitoringScreenState extends State<ToolsMonitoringScreen> {
                 padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
               ),
-              onPressed: () {
-                setState(() {
-                  if (selectedCondition == 'Good') {
-                    tool['status'] = 'In Storage';
-                    tool['condition'] = 'Good';
-                  } else {
-                    tool['status'] = 'Under Repair';
-                    tool['condition'] = selectedCondition;
-                  }
-                  tool['borrower'] = null;
-                  tool['role'] = null;
-                  tool['checkoutTime'] = null;
-                  tool['isOverdue'] = false;
-                });
+              onPressed: () async {
+                final good = selectedCondition == 'Good';
+                final borrower = (tool['borrower'] ?? 'Unknown').toString();
+                final items = ((tool['items'] as List?) ?? [tool])
+                    .cast<Map<String, dynamic>>()
+                    .take(returnQty)
+                    .toList();
                 Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
+                int returned = 0;
+                for (final item in items) {
+                  final ok = await _saveAsset(
+                    item,
+                    status: good ? 'Available' : 'Needs Repair',
+                    condition: selectedCondition,
+                    assignedTo: null,
+                    borrowAt: null,
+                  );
+                  if (!ok) continue;
+                  returned++;
+                  await _logHistory(item, borrower, 'Returned', selectedCondition);
+                }
+                await _fetchTools();
+                if (!mounted || returned == 0) return;
+                ScaffoldMessenger.of(this.context).showSnackBar(
                   SnackBar(
-                    content: Text('${tool['code']} successfully received and stored.',
+                    content: Text(
+                        returned > 1
+                            ? '$returned ${tool['name']} successfully received and stored.'
+                            : '${tool['name']} successfully received and stored.',
                         style: GoogleFonts.inter(fontSize: 12)),
                     backgroundColor: Colors.black87,
                   ),
@@ -161,11 +435,11 @@ class _ToolsMonitoringScreenState extends State<ToolsMonitoringScreen> {
   }
 
   void _showCheckOutDialog() {
-    final available = _toolsData.where((t) => t['status'] == 'In Storage').toList();
-    String? selectedCode = available.isNotEmpty ? available.first['code'] as String? : null;
+    final available = _groupTools(
+        _toolsData.where((t) => t['status'] == 'In Storage').toList());
+    final Map<String, int> selectedQty = {};
 
-    final workerCtrl = TextEditingController();
-    final roleCtrl = TextEditingController();
+    TextEditingController? workerCtrl;
 
     showDialog(
       context: context,
@@ -207,58 +481,149 @@ class _ToolsMonitoringScreenState extends State<ToolsMonitoringScreen> {
                                   fontSize: screenWidth * 0.03, color: Colors.grey.shade600)),
                         )
                       else ...[
-                        Text('Select Tool',
-                            style: GoogleFonts.inter(
-                                fontSize: screenWidth * 0.03, fontWeight: FontWeight.w600)),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text('Select Tools (${selectedQty.length} selected)',
+                                style: GoogleFonts.inter(
+                                    fontSize: screenWidth * 0.03, fontWeight: FontWeight.w600)),
+                            GestureDetector(
+                              onTap: () => setDialogState(() {
+                                if (selectedQty.length == available.length) {
+                                  selectedQty.clear();
+                                } else {
+                                  for (final g in available) {
+                                    selectedQty[g['groupKey'] as String] = g['quantity'] as int;
+                                  }
+                                }
+                              }),
+                              child: Text(
+                                selectedQty.length == available.length ? 'Clear all' : 'Select all',
+                                style: GoogleFonts.inter(
+                                    fontSize: screenWidth * 0.028,
+                                    fontWeight: FontWeight.w600,
+                                    color: const Color(0xFFA63228)),
+                              ),
+                            ),
+                          ],
+                        ),
                         const SizedBox(height: 4),
-                        DropdownButtonFormField<String>(
-                          initialValue: selectedCode,
-                          isExpanded: true,
-                          decoration: InputDecoration(
-                            isDense: true,
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                        Container(
+                          constraints: const BoxConstraints(maxHeight: 220),
+                          decoration: BoxDecoration(
+                            border: Border.all(color: Colors.grey.shade300),
+                            borderRadius: BorderRadius.circular(8),
                           ),
-                          items: available.map((t) {
-                            return DropdownMenuItem<String>(
-                              value: t['code'] as String,
-                              child: Text('${t['code']} - ${t['name']}',
-                                  style: GoogleFonts.inter(fontSize: screenWidth * 0.03),
-                                  overflow: TextOverflow.ellipsis),
-                            );
-                          }).toList(),
-                          onChanged: (val) => setDialogState(() => selectedCode = val),
+                          child: ListView.builder(
+                            shrinkWrap: true,
+                            padding: EdgeInsets.zero,
+                            itemCount: available.length,
+                            itemBuilder: (context, index) {
+                              final g = available[index];
+                              final key = g['groupKey'] as String;
+                              final groupQty = g['quantity'] as int;
+                              final isSelected = selectedQty.containsKey(key);
+                              return CheckboxListTile(
+                                dense: true,
+                                controlAffinity: ListTileControlAffinity.leading,
+                                activeColor: const Color(0xFFA63228),
+                                contentPadding: const EdgeInsets.symmetric(horizontal: 6),
+                                value: isSelected,
+                                onChanged: (checked) => setDialogState(() {
+                                  if (checked == true) {
+                                    selectedQty[key] = 1;
+                                  } else {
+                                    selectedQty.remove(key);
+                                  }
+                                }),
+                                secondary: isSelected && groupQty > 1
+                                    ? _buildQtyStepper(
+                                        value: selectedQty[key]!,
+                                        max: groupQty,
+                                        onChanged: (v) => setDialogState(() => selectedQty[key] = v),
+                                      )
+                                    : null,
+                                title: Text('${g['name']}',
+                                    style: GoogleFonts.inter(
+                                        fontSize: screenWidth * 0.03, fontWeight: FontWeight.w600)),
+                                subtitle: Text(
+                                    'Qty: $groupQty • Cond: ${g['condition']}',
+                                    style: GoogleFonts.inter(
+                                        fontSize: screenWidth * 0.026,
+                                        color: Colors.grey.shade600)),
+                              );
+                            },
+                          ),
                         ),
                         const SizedBox(height: 10),
                         Text('Borrower Worker Name',
                             style: GoogleFonts.inter(
                                 fontSize: screenWidth * 0.03, fontWeight: FontWeight.w600)),
                         const SizedBox(height: 4),
-                        TextField(
-                          controller: workerCtrl,
-                          style: GoogleFonts.inter(fontSize: screenWidth * 0.032),
-                          decoration: InputDecoration(
-                            isDense: true,
-                            hintText: 'e.g., Juan Dela Cruz',
-                            hintStyle: GoogleFonts.inter(fontSize: screenWidth * 0.03),
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                          ),
-                        ),
-                        const SizedBox(height: 10),
-                        Text('Role / Trade',
-                            style: GoogleFonts.inter(
-                                fontSize: screenWidth * 0.03, fontWeight: FontWeight.w600)),
-                        const SizedBox(height: 4),
-                        TextField(
-                          controller: roleCtrl,
-                          style: GoogleFonts.inter(fontSize: screenWidth * 0.032),
-                          decoration: InputDecoration(
-                            isDense: true,
-                            hintText: 'e.g., Mason / Laborer',
-                            hintStyle: GoogleFonts.inter(fontSize: screenWidth * 0.03),
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                        LayoutBuilder(
+                          builder: (context, constraints) => Autocomplete<Map<String, dynamic>>(
+                            optionsBuilder: (TextEditingValue value) {
+                              final q = value.text.trim().toLowerCase();
+                              if (q.isEmpty) {
+                                return const Iterable<Map<String, dynamic>>.empty();
+                              }
+                              return _workers.where(
+                                  (w) => _workerName(w).toLowerCase().contains(q));
+                            },
+                            displayStringForOption: _workerName,
+                            fieldViewBuilder: (context, controller, focusNode, onFieldSubmitted) {
+                              workerCtrl = controller;
+                              return TextField(
+                                controller: controller,
+                                focusNode: focusNode,
+                                style: GoogleFonts.inter(fontSize: screenWidth * 0.032),
+                                decoration: InputDecoration(
+                                  isDense: true,
+                                  hintText: 'e.g., Juan Dela Cruz',
+                                  hintStyle: GoogleFonts.inter(fontSize: screenWidth * 0.03),
+                                  contentPadding:
+                                      const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                                ),
+                              );
+                            },
+                            optionsViewBuilder: (context, onSelected, options) {
+                              return Align(
+                                alignment: Alignment.topLeft,
+                                child: Material(
+                                  elevation: 4,
+                                  borderRadius: BorderRadius.circular(8),
+                                  color: Colors.white,
+                                  child: ConstrainedBox(
+                                    constraints: BoxConstraints(
+                                        maxHeight: 180, maxWidth: constraints.maxWidth),
+                                    child: ListView.builder(
+                                      padding: EdgeInsets.zero,
+                                      shrinkWrap: true,
+                                      itemCount: options.length,
+                                      itemBuilder: (context, index) {
+                                        final option = options.elementAt(index);
+                                        final role = (option['role'] ?? option['position'] ?? '').toString();
+                                        return ListTile(
+                                          dense: true,
+                                          title: Text(_workerName(option),
+                                              style: GoogleFonts.inter(
+                                                  fontSize: screenWidth * 0.031,
+                                                  color: Colors.black87)),
+                                          subtitle: role.isEmpty
+                                              ? null
+                                              : Text(role,
+                                                  style: GoogleFonts.inter(
+                                                      fontSize: screenWidth * 0.026,
+                                                      color: Colors.grey.shade600)),
+                                          onTap: () => onSelected(option),
+                                        );
+                                      },
+                                    ),
+                                  ),
+                                ),
+                              );
+                            },
                           ),
                         ),
                         const SizedBox(height: 16),
@@ -271,25 +636,43 @@ class _ToolsMonitoringScreenState extends State<ToolsMonitoringScreen> {
                               elevation: 0,
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                             ),
-                            onPressed: () {
-                              if (selectedCode == null || workerCtrl.text.trim().isEmpty) {
+                            onPressed: () async {
+                              final borrowerName = workerCtrl?.text.trim() ?? '';
+                              if (selectedQty.isEmpty || borrowerName.isEmpty) {
                                 ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(content: Text('Please fill out all borrower fields.')),
+                                  const SnackBar(
+                                      content: Text('Please select at least one tool and enter the borrower name.')),
                                 );
                                 return;
                               }
-                              setState(() {
-                                final target = _toolsData.firstWhere((t) => t['code'] == selectedCode);
-                                target['status'] = 'Checked Out';
-                                target['borrower'] = workerCtrl.text.trim();
-                                target['role'] =
-                                roleCtrl.text.trim().isEmpty ? 'Worker' : roleCtrl.text.trim();
-                                target['checkoutTime'] = 'Today 08:00 AM';
-                                target['isOverdue'] = false;
-                              });
+                              final targets = <Map<String, dynamic>>[];
+                              for (final g in available) {
+                                final qty = selectedQty[g['groupKey']];
+                                if (qty == null) continue;
+                                targets.addAll((g['items'] as List<Map<String, dynamic>>).take(qty));
+                              }
                               Navigator.pop(context);
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('Tool released successfully.')),
+                              int released = 0;
+                              for (final target in targets) {
+                                final condition = (target['condition'] ?? 'Good').toString();
+                                final ok = await _saveAsset(
+                                  target,
+                                  status: 'In Use',
+                                  condition: condition,
+                                  assignedTo: borrowerName,
+                                  borrowAt: DateTime.now().toUtc().toIso8601String(),
+                                );
+                                if (!ok) continue;
+                                released++;
+                                await _logHistory(target, borrowerName, 'Borrowed', condition);
+                              }
+                              await _fetchTools();
+                              if (!mounted || released == 0) return;
+                              ScaffoldMessenger.of(this.context).showSnackBar(
+                                SnackBar(
+                                    content: Text(released == 1
+                                        ? 'Tool released successfully.'
+                                        : '$released tools released to $borrowerName.')),
                               );
                             },
                             child: Text('Confirm Check-Out',
@@ -311,267 +694,7 @@ class _ToolsMonitoringScreenState extends State<ToolsMonitoringScreen> {
     );
   }
 
-  void _showLogoutDialog() {
-    showDialog(
-      context: context,
-      builder: (context) {
-        final screenWidth = MediaQuery.of(context).size.width;
-        return AlertDialog(
-          backgroundColor: Colors.white,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          title: Text(
-            'Confirm Log Out',
-            style: GoogleFonts.inter(
-                fontSize: screenWidth * 0.04, fontWeight: FontWeight.bold, color: Colors.black87),
-          ),
-          content: Text(
-            'Are you sure you want to end your custodian session and return to the login screen?',
-            style: GoogleFonts.inter(fontSize: screenWidth * 0.03, color: Colors.grey.shade700),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: Text(
-                'Cancel',
-                style: GoogleFonts.inter(fontSize: screenWidth * 0.03, color: Colors.grey.shade600),
-              ),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFFA63228),
-                elevation: 0,
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-              ),
-              onPressed: () {
-                Navigator.pop(context);
-                ApiService.currentUserRole = null;
-                ApiService.clearToken();
-                Navigator.pushReplacementNamed(context, '/login');
-              },
-              child: Text(
-                'Log Out',
-                style: GoogleFonts.inter(
-                    fontSize: screenWidth * 0.03, fontWeight: FontWeight.bold, color: Colors.white),
-              ),
-            ),
-          ],
-        );
-      },
-    );
-  }
 
-  void _showEditProfileDialog() {
-    final nameCtrl = TextEditingController(text: _userProfile['fullName']);
-    final phoneCtrl = TextEditingController(text: _userProfile['phone']);
-    final roleCtrl = TextEditingController(text: _userProfile['role']);
-    final siteCtrl = TextEditingController(text: _userProfile['site']);
-    final emgCtrl = TextEditingController(text: _userProfile['emergencyContact']);
-
-    showDialog(
-      context: context,
-      builder: (context) {
-        final screenWidth = MediaQuery.of(context).size.width;
-        return AlertDialog(
-          backgroundColor: Colors.white,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          title: Text('Edit Registered Info',
-              style: GoogleFonts.inter(fontSize: screenWidth * 0.04, fontWeight: FontWeight.bold)),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _buildEditField('Full Name', nameCtrl, screenWidth),
-                _buildEditField('Phone Number', phoneCtrl, screenWidth),
-                _buildEditField('Role / Designation', roleCtrl, screenWidth),
-                _buildEditField('Assigned Site', siteCtrl, screenWidth),
-                _buildEditField('Emergency Contact', emgCtrl, screenWidth),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: Text('Cancel',
-                  style: GoogleFonts.inter(color: Colors.grey.shade600, fontSize: screenWidth * 0.03)),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFFA63228),
-                elevation: 0,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-              ),
-              onPressed: () {
-                setState(() {
-                  _userProfile['fullName'] = nameCtrl.text.trim();
-                  _userProfile['phone'] = phoneCtrl.text.trim();
-                  _userProfile['role'] = roleCtrl.text.trim();
-                  _userProfile['site'] = siteCtrl.text.trim();
-                  _userProfile['emergencyContact'] = emgCtrl.text.trim();
-                });
-                Navigator.pop(context);
-              },
-              child: Text('Save Details',
-                  style: GoogleFonts.inter(
-                      color: Colors.white, fontWeight: FontWeight.bold, fontSize: screenWidth * 0.03)),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  Widget _buildEditField(String label, TextEditingController controller, double screenWidth) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(label,
-              style: GoogleFonts.inter(fontSize: screenWidth * 0.028, fontWeight: FontWeight.w600)),
-          const SizedBox(height: 3),
-          TextField(
-            controller: controller,
-            style: GoogleFonts.inter(fontSize: screenWidth * 0.032),
-            decoration: InputDecoration(
-              isDense: true,
-              contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildProfileTab(double screenWidth, double screenHeight) {
-    return SingleChildScrollView(
-      padding: EdgeInsets.symmetric(
-          horizontal: screenWidth * 0.04, vertical: screenHeight * 0.015),
-      child: Column(
-        children: [
-          Container(
-            width: double.infinity,
-            padding: EdgeInsets.all(screenWidth * 0.04),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: Colors.grey.shade200),
-            ),
-            child: Column(
-              children: [
-                CircleAvatar(
-                  radius: screenWidth * 0.08,
-                  backgroundColor: const Color(0xFFA63228).withValues(alpha: 0.1),
-                  child: Icon(Icons.person, color: const Color(0xFFA63228), size: screenWidth * 0.09),
-                ),
-                SizedBox(height: screenHeight * 0.01),
-                Text(
-                  _userProfile['fullName']!,
-                  textAlign: TextAlign.center,
-                  style: GoogleFonts.inter(
-                      fontSize: screenWidth * 0.04, fontWeight: FontWeight.bold, color: Colors.black87),
-                ),
-                Text(
-                  _userProfile['role']!,
-                  textAlign: TextAlign.center,
-                  style: GoogleFonts.inter(fontSize: screenWidth * 0.028, color: Colors.grey.shade600),
-                ),
-                SizedBox(height: screenHeight * 0.008),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: Colors.green.shade50,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.green.shade200),
-                  ),
-                  child: Text(
-                    _userProfile['status']!,
-                    style: GoogleFonts.inter(
-                        fontSize: screenWidth * 0.026, fontWeight: FontWeight.bold, color: Colors.green.shade700),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          SizedBox(height: screenHeight * 0.015),
-          Container(
-            width: double.infinity,
-            padding: EdgeInsets.all(screenWidth * 0.04),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: Colors.grey.shade200),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text('Registered Profile Details',
-                        style: GoogleFonts.inter(
-                            fontSize: screenWidth * 0.032, fontWeight: FontWeight.bold, color: Colors.black87)),
-                    InkWell(
-                      onTap: _showEditProfileDialog,
-                      child: Text('Edit',
-                          style: GoogleFonts.inter(
-                              fontSize: screenWidth * 0.03,
-                              fontWeight: FontWeight.bold,
-                              color: const Color(0xFFA63228))),
-                    ),
-                  ],
-                ),
-                SizedBox(height: screenHeight * 0.01),
-                _buildInfoRow('Account ID', _userProfile['idNumber']!, screenWidth),
-                _buildInfoRow('Mobile Number', _userProfile['phone']!, screenWidth),
-                _buildInfoRow('Assigned Site', _userProfile['site']!, screenWidth),
-                _buildInfoRow('Emergency Contact', _userProfile['emergencyContact']!, screenWidth),
-              ],
-            ),
-          ),
-          SizedBox(height: screenHeight * 0.02),
-          SizedBox(
-            width: double.infinity,
-            height: 44,
-            child: OutlinedButton.icon(
-              style: OutlinedButton.styleFrom(
-                side: const BorderSide(color: Color(0xFFA63228)),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              ),
-              icon: const Icon(Icons.logout, color: Color(0xFFA63228), size: 18),
-              label: Text('Log Out',
-                  style: GoogleFonts.inter(
-                      color: const Color(0xFFA63228), fontWeight: FontWeight.bold, fontSize: screenWidth * 0.032)),
-              onPressed: _showLogoutDialog,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildInfoRow(String label, String value, double screenWidth) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4.0),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(label, style: GoogleFonts.inter(fontSize: screenWidth * 0.028, color: Colors.grey.shade600)),
-          const SizedBox(width: 8),
-          Flexible(
-            child: Text(
-              value,
-              textAlign: TextAlign.right,
-              style: GoogleFonts.inter(
-                  fontSize: screenWidth * 0.028, fontWeight: FontWeight.w600, color: Colors.black87),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -585,16 +708,23 @@ class _ToolsMonitoringScreenState extends State<ToolsMonitoringScreen> {
 
     return Scaffold(
       backgroundColor: const Color(0xFFF3EFEA),
-      appBar: AppBar(
-        backgroundColor: Colors.white,
-        elevation: 0,
-        centerTitle: true,
-        title: Image.asset('assets/logo.png', height: screenHeight * 0.032 < 24 ? 24 : screenHeight * 0.032),
-      ),
+      appBar: widget.hideAppBar
+          ? null
+          : AppBar(
+              backgroundColor: Colors.white,
+              elevation: 0,
+              centerTitle: true,
+              title: Image.asset('assets/logo.png', height: screenHeight * 0.032 < 24 ? 24 : screenHeight * 0.032),
+              actions: [
+                IconButton(
+                  tooltip: 'Refresh',
+                  icon: const Icon(Icons.refresh, color: Colors.black87),
+                  onPressed: _isLoading ? null : _fetchTools,
+                ),
+              ],
+            ),
       body: SafeArea(
-        child: _currentNavIndex == 2
-            ? _buildProfileTab(screenWidth, screenHeight)
-            : Column(
+        child: Column(
           children: [
             // 1. TOP SUMMARY METRICS (Responsive Box with FittedBox)
             Padding(
@@ -625,7 +755,7 @@ class _ToolsMonitoringScreenState extends State<ToolsMonitoringScreen> {
                   onChanged: (_) => setState(() {}),
                   style: GoogleFonts.inter(fontSize: screenWidth * 0.03, color: Colors.black87),
                   decoration: InputDecoration(
-                    hintText: 'Search tool, code, or worker...',
+                    hintText: 'Search tool or worker...',
                     hintStyle: GoogleFonts.inter(color: Colors.grey.shade400, fontSize: screenWidth * 0.03),
                     prefixIcon: Icon(Icons.search, size: screenWidth * 0.045, color: Colors.black54),
                     contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 10),
@@ -658,16 +788,50 @@ class _ToolsMonitoringScreenState extends State<ToolsMonitoringScreen> {
                     _buildStatusChip('Checked Out', screenWidth),
                     _buildStatusChip('In Storage', screenWidth),
                     _buildStatusChip('Overdue', screenWidth),
-                    _buildStatusChip('Under Repair', screenWidth),
+                    _buildStatusChip('Needs Repair', screenWidth),
                   ],
                 ),
               ),
 
             // 4. LIST VIEW WITH EMPTY STATE
             Expanded(
-              child: _filteredTools.isEmpty
-                  ? Center(
-                child: Column(
+              child: _isLoading
+                  ? const Center(
+                      child: CircularProgressIndicator(color: Color(0xFFA63228)),
+                    )
+                  : _loadError != null
+                      ? Center(
+                          child: Padding(
+                            padding: const EdgeInsets.all(24),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.cloud_off_rounded,
+                                    size: screenWidth * 0.1, color: Colors.grey.shade400),
+                                const SizedBox(height: 8),
+                                Text(_loadError!,
+                                    textAlign: TextAlign.center,
+                                    style: GoogleFonts.inter(
+                                        fontSize: screenWidth * 0.028, color: Colors.grey.shade600)),
+                                const SizedBox(height: 12),
+                                OutlinedButton.icon(
+                                  onPressed: _fetchTools,
+                                  icon: const Icon(Icons.refresh, size: 16),
+                                  label: const Text('Retry'),
+                                ),
+                              ],
+                            ),
+                          ),
+                        )
+                  : RefreshIndicator(
+                      color: const Color(0xFFA63228),
+                      onRefresh: _fetchTools,
+                      child: _filteredTools.isEmpty
+                  ? ListView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                children: [
+                  SizedBox(height: screenHeight * 0.15),
+                  Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(
@@ -681,7 +845,9 @@ class _ToolsMonitoringScreenState extends State<ToolsMonitoringScreen> {
                     Text(
                       _currentNavIndex == 1
                           ? 'All tools are currently in storage.\nNo active loans.'
-                          : 'No tools match your search or filter.',
+                          : _toolsData.isEmpty
+                              ? 'No tools saved in the database yet.'
+                              : 'No tools match your search or filter.',
                       textAlign: TextAlign.center,
                       style: GoogleFonts.inter(
                         fontSize: screenWidth * 0.03,
@@ -691,15 +857,16 @@ class _ToolsMonitoringScreenState extends State<ToolsMonitoringScreen> {
                     ),
                   ],
                 ),
+                ],
               )
                   : ListView.separated(
                 padding: EdgeInsets.fromLTRB(
                     screenWidth * 0.03, 6, screenWidth * 0.03, 80),
-                physics: const BouncingScrollPhysics(),
-                itemCount: _filteredTools.length,
+                physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
+                itemCount: _displayTools.length,
                 separatorBuilder: (_, __) => const SizedBox(height: 8),
                 itemBuilder: (context, index) {
-                  final tool = _filteredTools[index];
+                  final tool = _displayTools[index];
                   final isCheckedOut = tool['status'] == 'Checked Out';
                   final isOverdue = tool['isOverdue'] == true;
 
@@ -740,7 +907,7 @@ class _ToolsMonitoringScreenState extends State<ToolsMonitoringScreen> {
                                           color: Colors.black87)),
                                   const SizedBox(height: 2),
                                   Text(
-                                    '${tool['code']} • ${tool['category']} • Cond: ${tool['condition']}',
+                                    'Qty: ${tool['quantity'] ?? 1} • Status: ${tool['status']} • Cond: ${tool['condition']}',
                                     style: GoogleFonts.inter(
                                         fontSize: screenWidth * 0.026,
                                         color: Colors.grey.shade600),
@@ -753,19 +920,27 @@ class _ToolsMonitoringScreenState extends State<ToolsMonitoringScreen> {
                               decoration: BoxDecoration(
                                 color: isOverdue
                                     ? const Color(0xFFA63228).withValues(alpha: 0.08)
-                                    : Colors.grey.shade100,
+                                    : tool['status'] == 'Needs Repair'
+                                        ? const Color(0xFFD97706).withValues(alpha: 0.1)
+                                        : Colors.grey.shade100,
                                 borderRadius: BorderRadius.circular(6),
                                 border: Border.all(
                                     color: isOverdue
                                         ? const Color(0xFFA63228).withValues(alpha: 0.3)
-                                        : Colors.grey.shade300),
+                                        : tool['status'] == 'Needs Repair'
+                                            ? const Color(0xFFD97706).withValues(alpha: 0.4)
+                                            : Colors.grey.shade300),
                               ),
                               child: Text(
                                 isOverdue ? 'Overdue Return' : tool['status'],
                                 style: GoogleFonts.inter(
                                   fontSize: screenWidth * 0.024,
                                   fontWeight: FontWeight.bold,
-                                  color: isOverdue ? const Color(0xFFA63228) : Colors.black87,
+                                  color: isOverdue
+                                      ? const Color(0xFFA63228)
+                                      : tool['status'] == 'Needs Repair'
+                                          ? const Color(0xFFD97706)
+                                          : Colors.black87,
                                 ),
                               ),
                             ),
@@ -781,7 +956,7 @@ class _ToolsMonitoringScreenState extends State<ToolsMonitoringScreen> {
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(
-                                      'Holder: ${tool['borrower']} (${tool['role']})',
+                                      'Holder: ${tool['borrower'] ?? 'Unknown'}',
                                       style: GoogleFonts.inter(
                                           fontSize: screenWidth * 0.028,
                                           fontWeight: FontWeight.w600,
@@ -822,10 +997,11 @@ class _ToolsMonitoringScreenState extends State<ToolsMonitoringScreen> {
                 },
               ),
             ),
+            ),
           ],
         ),
       ),
-      floatingActionButton: _currentNavIndex != 2
+      floatingActionButton: (_currentNavIndex != 2 && ApiService.currentUserRole?.toLowerCase() != 'admin')
           ? FloatingActionButton(
         backgroundColor: const Color(0xFFA63228),
         elevation: 2,
@@ -851,11 +1027,6 @@ class _ToolsMonitoringScreenState extends State<ToolsMonitoringScreen> {
             icon: Icon(Icons.assignment_late_outlined, size: 20),
             activeIcon: Icon(Icons.assignment_late, size: 20),
             label: 'Borrowed',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.person_outline, size: 20),
-            activeIcon: Icon(Icons.person, size: 20),
-            label: 'Profile',
           ),
         ],
       ),

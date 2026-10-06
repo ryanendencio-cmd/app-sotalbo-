@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../services/admin_service.dart';
 import '../services/api_service.dart';
+import 'tools_monitoring_screen.dart';
 
 class AdminDashboardScreen extends StatefulWidget {
   const AdminDashboardScreen({super.key});
@@ -44,13 +45,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   List<double> _monthlyExpenses = List<double>.filled(12, 0.0);
 
   // Admin profile data
-  int _adminId = 1; // Default admin ID
+  final int _adminId = 1; // Default admin ID
   String _adminFirstName = 'Mark';
-  String _adminLastName = 'Admin';
-  String _adminEmail = 'admin@scon-buildtrack.ph';
-  String _adminPhone = '09123456789';
-  String _adminTerminalId = 'Terminal #04';
-  String _adminStatus = 'Active Duty';
 
   @override
   void initState() {
@@ -191,52 +187,16 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     if (profile['id'] != null) {
       setState(() {
         _adminFirstName = profile['fullName']?.split(' ').first ?? 'Mark';
-        _adminLastName = profile['fullName']?.split(' ').last ?? 'Admin';
-        _adminEmail = profile['email'] ?? 'admin@scon-buildtrack.ph';
-        _adminPhone = profile['phone'] ?? '09123456789';
-        _adminTerminalId = profile['terminalId'] ?? 'Terminal #04';
         _activeProjectSite =
             profile['assignedProjectSite'] ??
             'S-CON Residential Phase 2 (Santa Cruz)';
         _pushNotifications = profile['pushNotificationsEnabled'] ?? true;
         _biometricLogin = profile['biometricLoginEnabled'] ?? false;
-        _adminStatus = profile['status'] ?? 'Active Duty';
       });
     }
   }
 
-  Future<void> _saveAdminProfile() async {
-    final result = await AdminService.saveAdminProfile(
-      adminId: _adminId,
-      firstName: _adminFirstName,
-      lastName: _adminLastName,
-      email: _adminEmail,
-      phone: _adminPhone,
-      assignedProjectSite: _activeProjectSite,
-      terminalId: _adminTerminalId,
-      pushNotificationsEnabled: _pushNotifications,
-      biometricLoginEnabled: _biometricLogin,
-      status: _adminStatus,
-    );
 
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            result['success'] == true
-                ? 'Admin profile saved successfully!'
-                : 'Failed to save profile: ${result['error']}',
-            style: GoogleFonts.inter(fontSize: 12),
-          ),
-          backgroundColor: result['success'] == true
-              ? Colors.green.shade700
-              : const Color(0xFFA63228),
-          behavior: SnackBarBehavior.floating,
-          margin: const EdgeInsets.all(8),
-        ),
-      );
-    }
-  }
 
   Future<void> _handleAccountApproval(int index, bool isApproved) async {
     final applicant = _pendingRegistrations[index];
@@ -307,9 +267,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   Future<void> _handleValeApproval(int index, bool isApproved) async {
     final vale = _pendingValeRequests[index];
     final statusStr = isApproved ? 'Approved' : 'Rejected';
-    final valeId = int.tryParse(vale['id']?.toString() ?? '') ?? 0;
+    final valeId = vale['id']?.toString();
 
-    if (valeId == 0) {
+    if (valeId == null || valeId.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -1264,7 +1224,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       case 0:
         return 'Admin Dashboard';
       case 1:
-        return 'Account Approvals';
+        return 'Tools Monitoring';
       case 2:
         return 'Cash Advance Approvals';
       case 3:
@@ -1325,7 +1285,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           index: _currentIndex,
           children: [
             _buildOverviewTab(screenWidth, screenHeight),
-            _buildAccountApprovalsTab(screenWidth, screenHeight),
+            const ToolsMonitoringScreen(hideAppBar: true),
             _buildValeApprovalsTab(screenWidth, screenHeight),
             _buildManpowerTab(screenWidth, screenHeight),
             _buildSettingsTab(screenWidth, screenHeight),
@@ -1338,12 +1298,13 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           setState(() {
             _currentIndex = index;
           });
-          if (index == 1) {
-            _loadPendingRegistrations();
+          if (index == 0) {
+            _loadDashboardData();
           } else if (index == 2) {
             _loadPendingValeRequests();
-          } else if (index == 0) {
-            _loadDashboardData();
+          } else if (index == 3) {
+            _loadWorkers();
+            _loadPendingRegistrations();
           }
         },
         selectedItemColor: const Color(0xFFA63228),
@@ -1364,18 +1325,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             activeIcon: Icon(Icons.grid_view_rounded),
             label: 'Overview',
           ),
-          BottomNavigationBarItem(
-            icon: Badge(
-              isLabelVisible: _pendingRegistrations.isNotEmpty,
-              label: Text('${_pendingRegistrations.length}'),
-              child: const Icon(Icons.how_to_reg_outlined),
-            ),
-            activeIcon: Badge(
-              isLabelVisible: _pendingRegistrations.isNotEmpty,
-              label: Text('${_pendingRegistrations.length}'),
-              child: const Icon(Icons.how_to_reg_rounded),
-            ),
-            label: 'Accounts',
+          const BottomNavigationBarItem(
+            icon: Icon(Icons.handyman_outlined),
+            activeIcon: Icon(Icons.handyman_rounded),
+            label: 'Tools',
           ),
           BottomNavigationBarItem(
             icon: Badge(
@@ -1390,9 +1343,17 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             ),
             label: 'Cash Adv',
           ),
-          const BottomNavigationBarItem(
-            icon: Icon(Icons.groups_outlined),
-            activeIcon: Icon(Icons.groups_rounded),
+          BottomNavigationBarItem(
+            icon: Badge(
+              isLabelVisible: _pendingRegistrations.isNotEmpty,
+              label: Text('${_pendingRegistrations.length}'),
+              child: const Icon(Icons.groups_outlined),
+            ),
+            activeIcon: Badge(
+              isLabelVisible: _pendingRegistrations.isNotEmpty,
+              label: Text('${_pendingRegistrations.length}'),
+              child: const Icon(Icons.groups_rounded),
+            ),
             label: 'Manpower',
           ),
           const BottomNavigationBarItem(
@@ -2543,8 +2504,65 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     );
   }
 
-  // TAB 3: MANPOWER DIRECTORY
+  // TAB 3: MANPOWER DIRECTORY (With All Manpower & Account Approvals Tabs)
   Widget _buildManpowerTab(double screenWidth, double screenHeight) {
+    return DefaultTabController(
+      length: 2,
+      child: Column(
+        children: [
+          Container(
+            color: Colors.white,
+            child: TabBar(
+              labelColor: const Color(0xFFA63228),
+              unselectedLabelColor: Colors.grey.shade600,
+              indicatorColor: const Color(0xFFA63228),
+              indicatorWeight: 2.5,
+              labelStyle: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 12),
+              tabs: [
+                const Tab(text: 'All Manpower'),
+                Tab(
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Text('Account Approvals'),
+                      if (_pendingRegistrations.isNotEmpty) ...[
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFA63228),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Text(
+                            '${_pendingRegistrations.length}',
+                            style: GoogleFonts.inter(
+                              color: Colors.white,
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: TabBarView(
+              children: [
+                _buildActiveWorkersList(screenWidth, screenHeight),
+                _buildAccountApprovalsTab(screenWidth, screenHeight),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildActiveWorkersList(double screenWidth, double screenHeight) {
     if (_isLoadingWorkers) {
       return const Center(
         child: CircularProgressIndicator(color: Color(0xFFA63228)),
@@ -2621,28 +2639,32 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               border: Border.all(color: Colors.grey.shade200),
             ),
             child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      name.isEmpty ? 'Worker #${w['id']}' : name,
-                      style: GoogleFonts.inter(
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        name.isEmpty ? 'Worker #${w['id']}' : name,
+                        style: GoogleFonts.inter(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                        ),
+                        overflow: TextOverflow.ellipsis,
                       ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      '$role ($position) • $phone',
-                      style: GoogleFonts.inter(
-                        fontSize: 10.5,
-                        color: Colors.grey.shade600,
+                      const SizedBox(height: 2),
+                      Text(
+                        '$role ($position) • $phone',
+                        style: GoogleFonts.inter(
+                          fontSize: 10.5,
+                          color: Colors.grey.shade600,
+                        ),
+                        overflow: TextOverflow.ellipsis,
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
+                const SizedBox(width: 8),
                 Container(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 6,

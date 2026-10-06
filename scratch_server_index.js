@@ -1024,10 +1024,11 @@ function startServer() {
   // ── BORROW HISTORY ──
   app.get('/api/borrow-history/:project_id', async (req, res) => {
     try {
-      const snapshot = await db.collection('borrow_history')
-        .where('project_id', '==', req.params.project_id)
-        .orderBy('created_at', 'desc')
-        .get()
+      let query = db.collection('borrow_history')
+      if (req.params.project_id && req.params.project_id.toUpperCase() !== 'ALL') {
+        query = query.where('project_id', '==', req.params.project_id)
+      }
+      const snapshot = await query.orderBy('created_at', 'desc').get()
       const results = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
       res.json(results)
     } catch (err) {
