@@ -56,8 +56,10 @@ class _ToolsMonitoringScreenState extends State<ToolsMonitoringScreen> {
   static const Duration _overdueAfter = Duration(hours: 24);
 
   String _uiStatus(String? backendStatus, String? condition) {
-    if (backendStatus == 'In Use' || backendStatus == 'Checked Out') {
-      return 'Checked Out';
+    if (backendStatus == 'In Use' ||
+        backendStatus == 'Checked Out' ||
+        backendStatus == 'Borrowed') {
+      return 'Borrowed';
     }
     final cond = (condition ?? '').toLowerCase();
     final isRepair = backendStatus == 'Maintenance' ||
@@ -127,7 +129,7 @@ class _ToolsMonitoringScreenState extends State<ToolsMonitoringScreen> {
           final status = _uiStatus(rawStatus, condition);
           final borrowAt = _parseDate(asset['borrow_at']);
           final borrower = asset['assigned_to']?.toString();
-          final isOut = status == 'Checked Out';
+          final isOut = status == 'Borrowed';
           final dynamic rawQty = asset['quantity'] ?? asset['qty'];
           final int quantity = rawQty != null ? (int.tryParse(rawQty.toString()) ?? 1) : 1;
           tools.add({
@@ -141,6 +143,7 @@ class _ToolsMonitoringScreenState extends State<ToolsMonitoringScreen> {
             'condition': condition,
             'borrower': isOut && borrower != null && borrower.isNotEmpty ? borrower : null,
             'checkoutTime': isOut ? _formatTime(borrowAt) : null,
+            'borrowTime': isOut ? _formatTime(borrowAt) : null,
             'isOverdue': isOut &&
                 borrowAt != null &&
                 DateTime.now().difference(borrowAt) > _overdueAfter,
@@ -214,7 +217,7 @@ class _ToolsMonitoringScreenState extends State<ToolsMonitoringScreen> {
 
   List<Map<String, dynamic>> get _filteredTools {
     return _toolsData.where((t) {
-      if (_currentNavIndex == 1 && t['status'] != 'Checked Out') {
+      if (_currentNavIndex == 1 && t['status'] != 'Borrowed') {
         return false;
       }
       final matchesCat = _selectedCategory == 'All' || t['category'] == _selectedCategory;
@@ -247,7 +250,7 @@ class _ToolsMonitoringScreenState extends State<ToolsMonitoringScreen> {
   }
 
   /// Merges tools that have identical details (name, status, condition,
-  /// borrower, checkout time) into a single entry. The merged entry keeps the
+  /// borrower, borrow time) into a single entry. The merged entry keeps the
   /// underlying records in `items` and exposes their count as `quantity`.
   List<Map<String, dynamic>> _groupTools(List<Map<String, dynamic>> tools) {
     final Map<String, Map<String, dynamic>> groups = {};
@@ -257,7 +260,7 @@ class _ToolsMonitoringScreenState extends State<ToolsMonitoringScreen> {
         t['status'],
         t['condition'].toString().trim().toLowerCase(),
         t['borrower'] ?? '',
-        t['checkoutTime'] ?? '',
+        t['borrowTime'] ?? t['checkoutTime'] ?? '',
         t['isOverdue'] == true,
       ].join('|');
       final group = groups.putIfAbsent(
@@ -306,7 +309,7 @@ class _ToolsMonitoringScreenState extends State<ToolsMonitoringScreen> {
     );
   }
 
-  void _checkInTool(Map<String, dynamic> tool) {
+  void _returnTool(Map<String, dynamic> tool) {
     String selectedCondition = 'Good';
     final int maxQty = (tool['items'] as List?)?.length ?? 1;
     int returnQty = maxQty;
@@ -319,7 +322,7 @@ class _ToolsMonitoringScreenState extends State<ToolsMonitoringScreen> {
           backgroundColor: Colors.white,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           title: Text(
-            'Check-In Equipment',
+            'Return Equipment',
             style: GoogleFonts.inter(fontSize: screenWidth * 0.04, fontWeight: FontWeight.bold),
           ),
           content: StatefulBuilder(
@@ -417,14 +420,14 @@ class _ToolsMonitoringScreenState extends State<ToolsMonitoringScreen> {
                   SnackBar(
                     content: Text(
                         returned > 1
-                            ? '$returned ${tool['name']} successfully received and stored.'
-                            : '${tool['name']} successfully received and stored.',
+                            ? '$returned ${tool['name']} successfully returned and stored.'
+                            : '${tool['name']} successfully returned and stored.',
                         style: GoogleFonts.inter(fontSize: 12)),
                     backgroundColor: Colors.black87,
                   ),
                 );
               },
-              child: Text('Confirm Check-In',
+              child: Text('Confirm Return',
                   style: GoogleFonts.inter(
                       color: Colors.white, fontWeight: FontWeight.bold, fontSize: screenWidth * 0.03)),
             ),
@@ -434,7 +437,7 @@ class _ToolsMonitoringScreenState extends State<ToolsMonitoringScreen> {
     );
   }
 
-  void _showCheckOutDialog() {
+  void _showBorrowDialog() {
     final available = _groupTools(
         _toolsData.where((t) => t['status'] == 'In Storage').toList());
     final Map<String, int> selectedQty = {};
@@ -461,7 +464,7 @@ class _ToolsMonitoringScreenState extends State<ToolsMonitoringScreen> {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Text('Check-Out Tool',
+                          Text('Borrow Tool',
                               style: GoogleFonts.inter(
                                   fontSize: screenWidth * 0.04, fontWeight: FontWeight.bold)),
                           IconButton(
@@ -671,11 +674,11 @@ class _ToolsMonitoringScreenState extends State<ToolsMonitoringScreen> {
                               ScaffoldMessenger.of(this.context).showSnackBar(
                                 SnackBar(
                                     content: Text(released == 1
-                                        ? 'Tool released successfully.'
-                                        : '$released tools released to $borrowerName.')),
+                                        ? 'Tool borrowed successfully.'
+                                        : '$released tools borrowed by $borrowerName.')),
                               );
                             },
-                            child: Text('Confirm Check-Out',
+                            child: Text('Confirm Borrow',
                                 style: GoogleFonts.inter(
                                     color: Colors.white,
                                     fontWeight: FontWeight.bold,
@@ -702,7 +705,7 @@ class _ToolsMonitoringScreenState extends State<ToolsMonitoringScreen> {
     final screenHeight = MediaQuery.of(context).size.height;
 
     final total = _toolsData.length;
-    final checkedOut = _toolsData.where((t) => t['status'] == 'Checked Out').length;
+    final borrowedCount = _toolsData.where((t) => t['status'] == 'Borrowed').length;
     final inStorage = _toolsData.where((t) => t['status'] == 'In Storage').length;
     final overdueCount = _toolsData.where((t) => t['isOverdue'] == true).length;
 
@@ -734,7 +737,7 @@ class _ToolsMonitoringScreenState extends State<ToolsMonitoringScreen> {
                 children: [
                   _buildMetricTile('Total', '$total', screenWidth, screenHeight),
                   SizedBox(width: screenWidth * 0.015),
-                  _buildMetricTile('Out', '$checkedOut', screenWidth, screenHeight),
+                  _buildMetricTile('Borrowed', '$borrowedCount', screenWidth, screenHeight),
                   SizedBox(width: screenWidth * 0.015),
                   _buildMetricTile('In Shed', '$inStorage', screenWidth, screenHeight),
                   SizedBox(width: screenWidth * 0.015),
@@ -785,7 +788,7 @@ class _ToolsMonitoringScreenState extends State<ToolsMonitoringScreen> {
                   padding: EdgeInsets.symmetric(horizontal: screenWidth * 0.03, vertical: 2),
                   children: [
                     _buildStatusChip('All', screenWidth),
-                    _buildStatusChip('Checked Out', screenWidth),
+                    _buildStatusChip('Borrowed', screenWidth),
                     _buildStatusChip('In Storage', screenWidth),
                     _buildStatusChip('Overdue', screenWidth),
                     _buildStatusChip('Needs Repair', screenWidth),
@@ -867,7 +870,7 @@ class _ToolsMonitoringScreenState extends State<ToolsMonitoringScreen> {
                 separatorBuilder: (_, __) => const SizedBox(height: 8),
                 itemBuilder: (context, index) {
                   final tool = _displayTools[index];
-                  final isCheckedOut = tool['status'] == 'Checked Out';
+                  final isBorrowed = tool['status'] == 'Borrowed';
                   final isOverdue = tool['isOverdue'] == true;
 
                   return Container(
@@ -946,7 +949,7 @@ class _ToolsMonitoringScreenState extends State<ToolsMonitoringScreen> {
                             ),
                           ],
                         ),
-                        if (isCheckedOut) ...[
+                        if (isBorrowed) ...[
                           const Divider(height: 14),
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -964,7 +967,7 @@ class _ToolsMonitoringScreenState extends State<ToolsMonitoringScreen> {
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
                                     ),
-                                    Text('Out: ${tool['checkoutTime']}',
+                                    Text('Borrowed: ${tool['borrowTime'] ?? tool['checkoutTime'] ?? '—'}',
                                         style: GoogleFonts.inter(
                                             fontSize: screenWidth * 0.024,
                                             color: Colors.grey.shade500)),
@@ -981,8 +984,8 @@ class _ToolsMonitoringScreenState extends State<ToolsMonitoringScreen> {
                                   shape: RoundedRectangleBorder(
                                       borderRadius: BorderRadius.circular(8)),
                                 ),
-                                onPressed: () => _checkInTool(tool),
-                                child: Text('Check In',
+                                onPressed: () => _returnTool(tool),
+                                child: Text('Return',
                                     style: GoogleFonts.inter(
                                         fontSize: screenWidth * 0.028,
                                         fontWeight: FontWeight.bold,
@@ -1005,7 +1008,7 @@ class _ToolsMonitoringScreenState extends State<ToolsMonitoringScreen> {
           ? FloatingActionButton(
         backgroundColor: const Color(0xFFA63228),
         elevation: 2,
-        onPressed: _showCheckOutDialog,
+        onPressed: _showBorrowDialog,
         child: const Icon(Icons.add, color: Colors.white, size: 22),
       )
           : null,

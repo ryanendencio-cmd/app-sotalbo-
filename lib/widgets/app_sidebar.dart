@@ -124,10 +124,11 @@ class AppSidebar extends StatelessWidget {
                 'Log out',
                 style: TextStyle(fontWeight: FontWeight.w700, color: _primaryColor),
               ),
-              onTap: () {
-                ApiService.currentUserRole = null;
-                ApiService.clearToken();
-                _goTo(context, '/login');
+              onTap: () async {
+                await ApiService.logout();
+                if (context.mounted) {
+                  _goTo(context, '/login');
+                }
               },
             ),
           ],

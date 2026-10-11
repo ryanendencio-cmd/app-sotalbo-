@@ -14,6 +14,7 @@ class _WorkerSalaryScreenState extends State<WorkerSalaryScreen>
   late TabController _tabController;
   bool _isLoading = false;
   List<Map<String, dynamic>> _cashAdvances = [];
+  List<Map<String, dynamic>> _payrollHistory = [];
 
   @override
   void initState() {
@@ -33,10 +34,14 @@ class _WorkerSalaryScreenState extends State<WorkerSalaryScreen>
     try {
       final userId = ApiService.currentUser?['id']?.toString();
       if (userId != null && userId.isNotEmpty) {
-        final data = await ApiService.getWorkerCashAdvances(userId);
+        final res = await Future.wait([
+          ApiService.getWorkerCashAdvances(userId),
+          ApiService.getWorkerPayroll(userId),
+        ]);
         if (mounted) {
           setState(() {
-            _cashAdvances = List<Map<String, dynamic>>.from(data);
+            _cashAdvances = List<Map<String, dynamic>>.from(res[0]);
+            _payrollHistory = List<Map<String, dynamic>>.from(res[1]);
           });
         }
       }
@@ -366,10 +371,28 @@ class _WorkerSalaryScreenState extends State<WorkerSalaryScreen>
                       controller: _tabController,
                       children: [
                         // --- TAB 1: PAYROLL HISTORY ---
-                        _buildEmpty(
-                          Icons.account_balance_wallet_outlined,
-                          'No salary payouts yet',
-                          'Your salary payout history will appear here once processed by the admin.',
+                        RefreshIndicator(
+                          color: const Color(0xFFA63228),
+                          onRefresh: _loadData,
+                          child: _payrollHistory.isEmpty
+                              ? _buildEmpty(
+                                  Icons.account_balance_wallet_outlined,
+                                  'No salary payouts yet',
+                                  'Your salary payout history will appear here once processed by the admin.',
+                                )
+                              : ListView.separated(
+                                  physics: const AlwaysScrollableScrollPhysics(
+                                      parent: BouncingScrollPhysics()),
+                                  padding: EdgeInsets.symmetric(
+                                      horizontal: hp, vertical: 12),
+                                  itemCount: _payrollHistory.length,
+                                  separatorBuilder: (_, __) =>
+                                      const SizedBox(height: 10),
+                                  itemBuilder: (ctx, i) {
+                                    final p = _payrollHistory[i];
+                                    return _buildPayrollCard(p);
+                                  },
+                                ),
                         ),
 
                         // --- TAB 2: CASH ADVANCE HISTORY ---
@@ -704,6 +727,173 @@ class _WorkerSalaryScreenState extends State<WorkerSalaryScreen>
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildPayrollCard(Map<String, dynamic> p) {
+    final status = p['status']?.toString() ?? 'Approved';
+    final isPaid = status == 'Paid';
+    final netPay = p['net_pay']?.toString() ?? '0';
+    final grossPay = p['gross_pay']?.toString() ?? '0';
+    final workedDays = p['worked_days']?.toString() ?? '0';
+    final totalHours = p['total_hours']?.toString() ?? '0';
+    final caDeductions = p['cash_advance_deductions'] ?? 0;
+    final lateDeductions = p['late_deductions'] ?? 0;
+    final cutoffStart = _formatDate(p['cutoff_start']?.toString());
+    final cutoffEnd = _formatDate(p['cutoff_end']?.toString());
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: isPaid ? const Color(0xFF2E7D32).withValues(alpha: 0.25) : Colors.grey.shade200,
+          width: isPaid ? 1.5 : 1.0,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.02),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    width: 32,
+                    height: 32,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFA63228).withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(Icons.account_balance_wallet_outlined,
+                        size: 16, color: Color(0xFFA63228)),
+                  ),
+                  const SizedBox(width: 8),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '$cutoffStart — $cutoffEnd',
+                        style: GoogleFonts.inter(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w800,
+                          color: Colors.black87,
+                        ),
+                      ),
+                      Text(
+                        p['project_name']?.toString() ?? 'Project Site',
+                        style: GoogleFonts.inter(
+                          fontSize: 10,
+                          color: Colors.grey.shade500,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: isPaid
+                      ? const Color(0xFFE8F5E9)
+                      : const Color(0xFFE3F2FD),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  isPaid ? 'PAID / RELEASED' : status.toUpperCase(),
+                  style: GoogleFonts.inter(
+                    fontSize: 9,
+                    fontWeight: FontWeight.w800,
+                    color: isPaid
+                        ? const Color(0xFF2E7D32)
+                        : const Color(0xFF1565C0),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF9F7F4),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Days & Hours Worked',
+                        style: GoogleFonts.inter(fontSize: 9.5, color: Colors.grey.shade600, fontWeight: FontWeight.w600)),
+                    Text('$workedDays days ($totalHours hrs)',
+                        style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.black87)),
+                  ],
+                ),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text('Gross Earnings',
+                        style: GoogleFonts.inter(fontSize: 9.5, color: Colors.grey.shade600, fontWeight: FontWeight.w600)),
+                    Text('₱$grossPay',
+                        style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.black87)),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          if ((num.tryParse(caDeductions.toString()) ?? 0) > 0 || (num.tryParse(lateDeductions.toString()) ?? 0) > 0) ...[
+            const SizedBox(height: 6),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Deductions (Late: ₱$lateDeductions • CA: ₱$caDeductions)',
+                  style: GoogleFonts.inter(fontSize: 9.5, color: Colors.red.shade700, fontWeight: FontWeight.w600),
+                ),
+                Text(
+                  '-₱${(num.tryParse(caDeductions.toString()) ?? 0) + (num.tryParse(lateDeductions.toString()) ?? 0)}',
+                  style: GoogleFonts.inter(fontSize: 10, color: Colors.red.shade700, fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
+          ],
+          const SizedBox(height: 8),
+          const Divider(height: 1, color: Color(0xFFEEEEEE)),
+          const SizedBox(height: 8),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'NET TAKE-HOME PAY',
+                style: GoogleFonts.inter(
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.w800,
+                  color: Colors.grey.shade700,
+                ),
+              ),
+              Text(
+                '₱$netPay',
+                style: GoogleFonts.inter(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w900,
+                  color: const Color(0xFFA63228),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 }

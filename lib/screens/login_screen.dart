@@ -2,6 +2,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -18,6 +19,26 @@ class _LoginScreenState extends State<LoginScreen> {
 
   bool _obscurePassword = true;
   bool _isLoading = false;
+  bool _rememberMe = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadRememberedCredentials();
+  }
+
+  Future<void> _loadRememberedCredentials() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final remembered = prefs.getString('remembered_username_or_phone');
+      if (remembered != null && remembered.isNotEmpty && mounted) {
+        setState(() {
+          _usernameController.text = remembered;
+          _rememberMe = true;
+        });
+      }
+    } catch (_) {}
+  }
 
   @override
   void dispose() {
@@ -80,9 +101,18 @@ class _LoginScreenState extends State<LoginScreen> {
         _passwordController.text,
       );
 
+      // Persist or remove remembered credentials
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        if (_rememberMe) {
+          await prefs.setString('remembered_username_or_phone', _usernameController.text.trim());
+        } else {
+          await prefs.remove('remembered_username_or_phone');
+        }
+      } catch (_) {}
+
       if (mounted) {
         final role = (response['role'] ?? response['user']?['role'] ?? '').toString();
-        final position = (response['position'] ?? response['user']?['position'] ?? '').toString();
         final username = _usernameController.text.trim().toLowerCase();
 
         ApiService.currentUser = response['user'] ?? response['admin'] ?? response['worker'] ?? response;
@@ -120,8 +150,6 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final screenWidth = MediaQuery.of(context).size.width;
-
     return Scaffold(
       backgroundColor: Colors.white,
       body: Stack(
@@ -306,29 +334,65 @@ class _LoginScreenState extends State<LoginScreen> {
                               },
                             ),
 
-                            // FORGOT PASSWORD
-                            const SizedBox(height: 12),
-                            Align(
-                              alignment: Alignment.centerRight,
-                              child: TextButton(
-                                onPressed: () => Navigator.pushNamed(context, '/forgot_password'),
-                                style: TextButton.styleFrom(
-                                  padding: EdgeInsets.zero,
-                                  minimumSize: Size.zero,
-                                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                ),
-                                child: Text(
-                                  'Forgot password?',
-                                  style: GoogleFonts.inter(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w500,
-                                    color: Colors.white.withOpacity(0.9), // Changed to white for better contrast
+                            // REMEMBER ME & FORGOT PASSWORD ROW
+                            const SizedBox(height: 14),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                InkWell(
+                                  borderRadius: BorderRadius.circular(6),
+                                  onTap: () => setState(() => _rememberMe = !_rememberMe),
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(vertical: 4),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        SizedBox(
+                                          height: 18,
+                                          width: 18,
+                                          child: Checkbox(
+                                            value: _rememberMe,
+                                            onChanged: (val) => setState(() => _rememberMe = val ?? false),
+                                            activeColor: const Color(0xFFA63228),
+                                            checkColor: Colors.white,
+                                            side: BorderSide(color: Colors.white.withValues(alpha: 0.85), width: 1.5),
+                                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                                            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Text(
+                                          'Remember me',
+                                          style: GoogleFonts.inter(
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.w500,
+                                            color: Colors.white.withValues(alpha: 0.9),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
                                   ),
                                 ),
-                              ),
+                                TextButton(
+                                  onPressed: () => Navigator.pushNamed(context, '/forgot_password'),
+                                  style: TextButton.styleFrom(
+                                    padding: EdgeInsets.zero,
+                                    minimumSize: Size.zero,
+                                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                  ),
+                                  child: Text(
+                                    'Forgot password?',
+                                    style: GoogleFonts.inter(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w500,
+                                      color: Colors.white.withOpacity(0.9),
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
 
-                            const SizedBox(height: 32), // Increased gap
+                            const SizedBox(height: 30), // Increased gap
 
                             // LOGIN BUTTON
                             SizedBox(

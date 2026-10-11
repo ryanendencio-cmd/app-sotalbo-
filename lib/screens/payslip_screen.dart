@@ -276,9 +276,9 @@ class _PayslipScreenState extends State<PayslipScreen> {
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                           children: [
-                            _buildLegend(Colors.green, 'May Pasok'),
-                            _buildLegend(const Color(0xFFA63228), 'Bumale'),
-                            _buildLegend(Colors.grey.shade400, 'Walang Pasok'),
+                            _buildLegend(Colors.green, 'Present'),
+                            _buildLegend(const Color(0xFFA63228), 'Cash Advance'),
+                            _buildLegend(Colors.grey.shade400, 'Rest Day / Off'),
                           ],
                         ),
                         const Divider(height: 12),
@@ -303,13 +303,13 @@ class _PayslipScreenState extends State<PayslipScreen> {
                               Text(
                                 currentWorkDays.contains(selectedCalendarDay)
                                     ? '• Attendance: Present (Time In: 07:55 AM | Time Out: 05:05 PM)'
-                                    : '• Attendance: Walang naitalang pasok / Rest Day',
+                                    : '• Attendance: No attendance recorded / Rest Day',
                                 style: GoogleFonts.inter(fontSize: 10.5, color: Colors.grey.shade700),
                               ),
                               Text(
                                 currentValeDays.containsKey(selectedCalendarDay)
                                     ? '• Cash Advance: ${currentValeDays[selectedCalendarDay]}'
-                                    : '• Cash Advance: Walang binale',
+                                    : '• Cash Advance: None',
                                 style: GoogleFonts.inter(fontSize: 10.5, color: Colors.grey.shade700),
                               ),
                             ],

@@ -84,10 +84,11 @@ class _TimekeeperProfileScreenState extends State<TimekeeperProfileScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.logout_rounded, color: Color(0xFFA63228)),
-            onPressed: () {
-              ApiService.currentUserRole = null;
-              ApiService.currentUser = null;
-              Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
+            onPressed: () async {
+              await ApiService.logout();
+              if (context.mounted) {
+                Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
+              }
             },
           ),
           const SizedBox(width: 8),
@@ -236,10 +237,11 @@ class _TimekeeperProfileScreenState extends State<TimekeeperProfileScreen> {
                             'Log Out of Terminal',
                             'Sign out from this device',
                             Icons.logout_rounded,
-                                () {
-                              ApiService.currentUserRole = null;
-                              ApiService.clearToken();
-                              Navigator.pushReplacementNamed(context, '/login');
+                                () async {
+                              await ApiService.logout();
+                              if (context.mounted) {
+                                Navigator.pushReplacementNamed(context, '/login');
+                              }
                             },
                             isDestructive: true,
                           ),

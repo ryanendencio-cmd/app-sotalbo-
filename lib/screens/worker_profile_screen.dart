@@ -110,11 +110,11 @@ class _WorkerProfileScreenState extends State<WorkerProfileScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.logout_rounded, color: Color(0xFFA63228)),
-            onPressed: () {
-              ApiService.currentUserRole = null;
-              ApiService.currentUser = null;
-              ApiService.clearToken();
-              Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
+            onPressed: () async {
+              await ApiService.logout();
+              if (context.mounted) {
+                Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
+              }
             },
           ),
           const SizedBox(width: 8),

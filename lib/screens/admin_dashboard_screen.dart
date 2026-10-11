@@ -1080,7 +1080,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.bold),
         ),
         content: Text(
-          'Sigurado ka bang nais mong mag-log out sa Admin Portal?',
+          'Are you sure you want to log out of the Admin Portal?',
           style: GoogleFonts.inter(fontSize: 12, color: Colors.grey.shade700),
         ),
         actions: [
@@ -1103,11 +1103,12 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 borderRadius: BorderRadius.circular(8),
               ),
             ),
-            onPressed: () {
+            onPressed: () async {
               Navigator.pop(context);
-              ApiService.currentUserRole = null;
-              ApiService.clearToken();
-              Navigator.pushReplacementNamed(context, '/login');
+              await ApiService.logout();
+              if (mounted) {
+                Navigator.pushReplacementNamed(context, '/login');
+              }
             },
             child: Text(
               'Yes, Log Out',
@@ -2300,7 +2301,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                     ),
                   ),
                   Text(
-                    'Walang pending account applications.',
+                    'No pending account applications.',
                     style: GoogleFonts.inter(
                       fontSize: 11,
                       color: Colors.grey.shade600,
@@ -2370,7 +2371,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                         ),
                       ),
                       Text(
-                        'Walang cash advance na nakabinbin. Pull down to refresh.',
+                        'No pending cash advances. Pull down to refresh.',
                         style: GoogleFonts.inter(
                           fontSize: 11,
                           color: Colors.grey.shade600,
@@ -2583,7 +2584,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
-                    'Walang active workers.',
+                    'No active workers.',
                     style: GoogleFonts.inter(
                       fontSize: 12,
                       color: Colors.grey.shade600,

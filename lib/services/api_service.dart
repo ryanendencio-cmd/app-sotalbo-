@@ -5,7 +5,7 @@ import 'package:http/http.dart' as http;
 
 class ApiService {
   static String get baseUrl {
-    if (!kIsWeb && Platform.isAndroid) return 'http://10.0.2.2:5000/api';
+    if (!kIsWeb && Platform.isAndroid) return 'http://192.168.0.27:5000/api';
     return 'http://localhost:5000/api';
   }
 
@@ -18,9 +18,37 @@ class ApiService {
   static void setToken(String? token) => _authToken = token;
   static void clearToken() => _authToken = null;
 
+  static Future<void> logout() async {
+    try {
+      final user = currentUser;
+      final userId = user?['id']?.toString();
+      final name = user?['name'] ?? user?['full_name'] ?? user?['username'] ?? 'User';
+      final role = currentUserRole ?? user?['role'] ?? user?['position'] ?? 'Worker';
+
+      await _post('/logout', {
+        'userId': userId,
+        'name': name,
+        'role': role,
+        'client': 'Mobile App',
+      });
+    } catch (_) {
+      // Continue cleanup even if server unreachable
+    } finally {
+      currentUser = null;
+      currentUserRole = null;
+      clearToken();
+    }
+  }
+
   static Map<String, String> get _headers => {
     'Content-Type': 'application/json',
     if (_authToken != null) 'Authorization': 'Bearer $_authToken',
+    if (currentUser?['name'] != null || currentUser?['full_name'] != null || currentUser?['username'] != null)
+      'x-actor-name': (currentUser?['name'] ?? currentUser?['full_name'] ?? currentUser?['username'] ?? 'User').toString(),
+    if (currentUserRole != null || currentUser?['role'] != null)
+      'x-actor-role': (currentUserRole ?? currentUser?['role'] ?? 'Worker').toString(),
+    if (currentUser?['id'] != null)
+      'x-actor-id': currentUser!['id'].toString(),
   };
 
   static Future<dynamic> _get(String path) async {
@@ -187,12 +215,33 @@ class ApiService {
       _put('/cash-advances/$id/approve', {'status': status});
   static Future<List<dynamic>> getWorkerCashAdvances(dynamic workerId) =>
       _get('/workers/$workerId/cash-advances').then((v) => v as List);
+  static Future<List<dynamic>> getWorkerPayroll(dynamic workerId) =>
+      _get('/workers/$workerId/payroll').then((v) => v as List);
 
   // Notifications
   static Future<List<dynamic>> getNotifications() =>
       _get('/notifications').then((v) => v as List);
-  static Future<void> markNotificationRead(int id) =>
+  static Future<void> markNotificationRead(dynamic id) =>
       _put('/notifications/$id/read', {});
+  static Future<void> markAllNotificationsRead() =>
+      _put('/notifications/mark-all-read', {});
+  static Future<dynamic> logAdminNotification({
+    required String title,
+    required String message,
+    String type = 'Staff & Workers',
+    String severity = 'Medium',
+    String? actorName,
+    String? actorRole,
+    String? action,
+  }) => _post('/notifications', {
+    'title': title,
+    'message': message,
+    'type': type,
+    'severity': severity,
+    if (actorName != null) 'actor_name': actorName,
+    if (actorRole != null) 'actor_role': actorRole,
+    if (action != null) 'action': action,
+  });
 
   // Auth
   static Future<Map<String, dynamic>> register(Map<String, dynamic> data) async {

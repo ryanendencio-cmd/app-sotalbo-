@@ -144,7 +144,7 @@ class _TimekeeperDashboardState extends State<TimekeeperDashboard> {
               const SizedBox(height: 24),
               Text('Scan ID Barcode / QR', style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.black87)),
               const SizedBox(height: 8),
-              Text('Itapat ang ID ng worker sa camera', style: GoogleFonts.inter(color: Colors.grey.shade600)),
+              Text('Align worker ID card with the camera', style: GoogleFonts.inter(color: Colors.grey.shade600)),
               const Spacer(),
               Container(
                 width: 250,

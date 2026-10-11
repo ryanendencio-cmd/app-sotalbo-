@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:device_preview/device_preview.dart';
 import 'screens/onboarding_screen.dart';
@@ -28,7 +29,7 @@ void main() {
   WidgetsFlutterBinding.ensureInitialized();
   runApp(
     DevicePreview(
-      enabled: true,
+      enabled: kIsWeb && !kReleaseMode,
       builder: (context) => const BuildTrackApp(),
     ),
   );
