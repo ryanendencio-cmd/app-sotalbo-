@@ -129,7 +129,7 @@ class _ToolsMonitoringScreenState extends State<ToolsMonitoringScreen> {
           final status = _uiStatus(rawStatus, condition);
           final borrowAt = _parseDate(asset['borrow_at']);
           final borrower = asset['assigned_to']?.toString();
-          final isOut = status == 'Borrowed';
+          final isOut = status == 'Borrowed' || status == 'Checked Out';
           final dynamic rawQty = asset['quantity'] ?? asset['qty'];
           final int quantity = rawQty != null ? (int.tryParse(rawQty.toString()) ?? 1) : 1;
           tools.add({
@@ -217,7 +217,7 @@ class _ToolsMonitoringScreenState extends State<ToolsMonitoringScreen> {
 
   List<Map<String, dynamic>> get _filteredTools {
     return _toolsData.where((t) {
-      if (_currentNavIndex == 1 && t['status'] != 'Borrowed') {
+      if (_currentNavIndex == 1 && t['status'] != 'Borrowed' && t['status'] != 'Checked Out') {
         return false;
       }
       final matchesCat = _selectedCategory == 'All' || t['category'] == _selectedCategory;
@@ -235,6 +235,8 @@ class _ToolsMonitoringScreenState extends State<ToolsMonitoringScreen> {
         matchesStatus = t['isOverdue'] == true;
       } else if (_selectedStatusFilter == 'Needs Repair') {
         matchesStatus = isToolNeedsRepair;
+      } else if (_selectedStatusFilter == 'Borrowed') {
+        matchesStatus = t['status'] == 'Borrowed' || t['status'] == 'Checked Out';
       } else {
         matchesStatus = t['status'] == _selectedStatusFilter;
       }
@@ -705,7 +707,7 @@ class _ToolsMonitoringScreenState extends State<ToolsMonitoringScreen> {
     final screenHeight = MediaQuery.of(context).size.height;
 
     final total = _toolsData.length;
-    final borrowedCount = _toolsData.where((t) => t['status'] == 'Borrowed').length;
+    final borrowedCount = _toolsData.where((t) => t['status'] == 'Borrowed' || t['status'] == 'Checked Out').length;
     final inStorage = _toolsData.where((t) => t['status'] == 'In Storage').length;
     final overdueCount = _toolsData.where((t) => t['isOverdue'] == true).length;
 
@@ -870,7 +872,7 @@ class _ToolsMonitoringScreenState extends State<ToolsMonitoringScreen> {
                 separatorBuilder: (_, __) => const SizedBox(height: 8),
                 itemBuilder: (context, index) {
                   final tool = _displayTools[index];
-                  final isBorrowed = tool['status'] == 'Borrowed';
+                  final isBorrowed = tool['status'] == 'Borrowed' || tool['status'] == 'Checked Out';
                   final isOverdue = tool['isOverdue'] == true;
 
                   return Container(
@@ -959,7 +961,7 @@ class _ToolsMonitoringScreenState extends State<ToolsMonitoringScreen> {
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(
-                                      'Holder: ${tool['borrower'] ?? 'Unknown'}',
+                                      'Borrower: ${tool['borrower'] ?? 'Unknown'}',
                                       style: GoogleFonts.inter(
                                           fontSize: screenWidth * 0.028,
                                           fontWeight: FontWeight.w600,

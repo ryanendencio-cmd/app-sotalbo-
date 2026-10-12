@@ -1,11 +1,9 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:device_preview/device_preview.dart';
-import 'screens/onboarding_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/forgot_password_screen.dart';
 import 'screens/register_screen.dart';
-import 'screens/walkthrough_screen.dart';
 import 'screens/worker_dashboard.dart';
 import 'screens/history_screen.dart';
 import 'screens/timekeeper_dashboard.dart';
@@ -53,11 +51,8 @@ class BuildTrackApp extends StatelessWidget {
           secondary: const Color(0xFFE8C547),
         ),
       ),
-      initialRoute: '/',
+      home: const LoginScreen(),
       routes: {
-        '/': (context) => const OnboardingScreen(),
-        '/onboarding': (context) => const OnboardingScreen(),
-        '/walkthrough': (context) => const WalkthroughScreen(),
         '/login': (context) => const LoginScreen(),
         '/forgot_password': (context) => const ForgotPasswordScreen(),
         '/register': (context) => const RegisterScreen(),
