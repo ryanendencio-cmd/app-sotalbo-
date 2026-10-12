@@ -70,6 +70,7 @@ class _WorkerToolsScreenState extends State<WorkerToolsScreen>
           final borrower = asset['assigned_to']?.toString();
           final isOut = status == 'In Use' ||
               status == 'Checked Out' ||
+              status == 'Borrowed' ||
               (borrower != null && borrower.trim().isNotEmpty && status != 'Available' && status != 'Needs Repair');
           if (isOut && matchesUser(borrower)) {
             borrowedAssets.add({
