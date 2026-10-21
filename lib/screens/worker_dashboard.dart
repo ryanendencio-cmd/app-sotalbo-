@@ -1270,9 +1270,9 @@ class _WorkerDashboardState extends State<WorkerDashboard> {
             label: 'Salary',
           ),
           BottomNavigationBarItem(
-            icon: Icon(Icons.settings_outlined),
-            activeIcon: Icon(Icons.settings_rounded),
-            label: 'Settings',
+            icon: Icon(Icons.person_outline_rounded),
+            activeIcon: Icon(Icons.person_rounded),
+            label: 'Profile',
           ),
         ],
       ),

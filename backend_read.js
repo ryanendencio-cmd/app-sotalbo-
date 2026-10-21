@@ -1169,18 +1169,73 @@ function startServer() {
     }
   })
 
+  app.get('/api/cash-advances/history', async (req, res) => {
+    try {
+      let snapshot
+      try {
+        snapshot = await db.collection('cash_advances').orderBy('created_at', 'desc').get()
+      } catch (e1) {
+        try {
+          snapshot = await db.collection('cash_advances').orderBy('date', 'desc').get()
+        } catch (e2) {
+          snapshot = await db.collection('cash_advances').get()
+        }
+      }
+      
+      const results = []
+      for (const doc of snapshot.docs) {
+        const data = doc.data()
+        let workerFullName = data.workerName || data.name || 'Worker'
+        let workerRole = data.role || 'Worker'
+
+        if (data.worker_id && (!data.workerName || data.workerName === 'Unknown')) {
+          try {
+            const workerDoc = await db.collection('workers').doc(data.worker_id).get()
+            if (workerDoc.exists) {
+              const workerData = workerDoc.data()
+              workerFullName = workerData.full_name || workerFullName
+              workerRole = workerData.role || workerRole
+            }
+          } catch (_) {}
+        }
+
+        results.push({
+          id: doc.id,
+          name: workerFullName,
+          workerName: workerFullName,
+          amount: data.amount,
+          role: workerRole,
+          reason: data.reason || 'Cash Advance',
+          date: data.date,
+          status: data.status || 'Pending',
+          worker_id: data.worker_id,
+          project_id: data.project_id,
+          created_at: data.created_at
+        })
+      }
+      res.json(results)
+    } catch (err) {
+      res.status(500).json({ error: err.message })
+    }
+  })
+
   app.get('/api/cash-advances/:project_id', async (req, res) => {
     const { project_id } = req.params
     try {
-      let query = db.collection('cash_advances').orderBy('date', 'desc').orderBy('created_at', 'desc')
-      
-      if (project_id && project_id !== 'ALL' && project_id !== 'undefined') {
-        // Note: Firestore doesn't support OR queries easily like SQL (project_id=? OR project_id IS NULL)
-        // We will fetch by project_id. If you need nulls too, you'd fetch both and merge.
-        query = db.collection('cash_advances').where('project_id', '==', project_id).orderBy('date', 'desc').orderBy('created_at', 'desc')
+      let snapshot
+      try {
+        let query = db.collection('cash_advances').orderBy('date', 'desc').orderBy('created_at', 'desc')
+        if (project_id && project_id !== 'ALL' && project_id !== 'undefined') {
+          query = db.collection('cash_advances').where('project_id', '==', project_id).orderBy('date', 'desc').orderBy('created_at', 'desc')
+        }
+        snapshot = await query.get()
+      } catch (e1) {
+        let query = db.collection('cash_advances')
+        if (project_id && project_id !== 'ALL' && project_id !== 'undefined') {
+          query = query.where('project_id', '==', project_id)
+        }
+        snapshot = await query.get()
       }
-      
-      const snapshot = await query.get()
       const results = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
       res.json(results)
     } catch (err) {

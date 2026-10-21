@@ -1,5 +1,3 @@
-import 'dart:io';
-import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'api_service.dart';
@@ -17,7 +15,7 @@ class AdminService {
 
   // Save admin profile to database
   static Future<Map<String, dynamic>> saveAdminProfile({
-    required int adminId,
+    required dynamic adminId,
     required String firstName,
     required String lastName,
     required String email,
@@ -60,7 +58,7 @@ class AdminService {
   }
 
   // Get admin profile from database
-  static Future<Map<String, dynamic>> getAdminProfile(int adminId) async {
+  static Future<Map<String, dynamic>> getAdminProfile(dynamic adminId) async {
     try {
       final response = await http.get(
         Uri.parse('$apiUrl/admin/profile/$adminId'),
@@ -82,7 +80,7 @@ class AdminService {
 
   // Update admin settings
   static Future<Map<String, dynamic>> updateAdminSettings({
-    required int adminId,
+    required dynamic adminId,
     required bool pushNotificationsEnabled,
     required bool biometricLoginEnabled,
     required String assignedProjectSite,
@@ -113,7 +111,7 @@ class AdminService {
 
   // Change admin password
   static Future<Map<String, dynamic>> changeAdminPassword({
-    required int adminId,
+    required dynamic adminId,
     required String currentPassword,
     required String newPassword,
   }) async {
