@@ -211,6 +211,21 @@ class ApiService {
       _post('/cash-advances', data);
   static Future<List<dynamic>> getPendingCashAdvances() =>
       _get('/cash-advances/pending').then((v) => v as List);
+  static Future<List<dynamic>> getCashAdvanceHistory() async {
+    try {
+      final res = await _get('/cash-advances/ALL');
+      if (res is List && res.isNotEmpty) return res;
+    } catch (_) {}
+    try {
+      final res = await _get('/cash-advances/history');
+      if (res is List && res.isNotEmpty) return res;
+    } catch (_) {}
+    try {
+      final res = await _get('/cash-advances/ALL');
+      if (res is List) return res;
+    } catch (_) {}
+    return [];
+  }
   static Future<void> approveCashAdvance(dynamic id, String status) =>
       _put('/cash-advances/$id/approve', {'status': status});
   static Future<List<dynamic>> getWorkerCashAdvances(dynamic workerId) =>

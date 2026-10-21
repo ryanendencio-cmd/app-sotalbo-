@@ -28,7 +28,6 @@ class _AdminProfileScreenState extends State<AdminProfileScreen> {
   
   // Settings
   bool _pushNotifications = true;
-  bool _biometricLogin = false;
 
   // Controllers
   late TextEditingController _firstNameCtrl;
@@ -75,7 +74,6 @@ class _AdminProfileScreenState extends State<AdminProfileScreen> {
           _terminalId = profile['terminalId'] ?? '';
           _status = profile['status'] ?? 'Active Duty';
           _pushNotifications = profile['pushNotificationsEnabled'] ?? true;
-          _biometricLogin = profile['biometricLoginEnabled'] ?? false;
 
           _firstNameCtrl.text = _firstName;
           _lastNameCtrl.text = _lastName;
@@ -110,7 +108,7 @@ class _AdminProfileScreenState extends State<AdminProfileScreen> {
         assignedProjectSite: _siteCtrl.text.trim(),
         terminalId: _terminalCtrl.text.trim(),
         pushNotificationsEnabled: _pushNotifications,
-        biometricLoginEnabled: _biometricLogin,
+        biometricLoginEnabled: false,
         status: _status,
       );
 
@@ -283,14 +281,6 @@ class _AdminProfileScreenState extends State<AdminProfileScreen> {
                             value: _pushNotifications,
                             activeColor: const Color(0xFFA63228),
                             onChanged: (val) => setState(() => _pushNotifications = val),
-                          ),
-                          const Divider(height: 1),
-                          SwitchListTile(
-                            title: Text('Biometric Login', style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w600)),
-                            subtitle: Text('Use fingerprint or face ID to login', style: GoogleFonts.inter(fontSize: 11, color: Colors.grey.shade600)),
-                            value: _biometricLogin,
-                            activeColor: const Color(0xFFA63228),
-                            onChanged: (val) => setState(() => _biometricLogin = val),
                           ),
                         ],
                       ),

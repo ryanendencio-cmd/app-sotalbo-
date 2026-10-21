@@ -762,8 +762,8 @@ class _WorkerDashboardState extends State<WorkerDashboard> {
                         ),
                         const SizedBox(width: 8),
                         _buildQuickAction(
-                          icon: Icons.settings_rounded,
-                          label: 'Settings',
+                          icon: Icons.person_rounded,
+                          label: 'Profile',
                           color: const Color(0xFF7C3AED),
                           onTap: () => setState(() => _currentNavIndex = 4),
                         ),
@@ -1270,9 +1270,9 @@ class _WorkerDashboardState extends State<WorkerDashboard> {
             label: 'Salary',
           ),
           BottomNavigationBarItem(
-            icon: Icon(Icons.settings_outlined),
-            activeIcon: Icon(Icons.settings_rounded),
-            label: 'Settings',
+            icon: Icon(Icons.person_outline_rounded),
+            activeIcon: Icon(Icons.person_rounded),
+            label: 'Profile',
           ),
         ],
       ),

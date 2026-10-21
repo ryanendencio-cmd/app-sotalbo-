@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../services/admin_service.dart';
 import '../services/api_service.dart';
@@ -15,16 +16,27 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   int _currentIndex = 0;
 
   bool _pushNotifications = true;
-  bool _biometricLogin = false;
-  String _activeProjectSite = 'S-CON Residential Phase 2 (Santa Cruz)';
+  String _activeProjectSite = 'RYAN';
 
   List<Map<String, dynamic>> _pendingRegistrations = [];
   bool _isLoadingPending = false;
 
   final List<Map<String, dynamic>> _pendingValeRequests = [];
+  final List<Map<String, dynamic>> _valeHistory = [];
+  bool _isLoadingValeHistory = false;
+  String _valeHistoryFilter = 'All';
+  String _pendingSortFilter = 'All'; // 'All', 'Newest', 'Oldest', 'Highest Amount'
+  DateTime? _pendingSelectedDate;
+  final TextEditingController _pendingSearchController = TextEditingController();
+  String _pendingSearchQuery = '';
+  final TextEditingController _historySearchController = TextEditingController();
+  String _historySearchQuery = '';
+  DateTime? _historySelectedDate;
 
   List<Map<String, dynamic>> _allWorkers = [];
   bool _isLoadingWorkers = false;
+  final TextEditingController _manpowerSearchController = TextEditingController();
+  String _manpowerSearchQuery = '';
 
   // Web Dashboard Parity State
   bool _isLoadingDashboard = false;
@@ -46,7 +58,13 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
   // Admin profile data
   final int _adminId = 1; // Default admin ID
-  String _adminFirstName = 'Mark';
+  String _adminDocId = ''; // Firestore document ID
+  String _adminFirstName = 'Aldrich';
+  String _adminLastName = 'Sotalbo';
+  String _adminFullName = 'Aldrich Sotalbo';
+  String _adminEmail = 'ajsotalbo@gmail.com';
+  String _adminRole = 'Administrator';
+  String _adminPhone = '09068135609';
 
   @override
   void initState() {
@@ -56,6 +74,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     _loadPendingRegistrations();
     _loadWorkers();
     _loadPendingValeRequests();
+    _loadValeHistory();
   }
 
   double _parseDouble(dynamic value, [double defaultValue = 0.0]) {
@@ -183,16 +202,52 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   }
 
   Future<void> _loadAdminProfile() async {
-    final profile = await AdminService.getAdminProfile(_adminId);
-    if (profile['id'] != null) {
-      setState(() {
-        _adminFirstName = profile['fullName']?.split(' ').first ?? 'Mark';
-        _activeProjectSite =
-            profile['assignedProjectSite'] ??
-            'S-CON Residential Phase 2 (Santa Cruz)';
-        _pushNotifications = profile['pushNotificationsEnabled'] ?? true;
-        _biometricLogin = profile['biometricLoginEnabled'] ?? false;
-      });
+    try {
+      final profile = await AdminService.getAdminProfile(
+        _adminDocId.isNotEmpty ? _adminDocId : _adminId,
+      );
+      if (profile['id'] != null && mounted) {
+        setState(() {
+          _adminDocId = profile['id']?.toString() ?? '';
+          final rawFullName = (profile['fullName'] as String?)?.trim() ?? '';
+          final rawFirstName = (profile['firstName'] as String?)?.trim() ?? '';
+          final rawLastName = (profile['lastName'] as String?)?.trim() ?? '';
+
+          if (rawFullName.isNotEmpty) {
+            _adminFullName = rawFullName;
+          } else if (rawFirstName.isNotEmpty || rawLastName.isNotEmpty) {
+            _adminFullName = '$rawFirstName $rawLastName'.trim();
+          } else {
+            _adminFullName = 'Aldrich Sotalbo';
+          }
+
+          _adminFirstName = rawFirstName.isNotEmpty
+              ? rawFirstName
+              : (_adminFullName.split(' ').isNotEmpty
+                  ? _adminFullName.split(' ').first
+                  : 'Aldrich');
+          _adminLastName = rawLastName;
+          _adminEmail =
+              (profile['email'] as String?)?.trim() ?? 'ajsotalbo@gmail.com';
+          _adminRole =
+              (profile['role'] as String?)?.trim() ?? 'Administrator';
+          _adminPhone =
+              (profile['phone'] as String?)?.trim() ?? '09068135609';
+
+          final dbSite = (profile['assignedProjectSite'] as String?)?.trim();
+          if (dbSite != null && dbSite.isNotEmpty) {
+            _activeProjectSite = dbSite;
+          } else if (_projectsList.isNotEmpty) {
+            _activeProjectSite = _projectsList.first['name'] ?? 'RYAN';
+          } else {
+            _activeProjectSite = 'RYAN';
+          }
+
+          _pushNotifications = profile['pushNotificationsEnabled'] == true;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error loading admin profile: $e');
     }
   }
 
@@ -255,12 +310,73 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         setState(() {
           _pendingValeRequests.clear();
           for (var item in list) {
-            _pendingValeRequests.add(Map<String, dynamic>.from(item));
+            final map = Map<String, dynamic>.from(item);
+            if (map['role'] == null || map['role'] == 'Worker') {
+              final wId = map['worker_id']?.toString();
+              if (wId != null && wId.isNotEmpty) {
+                final matched = _allWorkers.firstWhere(
+                  (w) => w['id']?.toString() == wId,
+                  orElse: () => <String, dynamic>{},
+                );
+                if (matched.isNotEmpty) {
+                  if (matched['role'] != null) map['role'] = matched['role'];
+                  if (matched['position'] != null) map['position'] = matched['position'];
+                  if (map['name'] == null || map['name'] == 'Worker' || map['name'] == 'Unknown') {
+                    final fullName = matched['full_name'] ??
+                        '${matched['first_name'] ?? ''} ${matched['last_name'] ?? ''}'.trim();
+                    if (fullName.isNotEmpty) map['name'] = fullName;
+                  }
+                }
+              }
+            }
+            _pendingValeRequests.add(map);
           }
         });
       }
     } catch (e) {
       debugPrint('Error loading pending vale requests: $e');
+    }
+  }
+
+  Future<void> _loadValeHistory() async {
+    setState(() => _isLoadingValeHistory = true);
+    try {
+      final list = await ApiService.getCashAdvanceHistory();
+      if (mounted) {
+        setState(() {
+          _valeHistory.clear();
+          for (var item in list) {
+            final map = Map<String, dynamic>.from(item);
+            if (map['role'] == null || map['role'] == 'Worker') {
+              final wId = map['worker_id']?.toString();
+              if (wId != null && wId.isNotEmpty) {
+                final matched = _allWorkers.firstWhere(
+                  (w) => w['id']?.toString() == wId,
+                  orElse: () => <String, dynamic>{},
+                );
+                if (matched.isNotEmpty) {
+                  if (matched['role'] != null) map['role'] = matched['role'];
+                  if (matched['position'] != null) map['position'] = matched['position'];
+                  if (map['workerName'] == null ||
+                      map['workerName'] == 'Unknown' ||
+                      map['workerName'] == 'Worker') {
+                    final fullName = matched['full_name'] ??
+                        '${matched['first_name'] ?? ''} ${matched['last_name'] ?? ''}'.trim();
+                    if (fullName.isNotEmpty) map['workerName'] = fullName;
+                  }
+                }
+              }
+            }
+            _valeHistory.add(map);
+          }
+          _isLoadingValeHistory = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error loading vale history: $e');
+      if (mounted) {
+        setState(() => _isLoadingValeHistory = false);
+      }
     }
   }
 
@@ -287,7 +403,14 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     try {
       await ApiService.approveCashAdvance(valeId, statusStr);
       if (mounted) {
-        setState(() => _pendingValeRequests.removeAt(index));
+        setState(() {
+          final updated = Map<String, dynamic>.from(vale);
+          updated['status'] = statusStr;
+          _pendingValeRequests.removeAt(index);
+          _valeHistory.removeWhere((item) => item['id']?.toString() == valeId);
+          _valeHistory.insert(0, updated);
+        });
+        _loadValeHistory();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
@@ -317,6 +440,62 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         );
       }
     }
+  }
+
+  double _parseValeAmount(dynamic raw) {
+    if (raw == null) return 0.0;
+    if (raw is num) return raw.toDouble();
+    final str = raw.toString().replaceAll('₱', '').replaceAll(',', '').trim();
+    return double.tryParse(str) ?? 0.0;
+  }
+
+  String _formatValeAmount(dynamic raw) {
+    if (raw == null) return '₱0.00';
+    if (raw is num) return _formatCurrency(raw);
+    final str = raw.toString().replaceAll('₱', '').replaceAll(',', '').trim();
+    final parsed = double.tryParse(str);
+    if (parsed != null) return _formatCurrency(parsed);
+    return raw.toString().startsWith('₱') ? raw.toString() : '₱${raw.toString()}';
+  }
+
+  DateTime? _extractValeDateTime(dynamic dateVal) {
+    if (dateVal == null) return null;
+    if (dateVal is Map && dateVal['_seconds'] != null) {
+      final sec = (dateVal['_seconds'] as num).toInt();
+      return DateTime.fromMillisecondsSinceEpoch(sec * 1000);
+    }
+    final str = dateVal.toString().trim();
+    if (str.isEmpty || str == 'null') return null;
+    try {
+      final parsed = DateTime.tryParse(str);
+      if (parsed != null) return parsed;
+    } catch (_) {}
+    if (str.length >= 10 && RegExp(r'^\d{4}-\d{2}-\d{2}').hasMatch(str.substring(0, 10))) {
+      try {
+        return DateTime.parse(str.substring(0, 10));
+      } catch (_) {}
+    }
+    return null;
+  }
+
+  String _formatReadableDate(DateTime dt) {
+    const months = [
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+    ];
+    return '${months[dt.month - 1]} ${dt.day.toString().padLeft(2, '0')}, ${dt.year}';
+  }
+
+  String _formatValeDate(dynamic dateVal) {
+    if (dateVal == null) return 'No date';
+    final dt = _extractValeDateTime(dateVal);
+    if (dt != null) {
+      return _formatReadableDate(dt);
+    }
+    final str = dateVal.toString().trim();
+    if (str.isEmpty || str == 'null') return 'No date';
+    if (str.length >= 10) return str.substring(0, 10);
+    return str;
   }
 
   String _formatCurrency(num value) {
@@ -1125,56 +1304,504 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   }
 
   void _showSiteConfigDialog() {
-    final TextEditingController siteController = TextEditingController(
-      text: _activeProjectSite,
+    String selectedSite = _activeProjectSite;
+    final TextEditingController customSiteController = TextEditingController();
+    bool isCustom = !_projectsList.any((p) => p['name'] == _activeProjectSite);
+    if (isCustom) {
+      customSiteController.text = _activeProjectSite;
+    }
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          return AlertDialog(
+            backgroundColor: Colors.white,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+            title: Row(
+              children: [
+                const Icon(Icons.storefront_outlined, color: Color(0xFFA63228), size: 20),
+                const SizedBox(width: 8),
+                Text(
+                  'Project Site Configuration',
+                  style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Select an active project from the database, or enter a custom site location:',
+                    style: GoogleFonts.inter(fontSize: 11, color: Colors.grey.shade600),
+                  ),
+                  const SizedBox(height: 12),
+                  if (_projectsList.isNotEmpty) ...[
+                    Text(
+                      'DATABASE PROJECTS',
+                      style: GoogleFonts.inter(
+                        fontSize: 9,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.8,
+                        color: Colors.grey.shade500,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    ..._projectsList.map((proj) {
+                      final pName = proj['name']?.toString() ?? 'Project';
+                      final pStatus = proj['status']?.toString() ?? 'ONGOING';
+                      final isSelected = !isCustom && selectedSite == pName;
+
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 6),
+                        decoration: BoxDecoration(
+                          color: isSelected
+                              ? const Color(0xFFA63228).withValues(alpha: 0.08)
+                              : Colors.grey.shade50,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: isSelected
+                                ? const Color(0xFFA63228)
+                                : Colors.grey.shade200,
+                            width: isSelected ? 1.5 : 1,
+                          ),
+                        ),
+                        child: RadioListTile<String>(
+                          dense: true,
+                          value: pName,
+                          groupValue: isCustom ? null : selectedSite,
+                          activeColor: const Color(0xFFA63228),
+                          title: Text(
+                            pName,
+                            style: GoogleFonts.inter(
+                              fontSize: 12,
+                              fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                            ),
+                          ),
+                          subtitle: Text(
+                            'Status: $pStatus',
+                            style: GoogleFonts.inter(
+                              fontSize: 10,
+                              color: Colors.grey.shade500,
+                            ),
+                          ),
+                          onChanged: (val) {
+                            if (val != null) {
+                              setDialogState(() {
+                                selectedSite = val;
+                                isCustom = false;
+                                customSiteController.clear();
+                              });
+                            }
+                          },
+                        ),
+                      );
+                    }),
+                    const SizedBox(height: 8),
+                  ],
+                  // Custom Site Option
+                  Container(
+                    margin: const EdgeInsets.only(bottom: 6),
+                    decoration: BoxDecoration(
+                      color: isCustom
+                          ? const Color(0xFFA63228).withValues(alpha: 0.08)
+                          : Colors.grey.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: isCustom
+                            ? const Color(0xFFA63228)
+                            : Colors.grey.shade200,
+                        width: isCustom ? 1.5 : 1,
+                      ),
+                    ),
+                    child: RadioListTile<bool>(
+                      dense: true,
+                      value: true,
+                      groupValue: isCustom,
+                      activeColor: const Color(0xFFA63228),
+                      title: Text(
+                        'Custom Project Site',
+                        style: GoogleFonts.inter(
+                          fontSize: 12,
+                          fontWeight: isCustom ? FontWeight.bold : FontWeight.w500,
+                        ),
+                      ),
+                      onChanged: (val) {
+                        setDialogState(() {
+                          isCustom = true;
+                        });
+                      },
+                    ),
+                  ),
+                  if (isCustom) ...[
+                    const SizedBox(height: 6),
+                    TextField(
+                      controller: customSiteController,
+                      style: GoogleFonts.inter(fontSize: 12),
+                      decoration: InputDecoration(
+                        isDense: true,
+                        hintText: 'Enter project site name...',
+                        hintStyle: GoogleFonts.inter(
+                          fontSize: 11,
+                          color: Colors.grey.shade400,
+                        ),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                          borderSide: const BorderSide(color: Color(0xFFA63228)),
+                        ),
+                      ),
+                      onChanged: (val) {
+                        selectedSite = val.trim();
+                      },
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: Text(
+                  'Cancel',
+                  style: GoogleFonts.inter(
+                    fontSize: 12,
+                    color: Colors.grey.shade600,
+                  ),
+                ),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFFA63228),
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+                onPressed: () async {
+                  final siteToSave =
+                      isCustom ? customSiteController.text.trim() : selectedSite;
+                  if (siteToSave.isEmpty) return;
+
+                  try {
+                    await AdminService.updateAdminSettings(
+                      adminId: _adminDocId.isNotEmpty ? _adminDocId : _adminId,
+                      pushNotificationsEnabled: _pushNotifications,
+                      biometricLoginEnabled: false,
+                      assignedProjectSite: siteToSave,
+                    );
+                    if (mounted) {
+                      setState(() => _activeProjectSite = siteToSave);
+                      Navigator.pop(context);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            'Project site updated to "$siteToSave" in database!',
+                            style: GoogleFonts.inter(fontSize: 11),
+                          ),
+                          backgroundColor: const Color(0xFF1B5E20),
+                          behavior: SnackBarBehavior.floating,
+                        ),
+                      );
+                    }
+                  } catch (e) {
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Failed to update project site: $e'),
+                          backgroundColor: const Color(0xFFA63228),
+                        ),
+                      );
+                    }
+                  }
+                },
+                child: Text(
+                  'Save to Database',
+                  style: GoogleFonts.inter(
+                    fontSize: 12,
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
+          );
+        },
+      ),
     );
+  }
+
+  Future<void> _triggerDataExport() async {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        content: Row(
+          children: [
+            const CircularProgressIndicator(color: Color(0xFFA63228)),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Text(
+                'Fetching live database records for export...',
+                style: GoogleFonts.inter(fontSize: 12),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    try {
+      final workers = await ApiService.getWorkers();
+      final vales = await ApiService.getCashAdvanceHistory();
+
+      if (!mounted) return;
+      Navigator.pop(context); // Close loading dialog
+
+      final StringBuffer csv = StringBuffer();
+      csv.writeln('=== S-CON BUILDTRACK EXPORT REPORT ===');
+      csv.writeln(
+        'Export Date: ${DateTime.now().toLocal().toString().split('.').first}',
+      );
+      csv.writeln('Active Project Site: $_activeProjectSite');
+      csv.writeln('Administrator: $_adminFullName ($_adminEmail)');
+      csv.writeln('');
+      csv.writeln('--- MANPOWER DIRECTORY (${workers.length} Workers) ---');
+      csv.writeln(
+        'ID,Full Name,Role,Contact Number,Daily Rate,Status,Approval Status',
+      );
+      for (final w in workers) {
+        final id = w['id'] ?? w['worker_id'] ?? '';
+        final name =
+            (w['full_name'] ??
+                    '${w['first_name'] ?? ''} ${w['last_name'] ?? ''}')
+                .toString()
+                .replaceAll(',', ' ')
+                .trim();
+        final role =
+            (w['role'] ?? w['trade'] ?? 'Worker').toString().replaceAll(',', ' ');
+        final phone = (w['phone'] ?? w['contact_number'] ?? 'N/A').toString();
+        final rate = (w['daily_rate'] ?? w['rate'] ?? 0).toString();
+        final status = (w['status'] ?? 'Active').toString();
+        final approval = (w['approval_status'] ?? 'Approved').toString();
+        csv.writeln('$id,$name,$role,$phone,$rate,$status,$approval');
+      }
+
+      csv.writeln('');
+      csv.writeln(
+        '--- CASH ADVANCES / VALE HISTORY (${vales.length} Records) ---',
+      );
+      csv.writeln(
+        'ID,Worker ID,Worker Name,Amount,Reason,Status,Date Requested,Date Approved',
+      );
+      for (final v in vales) {
+        final id = v['id'] ?? '';
+        final wid = v['worker_id'] ?? '';
+        final wname =
+            (v['worker_name'] ?? 'Worker').toString().replaceAll(',', ' ');
+        final amt = (v['amount'] ?? 0).toString();
+        final reason = (v['reason'] ?? '')
+            .toString()
+            .replaceAll(',', ' ')
+            .replaceAll('\n', ' ');
+        final status = (v['status'] ?? 'Pending').toString();
+        final reqDate = (v['created_at'] ?? v['date'] ?? '').toString();
+        final appDate = (v['approved_at'] ?? '').toString();
+        csv.writeln('$id,$wid,$wname,$amt,$reason,$status,$reqDate,$appDate');
+      }
+
+      _showExportResultsDialog(workers.length, vales.length, csv.toString());
+    } catch (e) {
+      if (mounted) {
+        Navigator.pop(context); // Close loading dialog if open
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to compile export data: $e'),
+            backgroundColor: const Color(0xFFA63228),
+          ),
+        );
+      }
+    }
+  }
+
+  void _showExportResultsDialog(
+    int workerCount,
+    int valeCount,
+    String csvData,
+  ) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: Colors.white,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        title: Text(
-          'Project Site Configuration',
-          style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.bold),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        title: Row(
+          children: [
+            const Icon(
+              Icons.check_circle_rounded,
+              color: Color(0xFF1B5E20),
+              size: 22,
+            ),
+            const SizedBox(width: 8),
+            Text(
+              'Export Ready',
+              style: GoogleFonts.inter(
+                fontSize: 14,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
         ),
-        content: TextField(
-          controller: siteController,
-          style: GoogleFonts.inter(fontSize: 12),
-          decoration: InputDecoration(
-            isDense: true,
-            labelText: 'Active Project Site',
-            labelStyle: GoogleFonts.inter(fontSize: 11),
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Live database records compiled successfully:',
+                style: GoogleFonts.inter(
+                  fontSize: 11,
+                  color: Colors.grey.shade600,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Expanded(
+                    child: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade50,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.grey.shade200),
+                      ),
+                      child: Column(
+                        children: [
+                          Text(
+                            '$workerCount',
+                            style: GoogleFonts.inter(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: const Color(0xFFA63228),
+                            ),
+                          ),
+                          Text(
+                            'Workers',
+                            style: GoogleFonts.inter(
+                              fontSize: 10,
+                              color: Colors.grey.shade600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade50,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.grey.shade200),
+                      ),
+                      child: Column(
+                        children: [
+                          Text(
+                            '$valeCount',
+                            style: GoogleFonts.inter(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: const Color(0xFFA63228),
+                            ),
+                          ),
+                          Text(
+                            'Vale Records',
+                            style: GoogleFonts.inter(
+                              fontSize: 10,
+                              color: Colors.grey.shade600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'DATA PREVIEW (CSV)',
+                style: GoogleFonts.inter(
+                  fontSize: 9,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.8,
+                  color: Colors.grey.shade500,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Container(
+                height: 140,
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1E1E1E),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: SingleChildScrollView(
+                  child: Text(
+                    csvData,
+                    style: const TextStyle(
+                      fontFamily: 'monospace',
+                      fontSize: 9,
+                      color: Color(0xFFD4D4D4),
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
             child: Text(
-              'Cancel',
+              'Close',
               style: GoogleFonts.inter(
                 fontSize: 12,
                 color: Colors.grey.shade600,
               ),
             ),
           ),
-          ElevatedButton(
+          ElevatedButton.icon(
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFFA63228),
               elevation: 0,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
             ),
+            icon: const Icon(Icons.copy_rounded, size: 14, color: Colors.white),
             onPressed: () {
-              setState(() => _activeProjectSite = siteController.text.trim());
+              Clipboard.setData(ClipboardData(text: csvData));
               Navigator.pop(context);
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Project site updated successfully!'),
+                SnackBar(
+                  content: Text(
+                    'CSV report copied to clipboard! You can paste it directly into Excel or Google Sheets.',
+                    style: GoogleFonts.inter(fontSize: 11),
+                  ),
+                  backgroundColor: const Color(0xFF1B5E20),
                   behavior: SnackBarBehavior.floating,
                 ),
               );
             },
-            child: Text(
-              'Save',
+            label: Text(
+              'Copy CSV Data',
               style: GoogleFonts.inter(
                 fontSize: 12,
                 color: Colors.white,
@@ -1185,39 +1812,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         ],
       ),
     );
-  }
-
-  void _triggerDataExport() {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        backgroundColor: Colors.white,
-        content: Row(
-          children: [
-            const CircularProgressIndicator(color: Color(0xFFA63228)),
-            const SizedBox(width: 16),
-            Text(
-              'Generating CSV / Excel report...',
-              style: GoogleFonts.inter(fontSize: 12),
-            ),
-          ],
-        ),
-      ),
-    );
-    Future.delayed(const Duration(seconds: 1), () {
-      if (mounted) {
-        Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Payroll & Attendance report exported successfully (Downloads folder).',
-            ),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      }
-    });
   }
 
   String _getTitleForIndex(int index) {
@@ -1303,6 +1897,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             _loadDashboardData();
           } else if (index == 2) {
             _loadPendingValeRequests();
+            _loadValeHistory();
           } else if (index == 3) {
             _loadWorkers();
             _loadPendingRegistrations();
@@ -2343,165 +2938,1062 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     );
   }
 
-  // TAB 2: CASH ADVANCE APPROVALS
+  // TAB 2: CASH ADVANCE & VALE (With Pending Approvals & History Tabs)
   Widget _buildValeApprovalsTab(double screenWidth, double screenHeight) {
-    return RefreshIndicator(
-      onRefresh: _loadPendingValeRequests,
-      color: const Color(0xFFA63228),
-      child: _pendingValeRequests.isEmpty
-          ? ListView(
-              physics: const AlwaysScrollableScrollPhysics(),
-              children: [
-                SizedBox(height: screenHeight * 0.25),
-                Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
+    return DefaultTabController(
+      length: 2,
+      child: Column(
+        children: [
+          Container(
+            color: Colors.white,
+            child: TabBar(
+              labelColor: const Color(0xFFA63228),
+              unselectedLabelColor: Colors.grey.shade600,
+              indicatorColor: const Color(0xFFA63228),
+              indicatorWeight: 2.5,
+              labelStyle: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 12),
+              tabs: [
+                Tab(
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      const Icon(
-                        Icons.payments_outlined,
-                        size: 40,
-                        color: Colors.grey,
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'No Pending Vale Requests',
-                        style: GoogleFonts.inter(
-                          fontSize: 14,
-                          fontWeight: FontWeight.bold,
+                      const Text('Pending Approvals'),
+                      if (_pendingValeRequests.isNotEmpty) ...[
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFA63228),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Text(
+                            '${_pendingValeRequests.length}',
+                            style: GoogleFonts.inter(
+                              color: Colors.white,
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
                         ),
-                      ),
-                      Text(
-                        'No pending cash advances. Pull down to refresh.',
-                        style: GoogleFonts.inter(
-                          fontSize: 11,
-                          color: Colors.grey.shade600,
+                      ],
+                    ],
+                  ),
+                ),
+                Tab(
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Text('Vale History'),
+                      if (_valeHistory.isNotEmpty) ...[
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                          decoration: BoxDecoration(
+                            color: Colors.grey.shade200,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Text(
+                            '${_valeHistory.length}',
+                            style: GoogleFonts.inter(
+                              color: Colors.grey.shade800,
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
                         ),
-                      ),
+                      ],
                     ],
                   ),
                 ),
               ],
-            )
-          : ListView.builder(
-              physics: const AlwaysScrollableScrollPhysics(),
-              padding: const EdgeInsets.all(10),
-              itemCount: _pendingValeRequests.length,
-              itemBuilder: (context, index) {
-                final vale = _pendingValeRequests[index];
-                final name =
-                    (vale['name'] ??
-                            vale['workerName'] ??
-                            vale['workerFullName'] ??
-                            'Worker')
-                        .toString();
-                final amount =
-                    (vale['amount'] ??
-                            (vale['rawAmount'] != null
-                                ? '₱${vale['rawAmount']}'
-                                : '₱0.00'))
-                        .toString();
-                final role = (vale['role'] ?? vale['workerRole'] ?? 'Worker')
-                    .toString();
-                final reason = (vale['reason'] ?? 'No reason provided')
-                    .toString();
+            ),
+          ),
+          Expanded(
+            child: TabBarView(
+              children: [
+                _buildPendingValeList(screenWidth, screenHeight),
+                _buildValeHistoryList(screenWidth, screenHeight),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
-                return Container(
-                  margin: const EdgeInsets.only(bottom: 8),
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: Colors.grey.shade200),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Expanded(
-                            child: Text(
-                              name,
-                              style: GoogleFonts.inter(
-                                fontSize: 12.5,
-                                fontWeight: FontWeight.bold,
-                              ),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                          Text(
-                            amount,
-                            style: GoogleFonts.inter(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w900,
-                              color: const Color(0xFFA63228),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        'Role: $role • Reason: $reason',
+  Widget _buildPendingValeList(double screenWidth, double screenHeight) {
+    final pendingQuery = _pendingSearchQuery.trim().toLowerCase();
+
+    // 1. Filter by query and date
+    var list = _pendingValeRequests.where((v) {
+      if (_pendingSelectedDate != null) {
+        final dt = _extractValeDateTime(v['date'] ?? v['created_at'] ?? v['request_date']);
+        if (dt == null ||
+            dt.year != _pendingSelectedDate!.year ||
+            dt.month != _pendingSelectedDate!.month ||
+            dt.day != _pendingSelectedDate!.day) {
+          return false;
+        }
+      }
+
+      if (pendingQuery.isEmpty) return true;
+      final name = (v['name'] ?? v['workerName'] ?? v['workerFullName'] ?? '')
+          .toString().toLowerCase();
+      final reason = (v['reason'] ?? '').toString().toLowerCase();
+      final role = (v['role'] ?? v['workerRole'] ?? '').toString().toLowerCase();
+      final amount = (v['amount'] ?? v['rawAmount'] ?? '').toString().toLowerCase();
+      final dateStr = _formatValeDate(v['date'] ?? v['created_at'] ?? v['request_date']).toLowerCase();
+
+      return name.contains(pendingQuery) ||
+          reason.contains(pendingQuery) ||
+          role.contains(pendingQuery) ||
+          amount.contains(pendingQuery) ||
+          dateStr.contains(pendingQuery);
+    }).toList();
+
+    // 2. Sort
+    if (_pendingSortFilter == 'Newest') {
+      list.sort((a, b) {
+        final da = _extractValeDateTime(a['date'] ?? a['created_at'] ?? a['request_date']);
+        final db = _extractValeDateTime(b['date'] ?? b['created_at'] ?? b['request_date']);
+        if (da == null && db == null) return 0;
+        if (da == null) return 1;
+        if (db == null) return -1;
+        return db.compareTo(da);
+      });
+    } else if (_pendingSortFilter == 'Oldest') {
+      list.sort((a, b) {
+        final da = _extractValeDateTime(a['date'] ?? a['created_at'] ?? a['request_date']);
+        final db = _extractValeDateTime(b['date'] ?? b['created_at'] ?? b['request_date']);
+        if (da == null && db == null) return 0;
+        if (da == null) return 1;
+        if (db == null) return -1;
+        return da.compareTo(db);
+      });
+    } else if (_pendingSortFilter == 'Highest Amount') {
+      list.sort((a, b) {
+        final aa = _parseValeAmount(a['amount'] ?? a['rawAmount']);
+        final ba = _parseValeAmount(b['amount'] ?? b['rawAmount']);
+        return ba.compareTo(aa);
+      });
+    }
+
+    // Total amount in filtered list
+    double totalPendingSum = 0.0;
+    for (var v in list) {
+      totalPendingSum += _parseValeAmount(v['amount'] ?? v['rawAmount']);
+    }
+
+    return Column(
+      children: [
+        // ── Search Bar ──
+        Container(
+          color: Colors.white,
+          padding: const EdgeInsets.fromLTRB(12, 10, 12, 6),
+          child: TextField(
+            controller: _pendingSearchController,
+            onChanged: (val) => setState(() => _pendingSearchQuery = val),
+            style: GoogleFonts.inter(fontSize: 13),
+            decoration: InputDecoration(
+              hintText: 'Search by name, role, reason, or date...',
+              hintStyle: GoogleFonts.inter(fontSize: 12, color: Colors.grey.shade400),
+              prefixIcon: const Icon(Icons.search_rounded, size: 20, color: Color(0xFFA63228)),
+              suffixIcon: _pendingSearchQuery.isNotEmpty
+                  ? IconButton(
+                      icon: const Icon(Icons.close_rounded, size: 18, color: Colors.grey),
+                      onPressed: () {
+                        _pendingSearchController.clear();
+                        setState(() => _pendingSearchQuery = '');
+                      },
+                    )
+                  : null,
+              filled: true,
+              fillColor: Colors.grey.shade50,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: BorderSide(color: Colors.grey.shade200),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: BorderSide(color: Colors.grey.shade200),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: const BorderSide(color: Color(0xFFA63228), width: 1.5),
+              ),
+            ),
+          ),
+        ),
+
+        // ── Filter / Sort Chips ──
+        Container(
+          padding: const EdgeInsets.fromLTRB(10, 2, 10, 8),
+          color: Colors.white,
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                ...['All', 'Newest', 'Oldest', 'Highest Amount'].map((filter) {
+                  final isSelected = _pendingSortFilter == filter && _pendingSelectedDate == null;
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: FilterChip(
+                      selected: isSelected,
+                      showCheckmark: false,
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      label: Text(
+                        filter == 'All' ? 'All (${_pendingValeRequests.length})' : filter,
                         style: GoogleFonts.inter(
                           fontSize: 11,
-                          color: Colors.grey.shade700,
+                          fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                          color: isSelected ? Colors.white : Colors.grey.shade700,
                         ),
                       ),
-                      const Divider(height: 12),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: OutlinedButton(
-                              style: OutlinedButton.styleFrom(
-                                side: BorderSide(color: Colors.grey.shade300),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(6),
-                                ),
-                                padding: EdgeInsets.zero,
-                                minimumSize: const Size(0, 30),
-                              ),
-                              onPressed: () =>
-                                  _handleValeApproval(index, false),
-                              child: Text(
-                                'Reject',
-                                style: GoogleFonts.inter(
-                                  fontSize: 11,
-                                  color: Colors.grey.shade700,
-                                  fontWeight: FontWeight.w600,
-                                ),
+                      selectedColor: const Color(0xFFA63228),
+                      backgroundColor: Colors.grey.shade100,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        side: BorderSide(
+                          color: isSelected ? const Color(0xFFA63228) : Colors.grey.shade300,
+                        ),
+                      ),
+                      onSelected: (_) {
+                        setState(() {
+                          _pendingSortFilter = filter;
+                          if (filter == 'All') _pendingSelectedDate = null;
+                        });
+                      },
+                    ),
+                  );
+                }),
+                Padding(
+                  padding: const EdgeInsets.only(right: 6),
+                  child: ActionChip(
+                    avatar: Icon(
+                      _pendingSelectedDate != null
+                          ? Icons.event_available_rounded
+                          : Icons.calendar_month_rounded,
+                      size: 14,
+                      color: _pendingSelectedDate != null ? Colors.white : const Color(0xFFA63228),
+                    ),
+                    backgroundColor: _pendingSelectedDate != null
+                        ? const Color(0xFFA63228)
+                        : Colors.grey.shade100,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                      side: BorderSide(
+                        color: _pendingSelectedDate != null
+                            ? const Color(0xFFA63228)
+                            : Colors.grey.shade300,
+                      ),
+                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    label: Text(
+                      _pendingSelectedDate != null
+                          ? '${_formatReadableDate(_pendingSelectedDate!)} ✕'
+                          : 'Filter Date',
+                      style: GoogleFonts.inter(
+                        fontSize: 11,
+                        fontWeight: _pendingSelectedDate != null ? FontWeight.bold : FontWeight.w500,
+                        color: _pendingSelectedDate != null ? Colors.white : Colors.grey.shade700,
+                      ),
+                    ),
+                    onPressed: () async {
+                      if (_pendingSelectedDate != null) {
+                        setState(() => _pendingSelectedDate = null);
+                        return;
+                      }
+                      final picked = await showDatePicker(
+                        context: context,
+                        initialDate: DateTime.now(),
+                        firstDate: DateTime(2020),
+                        lastDate: DateTime(2030),
+                        builder: (context, child) {
+                          return Theme(
+                            data: Theme.of(context).copyWith(
+                              colorScheme: const ColorScheme.light(
+                                primary: Color(0xFFA63228),
+                                onPrimary: Colors.white,
+                                onSurface: Colors.black87,
                               ),
                             ),
+                            child: child!,
+                          );
+                        },
+                      );
+                      if (picked != null) {
+                        setState(() => _pendingSelectedDate = picked);
+                      }
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+
+        // ── Result count & Total ──
+        if (_pendingValeRequests.isNotEmpty)
+          Container(
+            color: const Color(0xFFF3EFEA),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  pendingQuery.isEmpty && _pendingSelectedDate == null && _pendingSortFilter == 'All'
+                      ? '${_pendingValeRequests.length} pending request${_pendingValeRequests.length != 1 ? 's' : ''}'
+                      : '${list.length} of ${_pendingValeRequests.length} match',
+                  style: GoogleFonts.inter(
+                    fontSize: 11,
+                    color: Colors.grey.shade700,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                Text(
+                  'Total: ${_formatCurrency(totalPendingSum)}',
+                  style: GoogleFonts.inter(
+                    fontSize: 11,
+                    color: const Color(0xFFA63228),
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        const Divider(height: 1, thickness: 0.5),
+
+        // ── List ──
+        Expanded(
+          child: RefreshIndicator(
+            onRefresh: _loadPendingValeRequests,
+            color: const Color(0xFFA63228),
+            child: list.isEmpty
+                ? ListView(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    children: [
+                      SizedBox(height: screenHeight * 0.2),
+                      Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              pendingQuery.isEmpty && _pendingSelectedDate == null
+                                  ? Icons.payments_outlined
+                                  : Icons.search_off_rounded,
+                              size: 42,
+                              color: Colors.grey.shade300,
+                            ),
+                            const SizedBox(height: 10),
+                            Text(
+                              pendingQuery.isEmpty && _pendingSelectedDate == null
+                                  ? 'No Pending Vale Requests'
+                                  : 'No results found',
+                              style: GoogleFonts.inter(
+                                fontSize: 14,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.black87,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              pendingQuery.isEmpty && _pendingSelectedDate == null
+                                  ? 'No pending cash advances. Pull down to refresh.'
+                                  : 'Try adjusting your search or date filter.',
+                              style: GoogleFonts.inter(
+                                fontSize: 11,
+                                color: Colors.grey.shade600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  )
+                : ListView.builder(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    padding: const EdgeInsets.all(10),
+                    itemCount: list.length,
+                    itemBuilder: (context, index) {
+                      final vale = list[index];
+                      // find original index for approval handler
+                      final originalIndex = _pendingValeRequests.indexOf(vale);
+                      final name = (vale['name'] ??
+                              vale['workerName'] ??
+                              vale['workerFullName'] ??
+                              'Worker')
+                          .toString();
+                      final rawAmount = vale['amount'] ?? vale['rawAmount'];
+                      final amountFormatted = _formatValeAmount(rawAmount);
+                      final role =
+                          (vale['role'] ?? vale['workerRole'] ?? 'Worker')
+                              .toString();
+                      final reason =
+                          (vale['reason'] ?? 'No reason provided').toString();
+                      final dateStr = _formatValeDate(
+                          vale['date'] ?? vale['created_at'] ?? vale['request_date']);
+
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 8),
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: Colors.grey.shade200),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Name + Amount row
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Expanded(
+                                  child: Row(
+                                    children: [
+                                      CircleAvatar(
+                                        radius: 14,
+                                        backgroundColor: const Color(0xFFA63228)
+                                            .withValues(alpha: 0.1),
+                                        child: Text(
+                                          name.isNotEmpty ? name[0].toUpperCase() : 'W',
+                                          style: GoogleFonts.inter(
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.bold,
+                                            color: const Color(0xFFA63228),
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Text(
+                                          name,
+                                          style: GoogleFonts.inter(
+                                            fontSize: 12.5,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                Text(
+                                  amountFormatted,
+                                  style: GoogleFonts.inter(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w900,
+                                    color: const Color(0xFFA63228),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 4),
+                            // Role + Reason
+                            Text(
+                              'Role: $role  •  Reason: $reason',
+                              style: GoogleFonts.inter(
+                                fontSize: 11,
+                                color: Colors.grey.shade700,
+                              ),
+                            ),
+                            // ── Dedicated Highlighted Date Row ──
+                            Container(
+                              margin: const EdgeInsets.only(top: 6, bottom: 4),
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFFDF4E7),
+                                borderRadius: BorderRadius.circular(6),
+                                border: Border.all(color: const Color(0xFFF5D8A0)),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(
+                                    Icons.calendar_today_rounded,
+                                    size: 11,
+                                    color: Color(0xFFB45309),
+                                  ),
+                                  const SizedBox(width: 5),
+                                  Text(
+                                    'Date Requested: $dateStr',
+                                    style: GoogleFonts.inter(
+                                      fontSize: 10.5,
+                                      fontWeight: FontWeight.w600,
+                                      color: const Color(0xFF92400E),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const Divider(height: 12),
+                            // Action buttons
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: OutlinedButton(
+                                    style: OutlinedButton.styleFrom(
+                                      side: BorderSide(color: Colors.grey.shade300),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(6),
+                                      ),
+                                      padding: EdgeInsets.zero,
+                                      minimumSize: const Size(0, 30),
+                                    ),
+                                    onPressed: () =>
+                                        _handleValeApproval(originalIndex, false),
+                                    child: Text(
+                                      'Reject',
+                                      style: GoogleFonts.inter(
+                                        fontSize: 11,
+                                        color: Colors.grey.shade700,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                                Expanded(
+                                  child: ElevatedButton(
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: const Color(0xFFA63228),
+                                      elevation: 0,
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(6),
+                                      ),
+                                      padding: EdgeInsets.zero,
+                                      minimumSize: const Size(0, 30),
+                                    ),
+                                    onPressed: () =>
+                                        _handleValeApproval(originalIndex, true),
+                                    child: Text(
+                                      'Approve Vale',
+                                      style: GoogleFonts.inter(
+                                        fontSize: 11,
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildValeHistoryList(double screenWidth, double screenHeight) {
+    final historyQuery = _historySearchQuery.trim().toLowerCase();
+
+    // 1. Filter by status, date, and query
+    final filteredHistory = _valeHistory.where((v) {
+      final statusMatch = _valeHistoryFilter == 'All' ||
+          (v['status'] ?? '').toString().toLowerCase() ==
+              _valeHistoryFilter.toLowerCase();
+      if (!statusMatch) return false;
+
+      // Date filter
+      if (_historySelectedDate != null) {
+        final dt = _extractValeDateTime(v['date'] ?? v['created_at'] ?? v['request_date']);
+        if (dt == null ||
+            dt.year != _historySelectedDate!.year ||
+            dt.month != _historySelectedDate!.month ||
+            dt.day != _historySelectedDate!.day) {
+          return false;
+        }
+      }
+
+      if (historyQuery.isEmpty) return true;
+      final name = (v['workerName'] ?? v['name'] ?? v['workerFullName'] ?? '')
+          .toString().toLowerCase();
+      final reason = (v['reason'] ?? '').toString().toLowerCase();
+      final role = (v['role'] ?? v['workerRole'] ?? '').toString().toLowerCase();
+      final amount = (v['amount'] ?? v['rawAmount'] ?? '').toString().toLowerCase();
+      final dateStr = _formatValeDate(v['date'] ?? v['created_at'] ?? v['request_date']).toLowerCase();
+
+      return name.contains(historyQuery) ||
+          reason.contains(historyQuery) ||
+          role.contains(historyQuery) ||
+          amount.contains(historyQuery) ||
+          dateStr.contains(historyQuery);
+    }).toList();
+
+    // 2. Sort newest first
+    filteredHistory.sort((a, b) {
+      final da = _extractValeDateTime(a['date'] ?? a['created_at'] ?? a['request_date']);
+      final db = _extractValeDateTime(b['date'] ?? b['created_at'] ?? b['request_date']);
+      if (da == null && db == null) return 0;
+      if (da == null) return 1;
+      if (db == null) return -1;
+      return db.compareTo(da);
+    });
+
+    // Calculate total approved
+    double totalApprovedSum = 0.0;
+    for (var v in filteredHistory) {
+      if ((v['status'] ?? '').toString().toLowerCase() == 'approved') {
+        totalApprovedSum += _parseValeAmount(v['amount'] ?? v['rawAmount']);
+      }
+    }
+
+    return RefreshIndicator(
+      onRefresh: () async {
+        await _loadValeHistory();
+        await _loadPendingValeRequests();
+      },
+      color: const Color(0xFFA63228),
+      child: Column(
+        children: [
+          // ── Search Bar ──
+          Container(
+            color: Colors.white,
+            padding: const EdgeInsets.fromLTRB(12, 10, 12, 6),
+            child: TextField(
+              controller: _historySearchController,
+              onChanged: (val) => setState(() => _historySearchQuery = val),
+              style: GoogleFonts.inter(fontSize: 13),
+              decoration: InputDecoration(
+                hintText: 'Search history by name, role, reason, or date...',
+                hintStyle:
+                    GoogleFonts.inter(fontSize: 12, color: Colors.grey.shade400),
+                prefixIcon: const Icon(Icons.search_rounded,
+                    size: 20, color: Color(0xFFA63228)),
+                suffixIcon: _historySearchQuery.isNotEmpty
+                    ? IconButton(
+                        icon: const Icon(Icons.close_rounded,
+                            size: 18, color: Colors.grey),
+                        onPressed: () {
+                          _historySearchController.clear();
+                          setState(() => _historySearchQuery = '');
+                        },
+                      )
+                    : null,
+                filled: true,
+                fillColor: Colors.grey.shade50,
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: BorderSide(color: Colors.grey.shade200),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: BorderSide(color: Colors.grey.shade200),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide:
+                      const BorderSide(color: Color(0xFFA63228), width: 1.5),
+                ),
+              ),
+            ),
+          ),
+          // ── Filter Chips Row ──
+          Container(
+            padding: const EdgeInsets.fromLTRB(10, 2, 10, 8),
+            color: Colors.white,
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  ...['All', 'Approved', 'Rejected', 'Pending'].map((filter) {
+                    final isSelected = _valeHistoryFilter == filter;
+                    final count = filter == 'All'
+                        ? _valeHistory.length
+                        : _valeHistory
+                            .where((v) =>
+                                (v['status'] ?? '').toString().toLowerCase() ==
+                                filter.toLowerCase())
+                            .length;
+
+                    return Padding(
+                      padding: const EdgeInsets.only(right: 6),
+                      child: FilterChip(
+                        selected: isSelected,
+                        showCheckmark: false,
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 6, vertical: 2),
+                        label: Text(
+                          '$filter ($count)',
+                          style: GoogleFonts.inter(
+                            fontSize: 11,
+                            fontWeight:
+                                isSelected ? FontWeight.bold : FontWeight.w500,
+                            color: isSelected
+                                ? Colors.white
+                                : Colors.grey.shade700,
                           ),
-                          const SizedBox(width: 6),
-                          Expanded(
-                            child: ElevatedButton(
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: const Color(0xFFA63228),
-                                elevation: 0,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(6),
+                        ),
+                        selectedColor: const Color(0xFFA63228),
+                        backgroundColor: Colors.grey.shade100,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                          side: BorderSide(
+                            color: isSelected
+                                ? const Color(0xFFA63228)
+                                : Colors.grey.shade300,
+                          ),
+                        ),
+                        onSelected: (_) {
+                          setState(() => _valeHistoryFilter = filter);
+                        },
+                      ),
+                    );
+                  }),
+                  // Date Filter ActionChip
+                  Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: ActionChip(
+                      avatar: Icon(
+                        _historySelectedDate != null
+                            ? Icons.event_available_rounded
+                            : Icons.calendar_month_rounded,
+                        size: 14,
+                        color: _historySelectedDate != null
+                            ? Colors.white
+                            : const Color(0xFFA63228),
+                      ),
+                      backgroundColor: _historySelectedDate != null
+                          ? const Color(0xFFA63228)
+                          : Colors.grey.shade100,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        side: BorderSide(
+                          color: _historySelectedDate != null
+                              ? const Color(0xFFA63228)
+                              : Colors.grey.shade300,
+                        ),
+                      ),
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      label: Text(
+                        _historySelectedDate != null
+                            ? '${_formatReadableDate(_historySelectedDate!)} ✕'
+                            : 'Filter Date',
+                        style: GoogleFonts.inter(
+                          fontSize: 11,
+                          fontWeight: _historySelectedDate != null
+                              ? FontWeight.bold
+                              : FontWeight.w500,
+                          color: _historySelectedDate != null
+                              ? Colors.white
+                              : Colors.grey.shade700,
+                        ),
+                      ),
+                      onPressed: () async {
+                        if (_historySelectedDate != null) {
+                          setState(() => _historySelectedDate = null);
+                          return;
+                        }
+                        final picked = await showDatePicker(
+                          context: context,
+                          initialDate: DateTime.now(),
+                          firstDate: DateTime(2020),
+                          lastDate: DateTime(2030),
+                          builder: (context, child) {
+                            return Theme(
+                              data: Theme.of(context).copyWith(
+                                colorScheme: const ColorScheme.light(
+                                  primary: Color(0xFFA63228),
+                                  onPrimary: Colors.white,
+                                  onSurface: Colors.black87,
                                 ),
-                                padding: EdgeInsets.zero,
-                                minimumSize: const Size(0, 30),
                               ),
-                              onPressed: () => _handleValeApproval(index, true),
-                              child: Text(
-                                'Approve Vale',
-                                style: GoogleFonts.inter(
-                                  fontSize: 11,
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold,
+                              child: child!,
+                            );
+                          },
+                        );
+                        if (picked != null) {
+                          setState(() => _historySelectedDate = picked);
+                        }
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          // ── Result count & summary ──
+          if (_valeHistory.isNotEmpty)
+            Container(
+              color: const Color(0xFFF3EFEA),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    historyQuery.isEmpty && _historySelectedDate == null && _valeHistoryFilter == 'All'
+                        ? '${_valeHistory.length} total record${_valeHistory.length != 1 ? 's' : ''}'
+                        : '${filteredHistory.length} of ${_valeHistory.length} shown',
+                    style: GoogleFonts.inter(
+                      fontSize: 11,
+                      color: Colors.grey.shade700,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  Text(
+                    'Approved Total: ${_formatCurrency(totalApprovedSum)}',
+                    style: GoogleFonts.inter(
+                      fontSize: 11,
+                      color: Colors.green.shade800,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          const Divider(height: 1, thickness: 0.5),
+
+          // ── History List ──
+          Expanded(
+            child: _isLoadingValeHistory
+                ? const Center(
+                    child:
+                        CircularProgressIndicator(color: Color(0xFFA63228)),
+                  )
+                : filteredHistory.isEmpty
+                    ? ListView(
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        children: [
+                          SizedBox(height: screenHeight * 0.18),
+                          Center(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  historyQuery.isNotEmpty || _historySelectedDate != null
+                                      ? Icons.search_off_rounded
+                                      : Icons.receipt_long_outlined,
+                                  size: 42,
+                                  color: Colors.grey.shade400,
                                 ),
-                              ),
+                                const SizedBox(height: 10),
+                                Text(
+                                  historyQuery.isNotEmpty || _historySelectedDate != null
+                                      ? 'No matching records'
+                                      : 'No Cash Advance History',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.black87,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  historyQuery.isNotEmpty || _historySelectedDate != null
+                                      ? 'Try a different keyword or clear the date filter.'
+                                      : _valeHistoryFilter == 'All'
+                                          ? 'No processed cash advances found. Pull to refresh.'
+                                          : 'No $_valeHistoryFilter records found.',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 11,
+                                    color: Colors.grey.shade600,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                         ],
+                      )
+                    : ListView.builder(
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        padding: const EdgeInsets.all(10),
+                        itemCount: filteredHistory.length,
+                        itemBuilder: (context, index) {
+                          final item = filteredHistory[index];
+                          final name = (item['workerName'] ??
+                                  item['name'] ??
+                                  item['workerFullName'] ??
+                                  'Worker')
+                              .toString();
+                          final rawAmount =
+                              item['amount'] ?? item['rawAmount'];
+                          final amountFormatted =
+                              _formatValeAmount(rawAmount);
+                          final role = (item['role'] ??
+                                  item['workerRole'] ??
+                                  'Worker')
+                              .toString();
+                          final reason =
+                              (item['reason'] ?? 'No reason provided')
+                                  .toString();
+                          final status =
+                              (item['status'] ?? 'Pending').toString();
+                          final dateStr = _formatValeDate(
+                              item['date'] ??
+                                  item['created_at'] ??
+                                  item['request_date']);
+
+                          final isApproved =
+                              status.toLowerCase() == 'approved';
+                          final isRejected =
+                              status.toLowerCase() == 'rejected';
+                          final isPending =
+                              status.toLowerCase() == 'pending';
+
+                          Color statusBg = Colors.grey.shade100;
+                          Color statusBorder = Colors.grey.shade300;
+                          Color statusText = Colors.grey.shade700;
+                          IconData statusIcon = Icons.info_outline;
+
+                          if (isApproved) {
+                            statusBg = Colors.green.shade50;
+                            statusBorder = Colors.green.shade200;
+                            statusText = Colors.green.shade700;
+                            statusIcon = Icons.check_circle_outline;
+                          } else if (isRejected) {
+                            statusBg = Colors.red.shade50;
+                            statusBorder = Colors.red.shade200;
+                            statusText = const Color(0xFFA63228);
+                            statusIcon = Icons.cancel_outlined;
+                          } else if (isPending) {
+                            statusBg = Colors.orange.shade50;
+                            statusBorder = Colors.orange.shade200;
+                            statusText = Colors.orange.shade800;
+                            statusIcon = Icons.hourglass_top_rounded;
+                          }
+
+                          return Container(
+                            margin: const EdgeInsets.only(bottom: 8),
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(color: Colors.grey.shade200),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Expanded(
+                                      child: Row(
+                                        children: [
+                                          CircleAvatar(
+                                            radius: 14,
+                                            backgroundColor:
+                                                const Color(0xFFA63228)
+                                                    .withValues(alpha: 0.1),
+                                            child: Text(
+                                              name.isNotEmpty
+                                                  ? name[0].toUpperCase()
+                                                  : 'W',
+                                              style: GoogleFonts.inter(
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.bold,
+                                                color:
+                                                    const Color(0xFFA63228),
+                                              ),
+                                            ),
+                                          ),
+                                          const SizedBox(width: 8),
+                                          Expanded(
+                                            child: Text(
+                                              name,
+                                              style: GoogleFonts.inter(
+                                                fontSize: 12.5,
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    Text(
+                                      amountFormatted,
+                                      style: GoogleFonts.inter(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w900,
+                                        color: isApproved
+                                            ? Colors.green.shade700
+                                            : isRejected
+                                                ? const Color(0xFFA63228)
+                                                : Colors.black87,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 6),
+                                Text(
+                                  'Role: $role  •  Reason: $reason',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 11,
+                                    color: Colors.grey.shade700,
+                                  ),
+                                ),
+                                const Divider(height: 12),
+                                Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    // ── Formatted Date Row ──
+                                    Row(
+                                      children: [
+                                        Icon(
+                                          Icons.calendar_today_rounded,
+                                          size: 11,
+                                          color: Colors.grey.shade600,
+                                        ),
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          dateStr,
+                                          style: GoogleFonts.inter(
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w500,
+                                            color: Colors.grey.shade700,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    // Status Badge
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 7, vertical: 2),
+                                      decoration: BoxDecoration(
+                                        color: statusBg,
+                                        borderRadius:
+                                            BorderRadius.circular(6),
+                                        border:
+                                            Border.all(color: statusBorder),
+                                      ),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Icon(statusIcon,
+                                              size: 11, color: statusText),
+                                          const SizedBox(width: 3),
+                                          Text(
+                                            status,
+                                            style: GoogleFonts.inter(
+                                              fontSize: 10,
+                                              fontWeight: FontWeight.bold,
+                                              color: statusText,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          );
+                        },
                       ),
-                    ],
-                  ),
-                );
-              },
-            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -2564,131 +4056,300 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   }
 
   Widget _buildActiveWorkersList(double screenWidth, double screenHeight) {
-    if (_isLoadingWorkers) {
-      return const Center(
-        child: CircularProgressIndicator(color: Color(0xFFA63228)),
-      );
-    }
+    // Filter workers by search query
+    final query = _manpowerSearchQuery.trim().toLowerCase();
+    final filteredWorkers = query.isEmpty
+        ? _allWorkers
+        : _allWorkers.where((w) {
+            final String name = (w['full_name'] as String?)?.isNotEmpty == true
+                ? w['full_name']
+                : '${w['first_name'] ?? ''} ${w['last_name'] ?? ''}'.trim();
+            final role = (w['role'] ?? '').toString().toLowerCase();
+            final position = (w['position'] ?? '').toString().toLowerCase();
+            final phone = (w['phone'] ?? '').toString().toLowerCase();
+            return name.toLowerCase().contains(query) ||
+                role.contains(query) ||
+                position.contains(query) ||
+                phone.contains(query);
+          }).toList();
 
-    if (_allWorkers.isEmpty) {
-      return RefreshIndicator(
-        onRefresh: _loadWorkers,
-        color: const Color(0xFFA63228),
-        child: ListView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.all(20),
-          children: [
-            SizedBox(height: screenHeight * 0.2),
-            Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    'No active workers.',
-                    style: GoogleFonts.inter(
-                      fontSize: 12,
-                      color: Colors.grey.shade600,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  TextButton.icon(
-                    onPressed: _loadWorkers,
-                    icon: const Icon(
-                      Icons.refresh,
-                      size: 16,
-                      color: Color(0xFFA63228),
-                    ),
-                    label: Text(
-                      'Refresh',
-                      style: GoogleFonts.inter(
-                        fontSize: 12,
-                        color: const Color(0xFFA63228),
-                        fontWeight: FontWeight.bold,
+    return Column(
+      children: [
+        // ── Search Bar ──
+        Container(
+          color: Colors.white,
+          padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+          child: TextField(
+            controller: _manpowerSearchController,
+            onChanged: (val) => setState(() => _manpowerSearchQuery = val),
+            style: GoogleFonts.inter(fontSize: 13),
+            decoration: InputDecoration(
+              hintText: 'Search by name, role, position, phone...',
+              hintStyle: GoogleFonts.inter(
+                fontSize: 12,
+                color: Colors.grey.shade400,
+              ),
+              prefixIcon: const Icon(
+                Icons.search_rounded,
+                size: 20,
+                color: Color(0xFFA63228),
+              ),
+              suffixIcon: _manpowerSearchQuery.isNotEmpty
+                  ? IconButton(
+                      icon: const Icon(
+                        Icons.close_rounded,
+                        size: 18,
+                        color: Colors.grey,
                       ),
-                    ),
-                  ),
-                ],
+                      onPressed: () {
+                        _manpowerSearchController.clear();
+                        setState(() => _manpowerSearchQuery = '');
+                      },
+                    )
+                  : null,
+              filled: true,
+              fillColor: Colors.grey.shade50,
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 10,
+              ),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: BorderSide(color: Colors.grey.shade200),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: BorderSide(color: Colors.grey.shade200),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: const BorderSide(
+                  color: Color(0xFFA63228),
+                  width: 1.5,
+                ),
               ),
             ),
-          ],
+          ),
         ),
-      );
-    }
-
-    return RefreshIndicator(
-      onRefresh: _loadWorkers,
-      color: const Color(0xFFA63228),
-      child: ListView.separated(
-        padding: const EdgeInsets.all(10),
-        itemCount: _allWorkers.length,
-        separatorBuilder: (_, __) => const SizedBox(height: 6),
-        itemBuilder: (context, i) {
-          final w = _allWorkers[i];
-          final String name = (w['full_name'] as String?)?.isNotEmpty == true
-              ? w['full_name']
-              : '${w['first_name'] ?? ''} ${w['last_name'] ?? ''}'.trim();
-          final role = w['role'] ?? 'Worker';
-          final position = w['position'] ?? 'N/A';
-          final phone = w['phone'] ?? 'N/A';
-          final status = w['approval_status'] ?? w['status'] ?? 'Active';
-
-          return Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: Colors.grey.shade200),
+        // ── Result count chip ──
+        if (_allWorkers.isNotEmpty)
+          Container(
+            color: const Color(0xFFF3EFEA),
+            padding: const EdgeInsets.fromLTRB(12, 4, 12, 4),
+            alignment: Alignment.centerLeft,
+            child: Text(
+              query.isEmpty
+                  ? '${_allWorkers.length} worker${_allWorkers.length != 1 ? 's' : ''} registered'
+                  : '${filteredWorkers.length} of ${_allWorkers.length} worker${_allWorkers.length != 1 ? 's' : ''} match',
+              style: GoogleFonts.inter(
+                fontSize: 10.5,
+                color: Colors.grey.shade600,
+                fontWeight: FontWeight.w500,
+              ),
             ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        name.isEmpty ? 'Worker #${w['id']}' : name,
-                        style: GoogleFonts.inter(
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                        ),
-                        overflow: TextOverflow.ellipsis,
+          ),
+        const Divider(height: 1, thickness: 0.5),
+
+        // ── Workers List ──
+        Expanded(
+          child: _isLoadingWorkers
+              ? const Center(
+                  child: CircularProgressIndicator(color: Color(0xFFA63228)),
+                )
+              : filteredWorkers.isEmpty
+                  ? RefreshIndicator(
+                      onRefresh: _loadWorkers,
+                      color: const Color(0xFFA63228),
+                      child: ListView(
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        children: [
+                          SizedBox(height: screenHeight * 0.18),
+                          Center(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  query.isEmpty
+                                      ? Icons.people_outline_rounded
+                                      : Icons.search_off_rounded,
+                                  size: 42,
+                                  color: Colors.grey.shade300,
+                                ),
+                                const SizedBox(height: 10),
+                                Text(
+                                  query.isEmpty
+                                      ? 'No active workers.'
+                                      : 'No workers match "$query"',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.black87,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  query.isEmpty
+                                      ? 'Pull down to refresh the list.'
+                                      : 'Try a different keyword.',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 11,
+                                    color: Colors.grey.shade500,
+                                  ),
+                                ),
+                                if (query.isEmpty) ...[
+                                  const SizedBox(height: 12),
+                                  TextButton.icon(
+                                    onPressed: _loadWorkers,
+                                    icon: const Icon(
+                                      Icons.refresh,
+                                      size: 16,
+                                      color: Color(0xFFA63228),
+                                    ),
+                                    label: Text(
+                                      'Refresh',
+                                      style: GoogleFonts.inter(
+                                        fontSize: 12,
+                                        color: const Color(0xFFA63228),
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
+                        ],
                       ),
-                      const SizedBox(height: 2),
-                      Text(
-                        '$role ($position) • $phone',
-                        style: GoogleFonts.inter(
-                          fontSize: 10.5,
-                          color: Colors.grey.shade600,
-                        ),
-                        overflow: TextOverflow.ellipsis,
+                    )
+                  : RefreshIndicator(
+                      onRefresh: _loadWorkers,
+                      color: const Color(0xFFA63228),
+                      child: ListView.separated(
+                        padding: const EdgeInsets.all(10),
+                        itemCount: filteredWorkers.length,
+                        separatorBuilder: (_, __) => const SizedBox(height: 6),
+                        itemBuilder: (context, i) {
+                          final w = filteredWorkers[i];
+                          final String name =
+                              (w['full_name'] as String?)?.isNotEmpty == true
+                                  ? w['full_name']
+                                  : '${w['first_name'] ?? ''} ${w['last_name'] ?? ''}'
+                                        .trim();
+                          final role = w['role'] ?? 'Worker';
+                          final position = w['position'] ?? 'N/A';
+                          final phone = w['phone'] ?? 'N/A';
+                          final status =
+                              w['approval_status'] ?? w['status'] ?? 'Active';
+
+                          // Highlight matching text helper
+                          List<TextSpan> highlight(String text) {
+                            if (query.isEmpty) {
+                              return [TextSpan(text: text)];
+                            }
+                            final lower = text.toLowerCase();
+                            final idx = lower.indexOf(query);
+                            if (idx < 0) return [TextSpan(text: text)];
+                            return [
+                              TextSpan(text: text.substring(0, idx)),
+                              TextSpan(
+                                text: text.substring(idx, idx + query.length),
+                                style: const TextStyle(
+                                  backgroundColor: Color(0xFFFFE082),
+                                  color: Colors.black,
+                                ),
+                              ),
+                              TextSpan(
+                                text: text.substring(idx + query.length),
+                              ),
+                            ];
+                          }
+
+                          final displayName =
+                              name.isEmpty ? 'Worker #${w['id']}' : name;
+
+                          return Container(
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(color: Colors.grey.shade200),
+                            ),
+                            child: Row(
+                              children: [
+                                CircleAvatar(
+                                  radius: 18,
+                                  backgroundColor: const Color(0xFFA63228)
+                                      .withValues(alpha: 0.1),
+                                  child: Text(
+                                    displayName.isNotEmpty
+                                        ? displayName[0].toUpperCase()
+                                        : 'W',
+                                    style: GoogleFonts.inter(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.bold,
+                                      color: const Color(0xFFA63228),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      RichText(
+                                        overflow: TextOverflow.ellipsis,
+                                        text: TextSpan(
+                                          style: GoogleFonts.inter(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.bold,
+                                            color: Colors.black87,
+                                          ),
+                                          children: highlight(displayName),
+                                        ),
+                                      ),
+                                      const SizedBox(height: 2),
+                                      RichText(
+                                        overflow: TextOverflow.ellipsis,
+                                        text: TextSpan(
+                                          style: GoogleFonts.inter(
+                                            fontSize: 10.5,
+                                            color: Colors.grey.shade600,
+                                          ),
+                                          children: highlight(
+                                              '$role ($position) • $phone'),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 6,
+                                    vertical: 2,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.green.shade50,
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: Text(
+                                    status,
+                                    style: GoogleFonts.inter(
+                                      fontSize: 9.5,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.green.shade700,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
                       ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 6,
-                    vertical: 2,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.green.shade50,
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: Text(
-                    status,
-                    style: GoogleFonts.inter(
-                      fontSize: 9.5,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.green.shade700,
                     ),
-                  ),
-                ),
-              ],
-            ),
-          );
-        },
-      ),
+        ),
+      ],
     );
   }
 
@@ -2698,43 +4359,104 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       padding: const EdgeInsets.all(10),
       physics: const BouncingScrollPhysics(),
       children: [
-        Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: Colors.grey.shade200),
-          ),
-          child: Row(
-            children: [
-              const Icon(
-                Icons.admin_panel_settings_outlined,
-                color: Colors.black87,
-                size: 22,
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'System Administrator',
-                      style: GoogleFonts.inter(
-                        fontSize: 13,
-                        fontWeight: FontWeight.bold,
-                      ),
+        GestureDetector(
+          onTap: () async {
+            await Navigator.pushNamed(context, '/admin_profile');
+            _loadAdminProfile();
+          },
+          child: Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: Colors.grey.shade200),
+            ),
+            child: Row(
+              children: [
+                CircleAvatar(
+                  radius: 20,
+                  backgroundColor: const Color(0xFFA63228),
+                  child: Text(
+                    _adminFirstName.isNotEmpty
+                        ? _adminFirstName[0].toUpperCase()
+                        : 'A',
+                    style: GoogleFonts.inter(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
                     ),
-                    Text(
-                      'admin@scon-buildtrack.ph',
-                      style: GoogleFonts.inter(
-                        fontSize: 11,
-                        color: Colors.grey.shade600,
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
-              ),
-            ],
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Flexible(
+                            child: Text(
+                              _adminFullName.isNotEmpty
+                                  ? _adminFullName
+                                  : 'Aldrich Sotalbo',
+                              style: GoogleFonts.inter(
+                                fontSize: 13,
+                                fontWeight: FontWeight.bold,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFA63228).withValues(
+                                alpha: 0.1,
+                              ),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text(
+                              _adminRole.isNotEmpty
+                                  ? _adminRole
+                                  : 'Administrator',
+                              style: GoogleFonts.inter(
+                                fontSize: 9,
+                                fontWeight: FontWeight.w600,
+                                color: const Color(0xFFA63228),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        _adminEmail.isNotEmpty
+                            ? _adminEmail
+                            : 'ajsotalbo@gmail.com',
+                        style: GoogleFonts.inter(
+                          fontSize: 11,
+                          color: Colors.grey.shade600,
+                        ),
+                      ),
+                      if (_adminPhone.isNotEmpty) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          _adminPhone,
+                          style: GoogleFonts.inter(
+                            fontSize: 10,
+                            color: Colors.grey.shade500,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                const Icon(Icons.chevron_right, size: 18, color: Colors.grey),
+              ],
+            ),
           ),
         ),
         const SizedBox(height: 8),
@@ -2795,29 +4517,40 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             'Push Notifications',
             style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600),
           ),
+          subtitle: Text(
+            _pushNotifications ? 'Active in database' : 'Disabled in database',
+            style: GoogleFonts.inter(fontSize: 10, color: Colors.grey.shade500),
+          ),
           value: _pushNotifications,
           activeThumbColor: const Color(0xFFA63228),
-          onChanged: (val) => setState(() => _pushNotifications = val),
-        ),
-        const SizedBox(height: 6),
-        SwitchListTile(
-          dense: true,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
-          ),
-          tileColor: Colors.white,
-          secondary: const Icon(
-            Icons.fingerprint_outlined,
-            color: Colors.black87,
-            size: 20,
-          ),
-          title: Text(
-            'Biometric Security Login',
-            style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600),
-          ),
-          value: _biometricLogin,
-          activeThumbColor: const Color(0xFFA63228),
-          onChanged: (val) => setState(() => _biometricLogin = val),
+          onChanged: (val) async {
+            setState(() => _pushNotifications = val);
+            try {
+              await AdminService.updateAdminSettings(
+                adminId: _adminDocId.isNotEmpty ? _adminDocId : _adminId,
+                pushNotificationsEnabled: val,
+                biometricLoginEnabled: false,
+                assignedProjectSite: _activeProjectSite,
+              );
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      val
+                          ? 'Push notifications enabled in database.'
+                          : 'Push notifications disabled in database.',
+                      style: GoogleFonts.inter(fontSize: 11),
+                    ),
+                    backgroundColor: const Color(0xFF1B5E20),
+                    behavior: SnackBarBehavior.floating,
+                    duration: const Duration(seconds: 2),
+                  ),
+                );
+              }
+            } catch (e) {
+              debugPrint('Error updating push notifications: $e');
+            }
+          },
         ),
         const SizedBox(height: 24),
         // LOGOUT BUTTON
