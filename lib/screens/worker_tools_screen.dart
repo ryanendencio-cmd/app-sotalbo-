@@ -11,6 +11,34 @@ class WorkerToolsScreen extends StatefulWidget {
 
 class _WorkerToolsScreenState extends State<WorkerToolsScreen>
     with SingleTickerProviderStateMixin {
+
+  /// Normalises any backend action / status label to the
+  /// user-facing "Borrowed" or "Returned" terminology.
+  String _normalizeAction(String? raw) {
+    if (raw == null || raw.trim().isEmpty) return 'Returned';
+    final lower = raw.trim().toLowerCase();
+    // All variants that mean "currently borrowed / out"
+    if (lower == 'in use' ||
+        lower == 'borrowed' ||
+        lower == 'check-in' ||
+        lower == 'checked in' ||
+        lower == 'checked out' ||
+        lower == 'check-out' ||
+        lower == 'checkout' ||
+        lower == 'checkin') {
+      return 'Borrowed';
+    }
+    // All variants that mean "returned / back in storage"
+    if (lower == 'returned' ||
+        lower == 'available' ||
+        lower == 'in storage' ||
+        lower == 'check-out completed' ||
+        lower == 'return') {
+      return 'Returned';
+    }
+    // Fallback: keep original value
+    return raw.trim();
+  }
   late TabController _tabController;
   bool _isLoading = false;
   List<Map<String, dynamic>> _activeTools = [];
@@ -114,13 +142,14 @@ class _WorkerToolsScreenState extends State<WorkerToolsScreen>
         final rec = Map<String, dynamic>.from(h as Map);
         final bName = (rec['borrower_name'] ?? rec['borrower'] ?? '').toString();
         if (matchesUser(bName)) {
+          final rawAction = (rec['action'] ?? rec['status'] ?? 'Returned').toString();
           historyList.add({
             'name': (rec['tool_name'] ?? rec['name'] ?? 'Tool').toString(),
             'tool_name': (rec['tool_name'] ?? rec['name'] ?? 'Tool').toString(),
             'borrower': bName,
             'borrower_name': bName,
             'borrow_date': rec['date_time'] ?? rec['created_at'],
-            'status': (rec['action'] ?? rec['status'] ?? 'Returned').toString(),
+            'status': _normalizeAction(rawAction),
             'condition': (rec['condition_status'] ?? rec['condition'] ?? 'Good').toString(),
             'quantity': rec['quantity'] ?? 1,
           });
@@ -286,11 +315,10 @@ class _WorkerToolsScreenState extends State<WorkerToolsScreen>
   }
 
   Widget _buildToolCard(Map<String, dynamic> tool, {required bool isCurrentlyBorrowed}) {
-    final status = tool['status']?.toString() ?? (isCurrentlyBorrowed ? 'In Use' : 'Returned');
-    final isBorrowed = isCurrentlyBorrowed ||
-        status.toLowerCase() == 'borrowed' ||
-        status.toLowerCase() == 'in use';
-    final isReturned = !isCurrentlyBorrowed && status.toLowerCase() == 'returned';
+    final rawStatus = tool['status']?.toString() ?? (isCurrentlyBorrowed ? 'Borrowed' : 'Returned');
+    final status = _normalizeAction(rawStatus);
+    final isBorrowed = isCurrentlyBorrowed || status == 'Borrowed';
+    final isReturned = !isCurrentlyBorrowed && status == 'Returned';
 
     Color statusBg = isReturned
         ? Colors.green.shade50
@@ -375,7 +403,7 @@ class _WorkerToolsScreenState extends State<WorkerToolsScreen>
               border: Border.all(color: statusBorder),
             ),
             child: Text(
-              isBorrowed ? 'In Use' : status,
+              isBorrowed ? 'Borrowed' : status,
               style: GoogleFonts.inter(
                   fontSize: 10,
                   fontWeight: FontWeight.bold,

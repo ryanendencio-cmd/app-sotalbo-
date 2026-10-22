@@ -74,7 +74,16 @@ class _HistoryScreenState extends State<HistoryScreen> with SingleTickerProvider
         if (userId == null && userName.isNotEmpty && bName.isNotEmpty && !bName.contains(userName) && !userName.contains(bName)) continue;
 
         final rawDate = (t['date_time'] ?? t['created_at'] ?? '').toString();
-        final status = (t['action'] ?? (t['status'] == 'In Use' ? 'Borrowed' : 'Returned')).toString();
+        final rawAction = (t['action'] ?? (t['status'] == 'In Use' ? 'Borrowed' : 'Returned')).toString();
+        final lower = rawAction.trim().toLowerCase();
+        String status;
+        if (lower == 'in use' || lower == 'borrowed' || lower == 'check-in' || lower == 'checked in' || lower == 'checked out' || lower == 'checkout' || lower == 'checkin') {
+          status = 'Borrowed';
+        } else if (lower == 'returned' || lower == 'available' || lower == 'in storage' || lower == 'return') {
+          status = 'Returned';
+        } else {
+          status = rawAction.trim();
+        }
         final idStr = (t['id'] ?? '').toString();
 
         toolList.add({
@@ -255,7 +264,7 @@ class _HistoryScreenState extends State<HistoryScreen> with SingleTickerProvider
                                   separatorBuilder: (_, __) => const SizedBox(height: 8),
                                   itemBuilder: (context, index) {
                                     final tool = _toolLogs[index];
-                                    final bool isInUse = tool['status'] == 'Borrowed' || tool['status'] == 'In Use';
+                                    final bool isInUse = tool['status'] == 'Borrowed';
                                     return Container(
                                       padding: const EdgeInsets.all(12),
                                       decoration: BoxDecoration(
