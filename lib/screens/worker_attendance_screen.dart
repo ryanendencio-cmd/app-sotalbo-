@@ -32,12 +32,24 @@ class _WorkerAttendanceScreenState extends State<WorkerAttendanceScreen>
     setState(() => _isLoading = true);
     try {
       final data = await ApiService.getAttendance('ALL');
-      final userId = ApiService.currentUser?['id']?.toString();
+      final user = ApiService.currentUser;
+      final userId = user?['id']?.toString();
+      final userWorkerId = user?['worker_id']?.toString();
+      final userName = (user?['name'] ?? user?['full_name'] ??
+          '${user?['first_name'] ?? ''} ${user?['last_name'] ?? ''}').toString().trim().toLowerCase();
+
       if (mounted) {
         setState(() {
-          _attendanceLogs = List<Map<String, dynamic>>.from(data)
-              .where((r) => r['worker_id']?.toString() == userId || userId == null)
-              .toList();
+          _attendanceLogs = List<Map<String, dynamic>>.from(data).where((r) {
+            final rWorkerId = r['worker_id']?.toString();
+            final rName = (r['worker_name'] ?? r['name'] ?? '').toString().trim().toLowerCase();
+            if (userId != null && rWorkerId == userId) return true;
+            if (userWorkerId != null && rWorkerId == userWorkerId) return true;
+            if (userName.isNotEmpty && rName.isNotEmpty && (rName == userName || rName.contains(userName) || userName.contains(rName))) {
+              return true;
+            }
+            return userId == null && userWorkerId == null && userName.isEmpty;
+          }).toList();
         });
       }
     } catch (_) {
@@ -343,14 +355,30 @@ class _WorkerAttendanceScreenState extends State<WorkerAttendanceScreen>
                                         record['date']?.toString());
                                     final timeIn =
                                         record['time_in']?.toString() ??
+                                            record['timeIn']?.toString() ??
+                                            record['morning_in']?.toString() ??
+                                            record['morningIn']?.toString() ??
                                             '—';
                                     final timeOut =
                                         record['time_out']?.toString() ??
+                                            record['timeOut']?.toString() ??
+                                            record['afternoon_out']?.toString() ??
+                                            record['afternoonOut']?.toString() ??
                                             '—';
-                                    final hours =
-                                        record['hours_worked']
-                                            ?.toString() ??
-                                            '—';
+                                    final status = record['status']?.toString() ?? 'Present';
+                                    String hours =
+                                        record['hours_worked']?.toString() ?? '';
+                                    if (hours.isEmpty || hours == '—' || hours == 'null') {
+                                      if (status == 'Present') {
+                                        hours = '8.0';
+                                      } else if (status == 'Halfday') {
+                                        hours = '4.0';
+                                      } else if (status == 'Absent') {
+                                        hours = '0.0';
+                                      } else {
+                                        hours = (timeIn != '—' && timeOut != '—') ? '8.0' : '—';
+                                      }
+                                    }
                                     final ot =
                                         record['overtime_hours']
                                             ?.toString() ??

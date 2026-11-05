@@ -4,6 +4,7 @@ import 'timesheet_screen.dart';
 import 'reports_screen.dart';
 import 'timekeeper_profile_screen.dart';
 import '../widgets/app_sidebar.dart';
+import '../widgets/shift_schedule_dialog.dart';
 import '../services/api_service.dart';
 
 class TimekeeperDashboard extends StatefulWidget {
@@ -182,23 +183,147 @@ class _TimekeeperDashboardState extends State<TimekeeperDashboard> {
     );
   }
 
+  Future<String?> _selectTime(BuildContext context, String current) async {
+    TimeOfDay initial = const TimeOfDay(hour: 8, minute: 0);
+    final match = RegExp(r'^(\d{1,2}):(\d{2})(?:\s*([AP]M))?$', caseSensitive: false).firstMatch(current.trim());
+    if (match != null) {
+      int h = int.tryParse(match.group(1) ?? '8') ?? 8;
+      final m = int.tryParse(match.group(2) ?? '0') ?? 0;
+      final mer = match.group(3)?.toUpperCase();
+      if (mer == 'PM' && h < 12) h += 12;
+      if (mer == 'AM' && h == 12) h = 0;
+      initial = TimeOfDay(hour: h, minute: m);
+    }
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: initial,
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: const ColorScheme.light(
+              primary: Color(0xFFA63228),
+              onPrimary: Colors.white,
+              surface: Colors.white,
+              onSurface: Colors.black87,
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
+    if (picked != null) {
+      final hour = picked.hourOfPeriod == 0 ? 12 : picked.hourOfPeriod;
+      final minute = picked.minute.toString().padLeft(2, '0');
+      final period = picked.period == DayPeriod.am ? 'AM' : 'PM';
+      final formattedHour = hour.toString().padLeft(2, '0');
+      return '$formattedHour:$minute $period';
+    }
+    return null;
+  }
+
   void _openManualEntryDialog() {
     TextEditingController? autocompleteNameController;
-    final roleController = TextEditingController();
-    String selectedType = 'IN';
+    final roleController = TextEditingController(text: 'Mason');
+    DateTime selectedDate = DateTime.now();
+
+    final now = TimeOfDay.now();
+    final nowHour = now.hourOfPeriod == 0 ? 12 : now.hourOfPeriod;
+    final nowMin = now.minute.toString().padLeft(2, '0');
+    final nowPeriod = now.period == DayPeriod.am ? 'AM' : 'PM';
+    final nowFormatted = '${nowHour.toString().padLeft(2, '0')}:$nowMin $nowPeriod';
+
+    String timeInValue = '08:00 AM';
+    String timeOutValue = '05:00 PM';
+    String selectedStatus = 'Present';
+    bool isSaving = false;
 
     showDialog(
       context: context,
       builder: (context) {
         return StatefulBuilder(
-            builder: (context, setDialogState) {
-              return AlertDialog(
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                title: Text('Manual Entry', style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 20, color: Colors.black87)),
-                content: SingleChildScrollView(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              backgroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+              insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+              titlePadding: const EdgeInsets.fromLTRB(20, 20, 20, 10),
+              contentPadding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+              title: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Set Attendance Time',
+                        style: GoogleFonts.inter(fontWeight: FontWeight.w800, fontSize: 17, color: Colors.black87),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        'Admin / Staff Attendance Adjustment',
+                        style: GoogleFonts.inter(fontSize: 11, color: Colors.grey.shade600),
+                      ),
+                    ],
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close, size: 20, color: Colors.grey),
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ],
+              ),
+              content: SizedBox(
+                width: MediaQuery.of(context).size.width > 500 ? 460 : double.maxFinite,
+                child: SingleChildScrollView(
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      // DATE PICKER ROW
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFAF8F5),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: Colors.grey.shade300),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Row(
+                              children: [
+                                const Icon(Icons.calendar_today_rounded, size: 15, color: Color(0xFFA63228)),
+                                const SizedBox(width: 8),
+                                Text(
+                                  'Date: ${selectedDate.year}-${selectedDate.month.toString().padLeft(2, '0')}-${selectedDate.day.toString().padLeft(2, '0')}',
+                                  style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.black87),
+                                ),
+                              ],
+                            ),
+                            InkWell(
+                              onTap: () async {
+                                final picked = await showDatePicker(
+                                  context: context,
+                                  initialDate: selectedDate,
+                                  firstDate: DateTime(2024),
+                                  lastDate: DateTime(2030),
+                                );
+                                if (picked != null) {
+                                  setDialogState(() => selectedDate = picked);
+                                }
+                              },
+                              child: Text(
+                                'Change',
+                                style: GoogleFonts.inter(fontSize: 11.5, fontWeight: FontWeight.bold, color: const Color(0xFFA63228)),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+
+                      // WORKER NAME (AUTOCOMPLETE)
                       Autocomplete<Map<String, dynamic>>(
                         optionsBuilder: (TextEditingValue textEditingValue) {
                           if (textEditingValue.text.isEmpty) {
@@ -220,141 +345,367 @@ class _TimekeeperDashboardState extends State<TimekeeperDashboard> {
                           return TextField(
                             controller: controller,
                             focusNode: focusNode,
-                            style: GoogleFonts.inter(color: Colors.black87),
+                            style: GoogleFonts.inter(color: Colors.black87, fontSize: 13),
                             decoration: InputDecoration(
-                              labelText: 'Worker Name',
-                              labelStyle: GoogleFonts.inter(color: Colors.grey.shade600),
-                              border: const OutlineInputBorder(),
-                              focusedBorder: const OutlineInputBorder(borderSide: BorderSide(color: Colors.black87)),
-                            ),
-                          );
-                        },
-                        optionsViewBuilder: (context, onSelected, options) {
-                          return Align(
-                            alignment: Alignment.topLeft,
-                            child: Material(
-                              elevation: 4,
-                              borderRadius: BorderRadius.circular(10),
-                              child: ConstrainedBox(
-                                constraints: BoxConstraints(
-                                  maxHeight: 200,
-                                  maxWidth: MediaQuery.of(context).size.width * 0.7,
-                                ),
-                                child: ListView.builder(
-                                  padding: EdgeInsets.zero,
-                                  shrinkWrap: true,
-                                  itemCount: options.length,
-                                  itemBuilder: (BuildContext context, int index) {
-                                    final option = options.elementAt(index);
-                                    final name = '${option['first_name'] ?? ''} ${option['last_name'] ?? ''}'.trim();
-                                    final role = option['role'] ?? '';
-                                    return ListTile(
-                                      title: Text(name, style: GoogleFonts.inter(color: Colors.black87)),
-                                      subtitle: Text(role, style: GoogleFonts.inter(color: Colors.grey.shade600, fontSize: 12)),
-                                      onTap: () {
-                                        onSelected(option);
-                                      },
-                                    );
-                                  },
-                                ),
-                              ),
+                              labelText: 'Worker Full Name',
+                              labelStyle: GoogleFonts.inter(color: Colors.grey.shade600, fontSize: 12),
+                              isDense: true,
+                              filled: true,
+                              fillColor: const Color(0xFFFAF8F5),
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                              focusedBorder: const OutlineInputBorder(borderSide: BorderSide(color: Color(0xFFA63228), width: 1.5)),
                             ),
                           );
                         },
                       ),
-                      const SizedBox(height: 16),
+                      const SizedBox(height: 10),
+
+                      // ROLE
                       TextField(
                         controller: roleController,
-                        style: GoogleFonts.inter(color: Colors.black87),
+                        style: GoogleFonts.inter(color: Colors.black87, fontSize: 13),
                         decoration: InputDecoration(
-                          labelText: 'Role (e.g. Mason, Laborer)',
-                          labelStyle: GoogleFonts.inter(color: Colors.grey.shade600),
-                          border: const OutlineInputBorder(),
-                          focusedBorder: const OutlineInputBorder(borderSide: BorderSide(color: Colors.black87)),
+                          labelText: 'Role / Trade (e.g. Mason, Laborer)',
+                          labelStyle: GoogleFonts.inter(color: Colors.grey.shade600, fontSize: 12),
+                          isDense: true,
+                          filled: true,
+                          fillColor: const Color(0xFFFAF8F5),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
                         ),
                       ),
-                      const SizedBox(height: 20),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      const SizedBox(height: 12),
+
+                      // QUICK PRESETS
+                      Text(
+                        'QUICK PRESETS',
+                        style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 0.6, color: Colors.grey.shade600),
+                      ),
+                      const SizedBox(height: 6),
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 6,
                         children: [
-                          ChoiceChip(
-                            label: Text('TIME IN', style: GoogleFonts.inter(fontWeight: FontWeight.bold, color: selectedType == 'IN' ? Colors.white : Colors.black87)),
-                            selected: selectedType == 'IN',
-                            onSelected: (val) => setDialogState(() => selectedType = 'IN'),
-                            selectedColor: Colors.black87,
-                            backgroundColor: Colors.grey.shade200,
-                            showCheckmark: false,
+                          ActionChip(
+                            avatar: const Icon(Icons.wb_sunny_rounded, size: 14, color: Color(0xFFA63228)),
+                            label: Text('Full Day (8AM - 5PM)', style: GoogleFonts.inter(fontSize: 10.5, fontWeight: FontWeight.w600)),
+                            backgroundColor: const Color(0xFFF9F8F6),
+                            onPressed: () {
+                              setDialogState(() {
+                                timeInValue = '08:00 AM';
+                                timeOutValue = '05:00 PM';
+                                selectedStatus = 'Present';
+                              });
+                            },
                           ),
-                          ChoiceChip(
-                            label: Text('TIME OUT', style: GoogleFonts.inter(fontWeight: FontWeight.bold, color: selectedType == 'OUT' ? Colors.white : Colors.black87)),
-                            selected: selectedType == 'OUT',
-                            onSelected: (val) => setDialogState(() => selectedType = 'OUT'),
-                            selectedColor: Colors.black87,
-                            backgroundColor: Colors.grey.shade200,
-                            showCheckmark: false,
+                          ActionChip(
+                            avatar: const Icon(Icons.access_time_rounded, size: 14, color: Colors.teal),
+                            label: Text('Time In Now ($nowFormatted)', style: GoogleFonts.inter(fontSize: 10.5, fontWeight: FontWeight.w600)),
+                            backgroundColor: const Color(0xFFF9F8F6),
+                            onPressed: () {
+                              setDialogState(() {
+                                timeInValue = nowFormatted;
+                                timeOutValue = '--:--';
+                                selectedStatus = 'Present';
+                              });
+                            },
+                          ),
+                          ActionChip(
+                            avatar: const Icon(Icons.logout_rounded, size: 14, color: Colors.indigo),
+                            label: Text('Time Out Now ($nowFormatted)', style: GoogleFonts.inter(fontSize: 10.5, fontWeight: FontWeight.w600)),
+                            backgroundColor: const Color(0xFFF9F8F6),
+                            onPressed: () {
+                              setDialogState(() {
+                                timeOutValue = nowFormatted;
+                              });
+                            },
+                          ),
+                          ActionChip(
+                            avatar: const Icon(Icons.cancel_rounded, size: 14, color: Colors.red),
+                            label: Text('Absent', style: GoogleFonts.inter(fontSize: 10.5, fontWeight: FontWeight.w600)),
+                            backgroundColor: const Color(0xFFF9F8F6),
+                            onPressed: () {
+                              setDialogState(() {
+                                timeInValue = '--:--';
+                                timeOutValue = '--:--';
+                                selectedStatus = 'Absent';
+                              });
+                            },
                           ),
                         ],
-                      )
+                      ),
+                      const SizedBox(height: 14),
+
+                      // TIME IN & TIME OUT PICKERS
+                      Text(
+                        'SET EXACT HOURS',
+                        style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 0.6, color: Colors.grey.shade600),
+                      ),
+                      const SizedBox(height: 6),
+                      Row(
+                        children: [
+                          // TIME IN BOX
+                          Expanded(
+                            child: Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFFAF8F5),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(color: Colors.grey.shade300),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Text(
+                                        'TIME IN',
+                                        style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w800, color: Colors.grey.shade600),
+                                      ),
+                                      if (timeInValue != '--:--')
+                                        GestureDetector(
+                                          onTap: () => setDialogState(() => timeInValue = '--:--'),
+                                          child: const Icon(Icons.close, size: 14, color: Colors.grey),
+                                        ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    timeInValue,
+                                    style: GoogleFonts.inter(
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w900,
+                                      color: timeInValue == '--:--' ? Colors.grey : const Color(0xFFA63228),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  SizedBox(
+                                    width: double.infinity,
+                                    height: 32,
+                                    child: OutlinedButton.icon(
+                                      style: OutlinedButton.styleFrom(
+                                        padding: EdgeInsets.zero,
+                                        side: const BorderSide(color: Color(0xFFA63228)),
+                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                      ),
+                                      icon: const Icon(Icons.access_time_rounded, size: 14, color: Color(0xFFA63228)),
+                                      label: Text('Pick Time', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.bold, color: const Color(0xFFA63228))),
+                                      onPressed: () async {
+                                        final res = await _selectTime(context, timeInValue);
+                                        if (res != null) {
+                                          setDialogState(() => timeInValue = res);
+                                        }
+                                      },
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+
+                          // TIME OUT BOX
+                          Expanded(
+                            child: Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFFAF8F5),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(color: Colors.grey.shade300),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Text(
+                                        'TIME OUT',
+                                        style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w800, color: Colors.grey.shade600),
+                                      ),
+                                      if (timeOutValue != '--:--')
+                                        GestureDetector(
+                                          onTap: () => setDialogState(() => timeOutValue = '--:--'),
+                                          child: const Icon(Icons.close, size: 14, color: Colors.grey),
+                                        ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    timeOutValue,
+                                    style: GoogleFonts.inter(
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w900,
+                                      color: timeOutValue == '--:--' ? Colors.grey : Colors.black87,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  SizedBox(
+                                    width: double.infinity,
+                                    height: 32,
+                                    child: OutlinedButton.icon(
+                                      style: OutlinedButton.styleFrom(
+                                        padding: EdgeInsets.zero,
+                                        side: BorderSide(color: Colors.grey.shade500),
+                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                      ),
+                                      icon: const Icon(Icons.logout_rounded, size: 14, color: Colors.black87),
+                                      label: Text('Pick Time', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.black87)),
+                                      onPressed: () async {
+                                        final res = await _selectTime(context, timeOutValue);
+                                        if (res != null) {
+                                          setDialogState(() => timeOutValue = res);
+                                        }
+                                      },
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+
+                      // STATUS DROPDOWN
+                      DropdownButtonFormField<String>(
+                        value: selectedStatus,
+                        isDense: true,
+                        decoration: InputDecoration(
+                          labelText: 'Attendance Status',
+                          labelStyle: GoogleFonts.inter(fontSize: 11.5),
+                          filled: true,
+                          fillColor: const Color(0xFFFAF8F5),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                        ),
+                        items: ['Present', 'Late', 'Halfday', 'Absent'].map((st) {
+                          return DropdownMenuItem(
+                            value: st,
+                            child: Text(st, style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600)),
+                          );
+                        }).toList(),
+                        onChanged: (val) => setDialogState(() => selectedStatus = val!),
+                      ),
                     ],
                   ),
                 ),
-                actions: [
-                  TextButton(
-                    onPressed: () => Navigator.pop(context),
-                    child: Text('Cancel', style: GoogleFonts.inter(color: Colors.grey.shade700, fontWeight: FontWeight.bold)),
-                  ),
-                  ElevatedButton(
-                    style: ElevatedButton.styleFrom(backgroundColor: Colors.black87, elevation: 0),
-                    onPressed: () {
-                      final workerName = autocompleteNameController?.text.trim() ?? '';
-                      if (workerName.isNotEmpty && roleController.text.isNotEmpty) {
-                        final now = TimeOfDay.now();
-                        final timeString = now.format(context);
+              ),
+              actionsPadding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+              actions: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          side: BorderSide(color: Colors.grey.shade300),
+                        ),
+                        onPressed: () => Navigator.pop(context),
+                        child: Text('Cancel', style: GoogleFonts.inter(color: Colors.grey.shade700, fontWeight: FontWeight.bold, fontSize: 12)),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFFA63228),
+                          elevation: 0,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        ),
+                        onPressed: isSaving ? null : () async {
+                          final workerName = autocompleteNameController?.text.trim() ?? '';
+                          if (workerName.isEmpty) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Please enter or select worker name')),
+                            );
+                            return;
+                          }
 
-                        setState(() {
-                          _recentLogs.insert(0, {
-                            'name': workerName,
-                            'role': roleController.text,
-                            'time': timeString,
-                            'status': 'Manual',
-                            'type': selectedType,
-                          });
-                        });
+                          setDialogState(() => isSaving = true);
+                          final dateStr = selectedDate.toIso8601String().split('T')[0];
 
-                        final matchedWorker = _allWorkers.firstWhere(
-                          (w) => '${w['first_name'] ?? ''} ${w['last_name'] ?? ''}'.trim().toLowerCase() == workerName.toLowerCase(),
-                          orElse: () => <String, dynamic>{},
-                        );
-                        final workerId = matchedWorker['id']?.toString();
-                        final workerRate = matchedWorker['daily_rate'] ?? 600;
+                          final matchedWorker = _allWorkers.firstWhere(
+                            (w) => '${w['first_name'] ?? ''} ${w['last_name'] ?? ''}'.trim().toLowerCase() == workerName.toLowerCase(),
+                            orElse: () => <String, dynamic>{},
+                          );
+                          final workerId = matchedWorker['id']?.toString();
+                          final workerRate = matchedWorker['daily_rate'] ?? 600;
 
-                        ApiService.saveAttendance({
-                          'project_id': matchedWorker['project_id'] ?? '1',
-                          'worker_id': workerId,
-                          'worker_name': workerName,
-                          'name': workerName,
-                          'role': roleController.text,
-                          'date': DateTime.now().toIso8601String().split('T')[0],
-                          if (selectedType == 'IN') 'timeIn': timeString,
-                          if (selectedType == 'OUT') 'timeOut': timeString,
-                          'rate': workerRate,
-                        }).catchError((_) {});
+                          final effectiveTimeIn = timeInValue == '--:--' ? '—' : timeInValue;
+                          final effectiveTimeOut = timeOutValue == '--:--' ? '—' : timeOutValue;
 
-                        Navigator.pop(context);
+                          try {
+                            await ApiService.saveAttendance({
+                              'project_id': matchedWorker['project_id'] ?? '1',
+                              'worker_id': workerId,
+                              'worker_name': workerName,
+                              'name': workerName,
+                              'role': roleController.text,
+                              'date': dateStr,
+                              'timeIn': effectiveTimeIn,
+                              'timeOut': effectiveTimeOut,
+                              'rate': workerRate,
+                              'status': selectedStatus,
+                            });
 
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text('$workerName successfully logged $selectedType!', style: GoogleFonts.inter()),
-                            backgroundColor: Colors.black87,
-                          ),
-                        );
-                      }
-                    },
-                    child: Text('Save Log', style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.bold)),
-                  ),
-                ],
-              );
-            }
+                            if (mounted) {
+                              setState(() {
+                                if (effectiveTimeIn != '—') {
+                                  _recentLogs.insert(0, {
+                                    'name': workerName,
+                                    'role': roleController.text,
+                                    'time': effectiveTimeIn,
+                                    'status': selectedStatus,
+                                    'type': 'IN',
+                                  });
+                                }
+                                if (effectiveTimeOut != '—') {
+                                  _recentLogs.insert(0, {
+                                    'name': workerName,
+                                    'role': roleController.text,
+                                    'time': effectiveTimeOut,
+                                    'status': selectedStatus,
+                                    'type': 'OUT',
+                                  });
+                                }
+                              });
+                            }
+
+                            if (context.mounted) {
+                              Navigator.pop(context);
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('Attendance recorded for $workerName (In: $effectiveTimeIn, Out: $effectiveTimeOut)', style: GoogleFonts.inter()),
+                                  backgroundColor: const Color(0xFFA63228),
+                                ),
+                              );
+                            }
+                            _loadRecentLogs();
+                          } catch (e) {
+                            if (context.mounted) {
+                              setDialogState(() => isSaving = false);
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text('Error saving log: $e')),
+                              );
+                            }
+                          }
+                        },
+                        child: isSaving
+                            ? const SizedBox(
+                                height: 16,
+                                width: 16,
+                                child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                              )
+                            : Text('Save Record', style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            );
+          },
         );
       },
     );
@@ -552,14 +903,42 @@ class _TimekeeperDashboardState extends State<TimekeeperDashboard> {
                       'Recent Logs (Today)',
                       style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w900, color: Colors.black87),
                     ),
-                    TextButton.icon(
-                      onPressed: _openManualEntryDialog,
-                      style: TextButton.styleFrom(padding: EdgeInsets.zero, minimumSize: Size.zero, tapTargetSize: MaterialTapTargetSize.shrinkWrap),
-                      icon: const Icon(Icons.edit_note_rounded, size: 18, color: Colors.black87),
-                      label: Text(
-                        'Manual Entry',
-                        style: GoogleFonts.inter(fontSize: 12.5, fontWeight: FontWeight.bold, color: Colors.black87),
-                      ),
+                    Row(
+                      children: [
+                        TextButton.icon(
+                          onPressed: () {
+                            ShiftScheduleDialog.show(
+                              context,
+                              initialDate: DateTime.now(),
+                              onSaved: () => _loadRecentLogs(),
+                            );
+                          },
+                          style: TextButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                            minimumSize: Size.zero,
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
+                          icon: const Icon(Icons.alarm_on_rounded, size: 16, color: Color(0xFFA63228)),
+                          label: Text(
+                            'Shift Hours',
+                            style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: const Color(0xFFA63228)),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        TextButton.icon(
+                          onPressed: _openManualEntryDialog,
+                          style: TextButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                            minimumSize: Size.zero,
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
+                          icon: const Icon(Icons.edit_note_rounded, size: 18, color: Colors.black87),
+                          label: Text(
+                            'Manual Entry',
+                            style: GoogleFonts.inter(fontSize: 12.5, fontWeight: FontWeight.bold, color: Colors.black87),
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),

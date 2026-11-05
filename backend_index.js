@@ -838,6 +838,8 @@ function startServer() {
       const snapshot = await query.orderBy('date', 'desc').orderBy('created_at', 'desc').get()
       const results = snapshot.docs.map(doc => {
         const r = doc.data()
+        const tIn = r.time_in || r.timeIn || r.morning_in || r.afternoon_in || '—'
+        const tOut = r.time_out || r.timeOut || r.afternoon_out || r.morning_out || '—'
         return {
           id: doc.id,
           project_id: r.project_id,
@@ -852,8 +854,12 @@ function startServer() {
           afternoonOut: r.afternoon_out || r.time_out || '—',
           morningStatus: r.morning_status,
           afternoonStatus: r.afternoon_status,
-          timeIn: r.morning_in || r.afternoon_in || r.time_in || '—',
-          timeOut: r.afternoon_out || r.morning_out || r.time_out || '—',
+          time_in: tIn,
+          time_out: tOut,
+          timeIn: tIn,
+          timeOut: tOut,
+          hours_worked: r.hours_worked || (r.status === 'Present' ? '8.0' : (r.status === 'Halfday' ? '4.0' : '0.0')),
+          overtime_hours: r.overtime_hours || '0.0',
           rate: Number(r.rate) || 0,
           earned_amount: Number(r.earned_amount) || 0,
           advance: Number(r.advance) || 0,
@@ -891,16 +897,126 @@ function startServer() {
       }
     }
 
+    if (!mOut && !aOut && timeOut) {
+      const minutes = parseTimeToMinutes(timeOut)
+      if (minutes !== null && minutes <= 13 * 60) {
+        mOut = timeOut
+      } else if (minutes !== null) {
+        aOut = timeOut
+      } else {
+        aOut = timeOut
+      }
+    }
+
     const evaluated = evaluateTwoSessions(mIn, aIn, baseRate)
     const status = req.body.status && req.body.status !== 'Present' ? req.body.status : evaluated.status
     const earnedAmount = (status === 'Absent') ? 0 : evaluated.earnedAmount
 
+    const finalTimeIn = timeIn || mIn || aIn || '—'
+    const finalTimeOut = timeOut || aOut || mOut || '—'
+
+    let hoursWorked = 0
+    let otHours = 0
+    const inMin = parseTimeToMinutes(finalTimeIn)
+    const outMin = parseTimeToMinutes(finalTimeOut)
+    if (inMin !== null && outMin !== null && outMin > inMin) {
+      const totalMinutes = outMin - inMin
+      const lunchDeduction = (inMin <= 12 * 60 && outMin >= 13 * 60) ? 60 : 0
+      const netMinutes = Math.max(0, totalMinutes - lunchDeduction)
+      const totalH = netMinutes / 60
+      hoursWorked = Math.min(8.0, totalH)
+      otHours = Math.max(0, totalH - 8.0)
+    } else if (status === 'Present') {
+      hoursWorked = 8.0
+    } else if (status === 'Halfday') {
+      hoursWorked = 4.0
+    }
+
     try {
+      // Check if attendance already exists for worker on this date
+      let existingDoc = null
+      try {
+        let q = db.collection('attendance').where('date', '==', finalDate)
+        if (worker_id) {
+          q = q.where('worker_id', '==', worker_id)
+        }
+        const existingSnap = await q.get()
+        existingDoc = existingSnap.docs.find(d => {
+          const data = d.data()
+          if (worker_id && data.worker_id == worker_id) return true
+          if (finalName && (data.worker_name || data.name) === finalName) return true
+          return false
+        })
+      } catch (_) {}
+
+      if (existingDoc) {
+        const curData = existingDoc.data()
+        const mergedMIn = mIn || curData.morning_in || curData.morningIn || (finalTimeIn !== '—' ? finalTimeIn : '—')
+        const mergedMOut = mOut || curData.morning_out || curData.morningOut || '—'
+        const mergedAIn = aIn || curData.afternoon_in || curData.afternoonIn || '—'
+        const mergedAOut = aOut || curData.afternoon_out || curData.afternoonOut || (finalTimeOut !== '—' ? finalTimeOut : '—')
+        const mergedTimeIn = (finalTimeIn !== '—') ? finalTimeIn : (curData.time_in || curData.timeIn || '—')
+        const mergedTimeOut = (finalTimeOut !== '—') ? finalTimeOut : (curData.time_out || curData.timeOut || '—')
+
+        await existingDoc.ref.update({
+          morning_in: mergedMIn,
+          morning_out: mergedMOut,
+          afternoon_in: mergedAIn,
+          afternoon_out: mergedAOut,
+          time_in: mergedTimeIn,
+          time_out: mergedTimeOut,
+          timeIn: mergedTimeIn,
+          timeOut: mergedTimeOut,
+          hours_worked: hoursWorked > 0 ? hoursWorked.toFixed(1) : (curData.hours_worked || '8.0'),
+          overtime_hours: otHours > 0 ? otHours.toFixed(1) : (curData.overtime_hours || '0.0'),
+          rate: baseRate || curData.rate || 0,
+          earned_amount: earnedAmount || curData.earned_amount || 0,
+          status: status || curData.status || 'Present',
+          updated_at: FieldValue.serverTimestamp()
+        })
+
+        return res.json({
+          id: existingDoc.id,
+          project_id: curData.project_id || project_id,
+          worker_id: curData.worker_id || worker_id,
+          worker_name: finalName,
+          name: finalName,
+          date: finalDate,
+          role: role || curData.role || 'Laborer',
+          morningIn: mergedMIn,
+          morningOut: mergedMOut,
+          afternoonIn: mergedAIn,
+          afternoonOut: mergedAOut,
+          timeIn: mergedTimeIn,
+          timeOut: mergedTimeOut,
+          time_in: mergedTimeIn,
+          time_out: mergedTimeOut,
+          hours_worked: hoursWorked > 0 ? hoursWorked.toFixed(1) : (curData.hours_worked || '8.0'),
+          overtime_hours: otHours > 0 ? otHours.toFixed(1) : (curData.overtime_hours || '0.0'),
+          rate: baseRate || curData.rate || 0,
+          earned_amount: earnedAmount || curData.earned_amount || 0,
+          status: status || curData.status || 'Present'
+        })
+      }
+
       const newAttendance = {
-        project_id: project_id || null, worker_id: worker_id || null, worker_name: finalName, date: finalDate, role: role || 'Laborer',
-        morning_in: mIn || '—', morning_out: mOut || '—', afternoon_in: aIn || '—', afternoon_out: aOut || '—',
-        morning_status: evaluated.morningStatus, afternoon_status: evaluated.afternoonStatus,
-        time_in: mIn || aIn || '—', time_out: aOut || mOut || '—', rate: baseRate, earned_amount: earnedAmount, advance: advance || 0, status,
+        project_id: project_id || null, worker_id: worker_id || null, worker_name: finalName, name: finalName, date: finalDate, role: role || 'Laborer',
+        morning_in: mIn || (finalTimeIn !== '—' ? finalTimeIn : '—'),
+        morning_out: mOut || '—',
+        afternoon_in: aIn || '—',
+        afternoon_out: aOut || (finalTimeOut !== '—' ? finalTimeOut : '—'),
+        morning_status: evaluated.morningStatus,
+        afternoon_status: evaluated.afternoonStatus,
+        time_in: finalTimeIn,
+        time_out: finalTimeOut,
+        timeIn: finalTimeIn,
+        timeOut: finalTimeOut,
+        hours_worked: hoursWorked.toFixed(1),
+        overtime_hours: otHours.toFixed(1),
+        rate: baseRate,
+        earned_amount: earnedAmount,
+        advance: advance || 0,
+        status,
         created_at: FieldValue.serverTimestamp()
       }
       const docRef = await db.collection('attendance').add(newAttendance)
@@ -908,8 +1024,20 @@ function startServer() {
       res.json({
         id: docRef.id,
         project_id, worker_id, worker_name: finalName, name: finalName, date: finalDate, role: role || 'Laborer',
-        morningIn: mIn || '—', morningOut: mOut || '—', afternoonIn: aIn || '—', afternoonOut: aOut || '—',
-        timeIn: mIn || aIn || '—', timeOut: aOut || mOut || '—', rate: baseRate, earned_amount: earnedAmount, advance: advance || 0, status
+        morningIn: newAttendance.morning_in,
+        morningOut: newAttendance.morning_out,
+        afternoonIn: newAttendance.afternoon_in,
+        afternoonOut: newAttendance.afternoon_out,
+        timeIn: finalTimeIn,
+        timeOut: finalTimeOut,
+        time_in: finalTimeIn,
+        time_out: finalTimeOut,
+        hours_worked: hoursWorked.toFixed(1),
+        overtime_hours: otHours.toFixed(1),
+        rate: baseRate,
+        earned_amount: earnedAmount,
+        advance: advance || 0,
+        status
       })
     } catch (err) {
       res.status(500).json({ error: err.message })

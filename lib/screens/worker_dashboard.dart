@@ -106,15 +106,27 @@ class _WorkerDashboardState extends State<WorkerDashboard> {
     try {
       final tools = await ApiService.getBorrowHistory('ALL');
       final List<Map<String, String>> myTools = [];
-      for (final t in tools) {
+      for (final raw in tools) {
+        final t = Map<String, dynamic>.from(raw as Map);
         final bId = t['worker_id']?.toString();
         final bName = (t['borrower_name'] ?? t['borrower'] ?? '').toString().trim().toLowerCase();
         if (userId != null && bId != null && bId != userId) continue;
         if (userId == null && userName.isNotEmpty && bName.isNotEmpty && !bName.contains(userName) && !userName.contains(bName)) continue;
 
-        if (t['action'] == 'Borrowed' || t['status'] == 'In Use') {
+        final action = (t['action'] ?? t['status'] ?? '').toString();
+        if (action == 'Borrowed' || action == 'In Use' || action == 'Checked Out') {
+          final rawTime = t['borrow_date'] ?? t['date_time'] ?? t['borrow_at'] ?? t['created_at'] ?? t['time'];
+          final formattedTime = _formatToolDate(rawTime);
+          final code = _formatToolCode(t);
+          final condition = (t['condition_status'] ?? t['condition'] ?? 'Good').toString();
+          final qty = (t['quantity'] ?? t['qty'] ?? 1).toString();
+
           myTools.add({
             'name': (t['tool_name'] ?? t['name'] ?? 'Tool').toString(),
+            'code': code,
+            'time': formattedTime,
+            'condition': condition,
+            'quantity': qty,
             'status': 'In Use',
           });
         }
@@ -126,6 +138,87 @@ class _WorkerDashboardState extends State<WorkerDashboard> {
         });
       }
     } catch (_) {}
+  }
+
+  String _formatToolCode(Map<String, dynamic> t) {
+    final rawCode = (t['tool_code'] ?? t['code'] ?? t['serial_no'] ?? t['serial'] ?? t['asset_code'])?.toString().trim();
+    if (rawCode != null && rawCode.isNotEmpty && rawCode != 'null') {
+      return rawCode.toUpperCase().startsWith('TL') || rawCode.toUpperCase().startsWith('TOOL')
+          ? rawCode
+          : 'Code: $rawCode';
+    }
+    final type = (t['type'] ?? t['category'])?.toString().trim();
+    if (type != null && type.isNotEmpty && type != 'null') {
+      return type;
+    }
+    final condition = (t['condition_status'] ?? t['condition'])?.toString().trim();
+    if (condition != null && condition.isNotEmpty && condition != 'null') {
+      return 'Cond: $condition';
+    }
+    final id = (t['tool_id'] ?? t['asset_id'] ?? t['id'])?.toString().trim();
+    if (id != null && id.isNotEmpty && id != 'null') {
+      if (id.length <= 6) return 'Ref #$id';
+      return 'Ref #${id.substring(0, 5).toUpperCase()}';
+    }
+    return 'Hand Tool';
+  }
+
+  String _formatToolDate(dynamic raw) {
+    if (raw == null) return 'Recently';
+    if (raw is Map) {
+      final secs = raw['_seconds'] ?? raw['seconds'];
+      if (secs is num) {
+        final dt = DateTime.fromMillisecondsSinceEpoch((secs * 1000).toInt()).toLocal();
+        return _formatToolDateTime(dt);
+      }
+    }
+    final str = raw.toString().trim();
+    if (str.isEmpty || str == 'null') return 'Recently';
+    try {
+      final dt = DateTime.parse(str).toLocal();
+      return _formatToolDateTime(dt);
+    } catch (_) {
+      return str;
+    }
+  }
+
+  String _formatToolDateTime(DateTime dt) {
+    final now = DateTime.now();
+    final m = _months[dt.month - 1];
+    final hr = dt.hour > 12 ? dt.hour - 12 : (dt.hour == 0 ? 12 : dt.hour);
+    final ampm = dt.hour >= 12 ? 'PM' : 'AM';
+    final min = dt.minute.toString().padLeft(2, '0');
+    if (now.year == dt.year && now.month == dt.month && now.day == dt.day) {
+      return 'Today, $hr:$min $ampm';
+    }
+    return '$m ${dt.day}, ${dt.year}';
+  }
+
+  String _buildToolSubtitle(Map<String, String> tool) {
+    final code = tool['code']?.trim();
+    final time = tool['time']?.trim();
+    final cond = tool['condition']?.trim();
+    final qty = tool['quantity']?.trim();
+
+    final parts = <String>[];
+    if (qty != null && qty.isNotEmpty && qty != '1' && qty != 'null') {
+      parts.add('Qty: $qty');
+    }
+    if (code != null && code.isNotEmpty && code != 'null') {
+      parts.add(code);
+    } else if (cond != null && cond.isNotEmpty && cond != 'null') {
+      parts.add('Cond: $cond');
+    } else {
+      parts.add('Hand Tool');
+    }
+
+    if (time != null && time.isNotEmpty && time != 'null' && time != '—') {
+      parts.add('Assigned $time');
+    } else {
+      parts.add('Assigned Active');
+    }
+
+    return parts.join(' · ');
   }
 
   String _timeIn = "--:-- AM";
@@ -1111,11 +1204,12 @@ class _WorkerDashboardState extends State<WorkerDashboard> {
                                             crossAxisAlignment: CrossAxisAlignment.start,
                                             children: [
                                               Text(
-                                                tool['name']!,
+                                                (tool['name'] != null && tool['name']!.isNotEmpty && tool['name'] != 'null') ? tool['name']! : 'Equipment',
                                                 style: GoogleFonts.inter(fontSize: 11.5, fontWeight: FontWeight.w600, color: Colors.black87),
                                               ),
+                                              const SizedBox(height: 2),
                                               Text(
-                                                '${tool['code']} · Assigned ${tool['time']}',
+                                                _buildToolSubtitle(tool),
                                                 style: GoogleFonts.inter(fontSize: 10, color: Colors.grey.shade600),
                                               ),
                                             ],
@@ -1129,7 +1223,7 @@ class _WorkerDashboardState extends State<WorkerDashboard> {
                                             border: Border.all(color: Colors.orange.shade200),
                                           ),
                                           child: Text(
-                                            tool['status']!,
+                                            (tool['status'] != null && tool['status']!.isNotEmpty && tool['status'] != 'null') ? tool['status']! : 'In Use',
                                             style: GoogleFonts.inter(fontSize: 9.5, fontWeight: FontWeight.bold, color: Colors.orange.shade800),
                                           ),
                                         ),

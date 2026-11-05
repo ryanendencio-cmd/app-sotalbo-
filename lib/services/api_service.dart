@@ -96,6 +96,16 @@ class ApiService {
   static Future<dynamic> updateSchedule(dynamic id, Map<String, dynamic> data) => _put('/schedules/$id', data);
   static Future<void> deleteSchedule(dynamic id) => _delete('/schedules/$id');
 
+  // Schedule Overrides (Date-specific work shift rules)
+  static Future<List<dynamic>> getScheduleOverrides() =>
+      _get('/schedule-overrides').then((v) => v as List);
+  static Future<dynamic> getScheduleOverrideForDate(String date) =>
+      _get('/schedule-overrides/$date');
+  static Future<dynamic> saveScheduleOverride(Map<String, dynamic> data) =>
+      _post('/schedule-overrides', data);
+  static Future<dynamic> deleteScheduleOverride(String date) =>
+      _delete('/schedule-overrides/$date');
+
   // Workers
   static Future<List<dynamic>> getWorkers() => _get('/workers').then((v) => v as List);
   static Future<dynamic> createWorker(Map<String, dynamic> data) => _post('/workers', data);
