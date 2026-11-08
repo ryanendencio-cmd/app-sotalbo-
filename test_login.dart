@@ -1,5 +1,7 @@
-import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'dart:io';
+
+import 'package:http/http.dart' as http;
 
 void main() async {
   try {
@@ -8,9 +10,9 @@ void main() async {
       headers: {'Content-Type': 'application/json'}, 
       body: jsonEncode({'username': '09602643305', 'password': 'Mico1234'})
     );
-    print('0960: ${res.statusCode} ${res.body}');
+    stdout.writeln('0960: ${res.statusCode} ${res.body}');
   } catch(e) {
-    print(e);
+    stderr.writeln(e);
   }
 
   try {
@@ -19,9 +21,9 @@ void main() async {
       headers: {'Content-Type': 'application/json'}, 
       body: jsonEncode({'username': '+6309602643305', 'password': 'Mico1234'})
     );
-    print('+630960: ${res2.statusCode} ${res2.body}');
+    stdout.writeln('+630960: ${res2.statusCode} ${res2.body}');
   } catch(e) {
-    print(e);
+    stderr.writeln(e);
   }
 
   try {
@@ -30,9 +32,9 @@ void main() async {
       headers: {'Content-Type': 'application/json'}, 
       body: jsonEncode({'username': '+639602643305', 'password': 'Mico1234'})
     );
-    print('+63960: ${res3.statusCode} ${res3.body}');
+    stdout.writeln('+63960: ${res3.statusCode} ${res3.body}');
   } catch(e) {
-    print(e);
+    stderr.writeln(e);
   }
 
   try {
@@ -41,11 +43,11 @@ void main() async {
       var data = jsonDecode(res4.body) as List;
       for (var w in data) {
         if (w['phone'] != null && w['phone'].toString().contains('9602643305')) {
-            print('FOUND WORKER: ${w}');
+            stdout.writeln('FOUND WORKER: $w');
         }
       }
     }
   } catch(e) {
-    print(e);
+    stderr.writeln(e);
   }
 }
