@@ -1,5 +1,7 @@
-import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'dart:io';
+
+import 'package:http/http.dart' as http;
 
 void main() async {
   try {
@@ -8,9 +10,9 @@ void main() async {
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode({'status': 'Approved'})
     );
-    print('STATUS: ${res.statusCode}');
-    print('BODY: ${res.body}');
+    stdout.writeln('STATUS: ${res.statusCode}');
+    stdout.writeln('BODY: ${res.body}');
   } catch (e) {
-    print('ERROR: $e');
+    stderr.writeln('ERROR: $e');
   }
 }

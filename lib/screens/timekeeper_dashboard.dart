@@ -24,7 +24,6 @@ class _TimekeeperDashboardState extends State<TimekeeperDashboard> {
 
   final List<Map<String, dynamic>> _recentLogs = [];
   List<Map<String, dynamic>> _allWorkers = [];
-  bool _isLoadingWorkers = false;
 
   @override
   void initState() {
@@ -72,19 +71,15 @@ class _TimekeeperDashboardState extends State<TimekeeperDashboard> {
   }
 
   Future<void> _loadWorkers() async {
-    setState(() => _isLoadingWorkers = true);
     try {
       final workersList = await ApiService.getWorkers();
       if (mounted) {
         setState(() {
           _allWorkers = List<Map<String, dynamic>>.from(workersList);
-          _isLoadingWorkers = false;
         });
       }
     } catch (e) {
-      if (mounted) {
-        setState(() => _isLoadingWorkers = false);
-      }
+      debugPrint('Failed to load workers: $e');
     }
   }
 
@@ -109,7 +104,7 @@ class _TimekeeperDashboardState extends State<TimekeeperDashboard> {
     );
 
     if (picked != null && picked != _selectedTrendDate) {
-      if (!mounted) return;
+      if (!mounted || !context.mounted) return;
       setState(() {
         _selectedTrendDate = picked;
         _currentCounts = ['0', '0', '0', '0', '0', '0'];
@@ -118,7 +113,9 @@ class _TimekeeperDashboardState extends State<TimekeeperDashboard> {
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Graph updated for week of ${picked.month}/${picked.day}/${picked.year}'),
+          content: Text(
+            'Graph updated for week of ${picked.month}/${picked.day}/${picked.year}',
+          ),
           backgroundColor: Colors.black87,
           duration: const Duration(seconds: 2),
         ),
@@ -136,16 +133,36 @@ class _TimekeeperDashboardState extends State<TimekeeperDashboard> {
           height: MediaQuery.of(context).size.height * 0.75,
           decoration: const BoxDecoration(
             color: Colors.white,
-            borderRadius: BorderRadius.only(topLeft: Radius.circular(30), topRight: Radius.circular(30)),
+            borderRadius: BorderRadius.only(
+              topLeft: Radius.circular(30),
+              topRight: Radius.circular(30),
+            ),
           ),
           child: Column(
             children: [
               const SizedBox(height: 12),
-              Container(width: 40, height: 5, decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(10))),
+              Container(
+                width: 40,
+                height: 5,
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
               const SizedBox(height: 24),
-              Text('Scan ID Barcode / QR', style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.black87)),
+              Text(
+                'Scan ID Barcode / QR',
+                style: GoogleFonts.inter(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black87,
+                ),
+              ),
               const SizedBox(height: 8),
-              Text('Align worker ID card with the camera', style: GoogleFonts.inter(color: Colors.grey.shade600)),
+              Text(
+                'Align worker ID card with the camera',
+                style: GoogleFonts.inter(color: Colors.grey.shade600),
+              ),
               const Spacer(),
               Container(
                 width: 250,
@@ -156,7 +173,11 @@ class _TimekeeperDashboardState extends State<TimekeeperDashboard> {
                   color: Colors.grey.shade100,
                 ),
                 child: const Center(
-                  child: Icon(Icons.qr_code_scanner_outlined, size: 60, color: Colors.black54),
+                  child: Icon(
+                    Icons.qr_code_scanner_outlined,
+                    size: 60,
+                    color: Colors.black54,
+                  ),
                 ),
               ),
               const Spacer(),
@@ -169,10 +190,18 @@ class _TimekeeperDashboardState extends State<TimekeeperDashboard> {
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.grey.shade200,
                       elevation: 0,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(15),
+                      ),
                     ),
                     onPressed: () => Navigator.pop(context),
-                    child: Text('Cancel', style: GoogleFonts.inter(color: Colors.black87, fontWeight: FontWeight.bold)),
+                    child: Text(
+                      'Cancel',
+                      style: GoogleFonts.inter(
+                        color: Colors.black87,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                   ),
                 ),
               ),
@@ -185,7 +214,10 @@ class _TimekeeperDashboardState extends State<TimekeeperDashboard> {
 
   Future<String?> _selectTime(BuildContext context, String current) async {
     TimeOfDay initial = const TimeOfDay(hour: 8, minute: 0);
-    final match = RegExp(r'^(\d{1,2}):(\d{2})(?:\s*([AP]M))?$', caseSensitive: false).firstMatch(current.trim());
+    final match = RegExp(
+      r'^(\d{1,2}):(\d{2})(?:\s*([AP]M))?$',
+      caseSensitive: false,
+    ).firstMatch(current.trim());
     if (match != null) {
       int h = int.tryParse(match.group(1) ?? '8') ?? 8;
       final m = int.tryParse(match.group(2) ?? '0') ?? 0;
@@ -230,7 +262,8 @@ class _TimekeeperDashboardState extends State<TimekeeperDashboard> {
     final nowHour = now.hourOfPeriod == 0 ? 12 : now.hourOfPeriod;
     final nowMin = now.minute.toString().padLeft(2, '0');
     final nowPeriod = now.period == DayPeriod.am ? 'AM' : 'PM';
-    final nowFormatted = '${nowHour.toString().padLeft(2, '0')}:$nowMin $nowPeriod';
+    final nowFormatted =
+        '${nowHour.toString().padLeft(2, '0')}:$nowMin $nowPeriod';
 
     String timeInValue = '08:00 AM';
     String timeOutValue = '05:00 PM';
@@ -244,8 +277,13 @@ class _TimekeeperDashboardState extends State<TimekeeperDashboard> {
           builder: (context, setDialogState) {
             return AlertDialog(
               backgroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-              insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
+              insetPadding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 24,
+              ),
               titlePadding: const EdgeInsets.fromLTRB(20, 20, 20, 10),
               contentPadding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
               title: Row(
@@ -256,12 +294,19 @@ class _TimekeeperDashboardState extends State<TimekeeperDashboard> {
                     children: [
                       Text(
                         'Set Attendance Time',
-                        style: GoogleFonts.inter(fontWeight: FontWeight.w800, fontSize: 17, color: Colors.black87),
+                        style: GoogleFonts.inter(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 17,
+                          color: Colors.black87,
+                        ),
                       ),
                       const SizedBox(height: 2),
                       Text(
                         'Admin / Staff Attendance Adjustment',
-                        style: GoogleFonts.inter(fontSize: 11, color: Colors.grey.shade600),
+                        style: GoogleFonts.inter(
+                          fontSize: 11,
+                          color: Colors.grey.shade600,
+                        ),
                       ),
                     ],
                   ),
@@ -274,7 +319,9 @@ class _TimekeeperDashboardState extends State<TimekeeperDashboard> {
                 ],
               ),
               content: SizedBox(
-                width: MediaQuery.of(context).size.width > 500 ? 460 : double.maxFinite,
+                width: MediaQuery.of(context).size.width > 500
+                    ? 460
+                    : double.maxFinite,
                 child: SingleChildScrollView(
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
@@ -282,7 +329,10 @@ class _TimekeeperDashboardState extends State<TimekeeperDashboard> {
                     children: [
                       // DATE PICKER ROW
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
                         decoration: BoxDecoration(
                           color: const Color(0xFFFAF8F5),
                           borderRadius: BorderRadius.circular(10),
@@ -293,11 +343,19 @@ class _TimekeeperDashboardState extends State<TimekeeperDashboard> {
                           children: [
                             Row(
                               children: [
-                                const Icon(Icons.calendar_today_rounded, size: 15, color: Color(0xFFA63228)),
+                                const Icon(
+                                  Icons.calendar_today_rounded,
+                                  size: 15,
+                                  color: Color(0xFFA63228),
+                                ),
                                 const SizedBox(width: 8),
                                 Text(
                                   'Date: ${selectedDate.year}-${selectedDate.month.toString().padLeft(2, '0')}-${selectedDate.day.toString().padLeft(2, '0')}',
-                                  style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.black87),
+                                  style: GoogleFonts.inter(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.black87,
+                                  ),
                                 ),
                               ],
                             ),
@@ -315,7 +373,11 @@ class _TimekeeperDashboardState extends State<TimekeeperDashboard> {
                               },
                               child: Text(
                                 'Change',
-                                style: GoogleFonts.inter(fontSize: 11.5, fontWeight: FontWeight.bold, color: const Color(0xFFA63228)),
+                                style: GoogleFonts.inter(
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.bold,
+                                  color: const Color(0xFFA63228),
+                                ),
                               ),
                             ),
                           ],
@@ -330,47 +392,75 @@ class _TimekeeperDashboardState extends State<TimekeeperDashboard> {
                             return const Iterable<Map<String, dynamic>>.empty();
                           }
                           return _allWorkers.where((worker) {
-                            final name = '${worker['first_name'] ?? ''} ${worker['last_name'] ?? ''}'.trim();
-                            return name.toLowerCase().contains(textEditingValue.text.toLowerCase());
+                            final name =
+                                '${worker['first_name'] ?? ''} ${worker['last_name'] ?? ''}'
+                                    .trim();
+                            return name.toLowerCase().contains(
+                              textEditingValue.text.toLowerCase(),
+                            );
                           });
                         },
                         displayStringForOption: (Map<String, dynamic> option) {
-                          return '${option['first_name'] ?? ''} ${option['last_name'] ?? ''}'.trim();
+                          return '${option['first_name'] ?? ''} ${option['last_name'] ?? ''}'
+                              .trim();
                         },
                         onSelected: (Map<String, dynamic> selection) {
-                          roleController.text = selection['role']?.toString() ?? 'Mason';
+                          roleController.text =
+                              selection['role']?.toString() ?? 'Mason';
                         },
-                        fieldViewBuilder: (context, controller, focusNode, onFieldSubmitted) {
-                          autocompleteNameController = controller;
-                          return TextField(
-                            controller: controller,
-                            focusNode: focusNode,
-                            style: GoogleFonts.inter(color: Colors.black87, fontSize: 13),
-                            decoration: InputDecoration(
-                              labelText: 'Worker Full Name',
-                              labelStyle: GoogleFonts.inter(color: Colors.grey.shade600, fontSize: 12),
-                              isDense: true,
-                              filled: true,
-                              fillColor: const Color(0xFFFAF8F5),
-                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                              focusedBorder: const OutlineInputBorder(borderSide: BorderSide(color: Color(0xFFA63228), width: 1.5)),
-                            ),
-                          );
-                        },
+                        fieldViewBuilder:
+                            (context, controller, focusNode, onFieldSubmitted) {
+                              autocompleteNameController = controller;
+                              return TextField(
+                                controller: controller,
+                                focusNode: focusNode,
+                                style: GoogleFonts.inter(
+                                  color: Colors.black87,
+                                  fontSize: 13,
+                                ),
+                                decoration: InputDecoration(
+                                  labelText: 'Worker Full Name',
+                                  labelStyle: GoogleFonts.inter(
+                                    color: Colors.grey.shade600,
+                                    fontSize: 12,
+                                  ),
+                                  isDense: true,
+                                  filled: true,
+                                  fillColor: const Color(0xFFFAF8F5),
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  focusedBorder: const OutlineInputBorder(
+                                    borderSide: BorderSide(
+                                      color: Color(0xFFA63228),
+                                      width: 1.5,
+                                    ),
+                                  ),
+                                ),
+                              );
+                            },
                       ),
                       const SizedBox(height: 10),
 
                       // ROLE
                       TextField(
                         controller: roleController,
-                        style: GoogleFonts.inter(color: Colors.black87, fontSize: 13),
+                        style: GoogleFonts.inter(
+                          color: Colors.black87,
+                          fontSize: 13,
+                        ),
                         decoration: InputDecoration(
                           labelText: 'Role / Trade (e.g. Mason, Laborer)',
-                          labelStyle: GoogleFonts.inter(color: Colors.grey.shade600, fontSize: 12),
+                          labelStyle: GoogleFonts.inter(
+                            color: Colors.grey.shade600,
+                            fontSize: 12,
+                          ),
                           isDense: true,
                           filled: true,
                           fillColor: const Color(0xFFFAF8F5),
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
                         ),
                       ),
                       const SizedBox(height: 12),
@@ -378,7 +468,12 @@ class _TimekeeperDashboardState extends State<TimekeeperDashboard> {
                       // QUICK PRESETS
                       Text(
                         'QUICK PRESETS',
-                        style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 0.6, color: Colors.grey.shade600),
+                        style: GoogleFonts.inter(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 0.6,
+                          color: Colors.grey.shade600,
+                        ),
                       ),
                       const SizedBox(height: 6),
                       Wrap(
@@ -386,8 +481,18 @@ class _TimekeeperDashboardState extends State<TimekeeperDashboard> {
                         runSpacing: 6,
                         children: [
                           ActionChip(
-                            avatar: const Icon(Icons.wb_sunny_rounded, size: 14, color: Color(0xFFA63228)),
-                            label: Text('Full Day (8AM - 5PM)', style: GoogleFonts.inter(fontSize: 10.5, fontWeight: FontWeight.w600)),
+                            avatar: const Icon(
+                              Icons.wb_sunny_rounded,
+                              size: 14,
+                              color: Color(0xFFA63228),
+                            ),
+                            label: Text(
+                              'Full Day (8AM - 5PM)',
+                              style: GoogleFonts.inter(
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
                             backgroundColor: const Color(0xFFF9F8F6),
                             onPressed: () {
                               setDialogState(() {
@@ -398,8 +503,18 @@ class _TimekeeperDashboardState extends State<TimekeeperDashboard> {
                             },
                           ),
                           ActionChip(
-                            avatar: const Icon(Icons.access_time_rounded, size: 14, color: Colors.teal),
-                            label: Text('Time In Now ($nowFormatted)', style: GoogleFonts.inter(fontSize: 10.5, fontWeight: FontWeight.w600)),
+                            avatar: const Icon(
+                              Icons.access_time_rounded,
+                              size: 14,
+                              color: Colors.teal,
+                            ),
+                            label: Text(
+                              'Time In Now ($nowFormatted)',
+                              style: GoogleFonts.inter(
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
                             backgroundColor: const Color(0xFFF9F8F6),
                             onPressed: () {
                               setDialogState(() {
@@ -410,8 +525,18 @@ class _TimekeeperDashboardState extends State<TimekeeperDashboard> {
                             },
                           ),
                           ActionChip(
-                            avatar: const Icon(Icons.logout_rounded, size: 14, color: Colors.indigo),
-                            label: Text('Time Out Now ($nowFormatted)', style: GoogleFonts.inter(fontSize: 10.5, fontWeight: FontWeight.w600)),
+                            avatar: const Icon(
+                              Icons.logout_rounded,
+                              size: 14,
+                              color: Colors.indigo,
+                            ),
+                            label: Text(
+                              'Time Out Now ($nowFormatted)',
+                              style: GoogleFonts.inter(
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
                             backgroundColor: const Color(0xFFF9F8F6),
                             onPressed: () {
                               setDialogState(() {
@@ -420,8 +545,18 @@ class _TimekeeperDashboardState extends State<TimekeeperDashboard> {
                             },
                           ),
                           ActionChip(
-                            avatar: const Icon(Icons.cancel_rounded, size: 14, color: Colors.red),
-                            label: Text('Absent', style: GoogleFonts.inter(fontSize: 10.5, fontWeight: FontWeight.w600)),
+                            avatar: const Icon(
+                              Icons.cancel_rounded,
+                              size: 14,
+                              color: Colors.red,
+                            ),
+                            label: Text(
+                              'Absent',
+                              style: GoogleFonts.inter(
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
                             backgroundColor: const Color(0xFFF9F8F6),
                             onPressed: () {
                               setDialogState(() {
@@ -438,7 +573,12 @@ class _TimekeeperDashboardState extends State<TimekeeperDashboard> {
                       // TIME IN & TIME OUT PICKERS
                       Text(
                         'SET EXACT HOURS',
-                        style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 0.6, color: Colors.grey.shade600),
+                        style: GoogleFonts.inter(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 0.6,
+                          color: Colors.grey.shade600,
+                        ),
                       ),
                       const SizedBox(height: 6),
                       Row(
@@ -456,16 +596,27 @@ class _TimekeeperDashboardState extends State<TimekeeperDashboard> {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Row(
-                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.spaceBetween,
                                     children: [
                                       Text(
                                         'TIME IN',
-                                        style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w800, color: Colors.grey.shade600),
+                                        style: GoogleFonts.inter(
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.w800,
+                                          color: Colors.grey.shade600,
+                                        ),
                                       ),
                                       if (timeInValue != '--:--')
                                         GestureDetector(
-                                          onTap: () => setDialogState(() => timeInValue = '--:--'),
-                                          child: const Icon(Icons.close, size: 14, color: Colors.grey),
+                                          onTap: () => setDialogState(
+                                            () => timeInValue = '--:--',
+                                          ),
+                                          child: const Icon(
+                                            Icons.close,
+                                            size: 14,
+                                            color: Colors.grey,
+                                          ),
                                         ),
                                     ],
                                   ),
@@ -475,7 +626,9 @@ class _TimekeeperDashboardState extends State<TimekeeperDashboard> {
                                     style: GoogleFonts.inter(
                                       fontSize: 15,
                                       fontWeight: FontWeight.w900,
-                                      color: timeInValue == '--:--' ? Colors.grey : const Color(0xFFA63228),
+                                      color: timeInValue == '--:--'
+                                          ? Colors.grey
+                                          : const Color(0xFFA63228),
                                     ),
                                   ),
                                   const SizedBox(height: 8),
@@ -485,15 +638,37 @@ class _TimekeeperDashboardState extends State<TimekeeperDashboard> {
                                     child: OutlinedButton.icon(
                                       style: OutlinedButton.styleFrom(
                                         padding: EdgeInsets.zero,
-                                        side: const BorderSide(color: Color(0xFFA63228)),
-                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                        side: const BorderSide(
+                                          color: Color(0xFFA63228),
+                                        ),
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(
+                                            8,
+                                          ),
+                                        ),
                                       ),
-                                      icon: const Icon(Icons.access_time_rounded, size: 14, color: Color(0xFFA63228)),
-                                      label: Text('Pick Time', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.bold, color: const Color(0xFFA63228))),
+                                      icon: const Icon(
+                                        Icons.access_time_rounded,
+                                        size: 14,
+                                        color: Color(0xFFA63228),
+                                      ),
+                                      label: Text(
+                                        'Pick Time',
+                                        style: GoogleFonts.inter(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.bold,
+                                          color: const Color(0xFFA63228),
+                                        ),
+                                      ),
                                       onPressed: () async {
-                                        final res = await _selectTime(context, timeInValue);
+                                        final res = await _selectTime(
+                                          context,
+                                          timeInValue,
+                                        );
                                         if (res != null) {
-                                          setDialogState(() => timeInValue = res);
+                                          setDialogState(
+                                            () => timeInValue = res,
+                                          );
                                         }
                                       },
                                     ),
@@ -517,16 +692,27 @@ class _TimekeeperDashboardState extends State<TimekeeperDashboard> {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Row(
-                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.spaceBetween,
                                     children: [
                                       Text(
                                         'TIME OUT',
-                                        style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w800, color: Colors.grey.shade600),
+                                        style: GoogleFonts.inter(
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.w800,
+                                          color: Colors.grey.shade600,
+                                        ),
                                       ),
                                       if (timeOutValue != '--:--')
                                         GestureDetector(
-                                          onTap: () => setDialogState(() => timeOutValue = '--:--'),
-                                          child: const Icon(Icons.close, size: 14, color: Colors.grey),
+                                          onTap: () => setDialogState(
+                                            () => timeOutValue = '--:--',
+                                          ),
+                                          child: const Icon(
+                                            Icons.close,
+                                            size: 14,
+                                            color: Colors.grey,
+                                          ),
                                         ),
                                     ],
                                   ),
@@ -536,7 +722,9 @@ class _TimekeeperDashboardState extends State<TimekeeperDashboard> {
                                     style: GoogleFonts.inter(
                                       fontSize: 15,
                                       fontWeight: FontWeight.w900,
-                                      color: timeOutValue == '--:--' ? Colors.grey : Colors.black87,
+                                      color: timeOutValue == '--:--'
+                                          ? Colors.grey
+                                          : Colors.black87,
                                     ),
                                   ),
                                   const SizedBox(height: 8),
@@ -546,15 +734,37 @@ class _TimekeeperDashboardState extends State<TimekeeperDashboard> {
                                     child: OutlinedButton.icon(
                                       style: OutlinedButton.styleFrom(
                                         padding: EdgeInsets.zero,
-                                        side: BorderSide(color: Colors.grey.shade500),
-                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                        side: BorderSide(
+                                          color: Colors.grey.shade500,
+                                        ),
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(
+                                            8,
+                                          ),
+                                        ),
                                       ),
-                                      icon: const Icon(Icons.logout_rounded, size: 14, color: Colors.black87),
-                                      label: Text('Pick Time', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.black87)),
+                                      icon: const Icon(
+                                        Icons.logout_rounded,
+                                        size: 14,
+                                        color: Colors.black87,
+                                      ),
+                                      label: Text(
+                                        'Pick Time',
+                                        style: GoogleFonts.inter(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.black87,
+                                        ),
+                                      ),
                                       onPressed: () async {
-                                        final res = await _selectTime(context, timeOutValue);
+                                        final res = await _selectTime(
+                                          context,
+                                          timeOutValue,
+                                        );
                                         if (res != null) {
-                                          setDialogState(() => timeOutValue = res);
+                                          setDialogState(
+                                            () => timeOutValue = res,
+                                          );
                                         }
                                       },
                                     ),
@@ -569,22 +779,33 @@ class _TimekeeperDashboardState extends State<TimekeeperDashboard> {
 
                       // STATUS DROPDOWN
                       DropdownButtonFormField<String>(
-                        value: selectedStatus,
+                        initialValue: selectedStatus,
                         isDense: true,
                         decoration: InputDecoration(
                           labelText: 'Attendance Status',
                           labelStyle: GoogleFonts.inter(fontSize: 11.5),
                           filled: true,
                           fillColor: const Color(0xFFFAF8F5),
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
                         ),
-                        items: ['Present', 'Late', 'Halfday', 'Absent'].map((st) {
+                        items: ['Present', 'Late', 'Halfday', 'Absent'].map((
+                          st,
+                        ) {
                           return DropdownMenuItem(
                             value: st,
-                            child: Text(st, style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600)),
+                            child: Text(
+                              st,
+                              style: GoogleFonts.inter(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
                           );
                         }).toList(),
-                        onChanged: (val) => setDialogState(() => selectedStatus = val!),
+                        onChanged: (val) =>
+                            setDialogState(() => selectedStatus = val!),
                       ),
                     ],
                   ),
@@ -598,11 +819,20 @@ class _TimekeeperDashboardState extends State<TimekeeperDashboard> {
                       child: OutlinedButton(
                         style: OutlinedButton.styleFrom(
                           padding: const EdgeInsets.symmetric(vertical: 12),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
                           side: BorderSide(color: Colors.grey.shade300),
                         ),
                         onPressed: () => Navigator.pop(context),
-                        child: Text('Cancel', style: GoogleFonts.inter(color: Colors.grey.shade700, fontWeight: FontWeight.bold, fontSize: 12)),
+                        child: Text(
+                          'Cancel',
+                          style: GoogleFonts.inter(
+                            color: Colors.grey.shade700,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 12,
+                          ),
+                        ),
                       ),
                     ),
                     const SizedBox(width: 8),
@@ -612,93 +842,133 @@ class _TimekeeperDashboardState extends State<TimekeeperDashboard> {
                           backgroundColor: const Color(0xFFA63228),
                           elevation: 0,
                           padding: const EdgeInsets.symmetric(vertical: 12),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
                         ),
-                        onPressed: isSaving ? null : () async {
-                          final workerName = autocompleteNameController?.text.trim() ?? '';
-                          if (workerName.isEmpty) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('Please enter or select worker name')),
-                            );
-                            return;
-                          }
+                        onPressed: isSaving
+                            ? null
+                            : () async {
+                                final workerName =
+                                    autocompleteNameController?.text.trim() ??
+                                    '';
+                                if (workerName.isEmpty) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                        'Please enter or select worker name',
+                                      ),
+                                    ),
+                                  );
+                                  return;
+                                }
 
-                          setDialogState(() => isSaving = true);
-                          final dateStr = selectedDate.toIso8601String().split('T')[0];
+                                setDialogState(() => isSaving = true);
+                                final dateStr = selectedDate
+                                    .toIso8601String()
+                                    .split('T')[0];
 
-                          final matchedWorker = _allWorkers.firstWhere(
-                            (w) => '${w['first_name'] ?? ''} ${w['last_name'] ?? ''}'.trim().toLowerCase() == workerName.toLowerCase(),
-                            orElse: () => <String, dynamic>{},
-                          );
-                          final workerId = matchedWorker['id']?.toString();
-                          final workerRate = matchedWorker['daily_rate'] ?? 600;
+                                final matchedWorker = _allWorkers.firstWhere(
+                                  (w) =>
+                                      '${w['first_name'] ?? ''} ${w['last_name'] ?? ''}'
+                                          .trim()
+                                          .toLowerCase() ==
+                                      workerName.toLowerCase(),
+                                  orElse: () => <String, dynamic>{},
+                                );
+                                final workerId = matchedWorker['id']
+                                    ?.toString();
+                                final workerRate =
+                                    matchedWorker['daily_rate'] ?? 600;
 
-                          final effectiveTimeIn = timeInValue == '--:--' ? '—' : timeInValue;
-                          final effectiveTimeOut = timeOutValue == '--:--' ? '—' : timeOutValue;
+                                final effectiveTimeIn = timeInValue == '--:--'
+                                    ? '—'
+                                    : timeInValue;
+                                final effectiveTimeOut = timeOutValue == '--:--'
+                                    ? '—'
+                                    : timeOutValue;
 
-                          try {
-                            await ApiService.saveAttendance({
-                              'project_id': matchedWorker['project_id'] ?? '1',
-                              'worker_id': workerId,
-                              'worker_name': workerName,
-                              'name': workerName,
-                              'role': roleController.text,
-                              'date': dateStr,
-                              'timeIn': effectiveTimeIn,
-                              'timeOut': effectiveTimeOut,
-                              'rate': workerRate,
-                              'status': selectedStatus,
-                            });
-
-                            if (mounted) {
-                              setState(() {
-                                if (effectiveTimeIn != '—') {
-                                  _recentLogs.insert(0, {
+                                try {
+                                  await ApiService.saveAttendance({
+                                    'project_id':
+                                        matchedWorker['project_id'] ?? '1',
+                                    'worker_id': workerId,
+                                    'worker_name': workerName,
                                     'name': workerName,
                                     'role': roleController.text,
-                                    'time': effectiveTimeIn,
+                                    'date': dateStr,
+                                    'timeIn': effectiveTimeIn,
+                                    'timeOut': effectiveTimeOut,
+                                    'rate': workerRate,
                                     'status': selectedStatus,
-                                    'type': 'IN',
                                   });
-                                }
-                                if (effectiveTimeOut != '—') {
-                                  _recentLogs.insert(0, {
-                                    'name': workerName,
-                                    'role': roleController.text,
-                                    'time': effectiveTimeOut,
-                                    'status': selectedStatus,
-                                    'type': 'OUT',
-                                  });
-                                }
-                              });
-                            }
 
-                            if (context.mounted) {
-                              Navigator.pop(context);
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text('Attendance recorded for $workerName (In: $effectiveTimeIn, Out: $effectiveTimeOut)', style: GoogleFonts.inter()),
-                                  backgroundColor: const Color(0xFFA63228),
-                                ),
-                              );
-                            }
-                            _loadRecentLogs();
-                          } catch (e) {
-                            if (context.mounted) {
-                              setDialogState(() => isSaving = false);
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(content: Text('Error saving log: $e')),
-                              );
-                            }
-                          }
-                        },
+                                  if (mounted) {
+                                    setState(() {
+                                      if (effectiveTimeIn != '—') {
+                                        _recentLogs.insert(0, {
+                                          'name': workerName,
+                                          'role': roleController.text,
+                                          'time': effectiveTimeIn,
+                                          'status': selectedStatus,
+                                          'type': 'IN',
+                                        });
+                                      }
+                                      if (effectiveTimeOut != '—') {
+                                        _recentLogs.insert(0, {
+                                          'name': workerName,
+                                          'role': roleController.text,
+                                          'time': effectiveTimeOut,
+                                          'status': selectedStatus,
+                                          'type': 'OUT',
+                                        });
+                                      }
+                                    });
+                                  }
+
+                                  if (context.mounted) {
+                                    Navigator.pop(context);
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text(
+                                          'Attendance recorded for $workerName (In: $effectiveTimeIn, Out: $effectiveTimeOut)',
+                                          style: GoogleFonts.inter(),
+                                        ),
+                                        backgroundColor: const Color(
+                                          0xFFA63228,
+                                        ),
+                                      ),
+                                    );
+                                  }
+                                  _loadRecentLogs();
+                                } catch (e) {
+                                  if (context.mounted) {
+                                    setDialogState(() => isSaving = false);
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text('Error saving log: $e'),
+                                      ),
+                                    );
+                                  }
+                                }
+                              },
                         child: isSaving
                             ? const SizedBox(
                                 height: 16,
                                 width: 16,
-                                child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                                child: CircularProgressIndicator(
+                                  color: Colors.white,
+                                  strokeWidth: 2,
+                                ),
                               )
-                            : Text('Save Record', style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
+                            : Text(
+                                'Save Record',
+                                style: GoogleFonts.inter(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 12,
+                                ),
+                              ),
                       ),
                     ),
                   ],
@@ -722,6 +992,7 @@ class _TimekeeperDashboardState extends State<TimekeeperDashboard> {
 
     return Scaffold(
       backgroundColor: const Color(0xFFF3EFEA),
+      drawer: const AppSidebar(),
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 0,
@@ -729,16 +1000,16 @@ class _TimekeeperDashboardState extends State<TimekeeperDashboard> {
         centerTitle: true,
         actions: [
           IconButton(
-            icon: const Icon(Icons.qr_code_scanner_outlined, color: Colors.black87),
+            icon: const Icon(
+              Icons.qr_code_scanner_outlined,
+              color: Colors.black87,
+            ),
             onPressed: _openScannerModal,
           ),
           const SizedBox(width: 8),
         ],
       ),
-      body: IndexedStack(
-        index: _currentNavIndex,
-        children: screens,
-      ),
+      body: IndexedStack(index: _currentNavIndex, children: screens),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _currentNavIndex,
         onTap: (index) {
@@ -750,13 +1021,35 @@ class _TimekeeperDashboardState extends State<TimekeeperDashboard> {
         unselectedItemColor: Colors.grey.shade500,
         showUnselectedLabels: true,
         type: BottomNavigationBarType.fixed,
-        selectedLabelStyle: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.bold),
-        unselectedLabelStyle: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w500),
+        selectedLabelStyle: GoogleFonts.inter(
+          fontSize: 11,
+          fontWeight: FontWeight.bold,
+        ),
+        unselectedLabelStyle: GoogleFonts.inter(
+          fontSize: 11,
+          fontWeight: FontWeight.w500,
+        ),
         items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.document_scanner_outlined), activeIcon: Icon(Icons.document_scanner_rounded), label: 'Scanner'),
-          BottomNavigationBarItem(icon: Icon(Icons.people_outline_rounded), activeIcon: Icon(Icons.people_rounded), label: 'Timesheet'),
-          BottomNavigationBarItem(icon: Icon(Icons.assignment_outlined), activeIcon: Icon(Icons.assignment_rounded), label: 'Reports'),
-          BottomNavigationBarItem(icon: Icon(Icons.settings_outlined), activeIcon: Icon(Icons.settings_rounded), label: 'Settings'),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.document_scanner_outlined),
+            activeIcon: Icon(Icons.document_scanner_rounded),
+            label: 'Scanner',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.people_outline_rounded),
+            activeIcon: Icon(Icons.people_rounded),
+            label: 'Timesheet',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.assignment_outlined),
+            activeIcon: Icon(Icons.assignment_rounded),
+            label: 'Reports',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.settings_outlined),
+            activeIcon: Icon(Icons.settings_rounded),
+            label: 'Settings',
+          ),
         ],
       ),
     );
@@ -768,12 +1061,17 @@ class _TimekeeperDashboardState extends State<TimekeeperDashboard> {
   Widget _buildScannerTab() {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final double horizontalPadding = constraints.maxWidth > 600 ? constraints.maxWidth * 0.15 : 16.0;
+        final double horizontalPadding = constraints.maxWidth > 600
+            ? constraints.maxWidth * 0.15
+            : 16.0;
 
         return Center(
           child: SingleChildScrollView(
             physics: const BouncingScrollPhysics(),
-            padding: EdgeInsets.symmetric(horizontal: horizontalPadding, vertical: 12),
+            padding: EdgeInsets.symmetric(
+              horizontal: horizontalPadding,
+              vertical: 12,
+            ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -783,12 +1081,20 @@ class _TimekeeperDashboardState extends State<TimekeeperDashboard> {
                   children: [
                     Text(
                       'Attendance Terminal',
-                      style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w500, color: Colors.grey.shade600),
+                      style: GoogleFonts.inter(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                        color: Colors.grey.shade600,
+                      ),
                     ),
                     const SizedBox(height: 2),
                     Text(
                       'Hello, Admin Mark',
-                      style: GoogleFonts.inter(fontSize: 22, fontWeight: FontWeight.w900, color: Colors.black87),
+                      style: GoogleFonts.inter(
+                        fontSize: 22,
+                        fontWeight: FontWeight.w900,
+                        color: Colors.black87,
+                      ),
                     ),
                   ],
                 ),
@@ -817,7 +1123,11 @@ class _TimekeeperDashboardState extends State<TimekeeperDashboard> {
                     borderRadius: BorderRadius.circular(16),
                     border: Border.all(color: Colors.grey.shade200),
                     boxShadow: [
-                      BoxShadow(color: Colors.black.withValues(alpha: 0.02), blurRadius: 4, offset: const Offset(0, 2)),
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.02),
+                        blurRadius: 4,
+                        offset: const Offset(0, 2),
+                      ),
                     ],
                   ),
                   child: Column(
@@ -828,12 +1138,20 @@ class _TimekeeperDashboardState extends State<TimekeeperDashboard> {
                         children: [
                           Text(
                             'Weekly Attendance Trend',
-                            style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.black87),
+                            style: GoogleFonts.inter(
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.black87,
+                            ),
                           ),
                           IconButton(
                             constraints: const BoxConstraints(),
                             padding: EdgeInsets.zero,
-                            icon: const Icon(Icons.edit_calendar_rounded, size: 20, color: Color(0xFFA63228)),
+                            icon: const Icon(
+                              Icons.edit_calendar_rounded,
+                              size: 20,
+                              color: Color(0xFFA63228),
+                            ),
                             tooltip: 'Pick Date to Filter Trend',
                             onPressed: () => _pickTrendDate(context),
                           ),
@@ -844,12 +1162,36 @@ class _TimekeeperDashboardState extends State<TimekeeperDashboard> {
                         mainAxisAlignment: MainAxisAlignment.spaceAround,
                         crossAxisAlignment: CrossAxisAlignment.end,
                         children: [
-                          _buildBarItem('Mon', _currentFactors[0], _currentCounts[0]),
-                          _buildBarItem('Tue', _currentFactors[1], _currentCounts[1]),
-                          _buildBarItem('Wed', _currentFactors[2], _currentCounts[2]),
-                          _buildBarItem('Thu', _currentFactors[3], _currentCounts[3]),
-                          _buildBarItem('Fri', _currentFactors[4], _currentCounts[4]),
-                          _buildBarItem('Sat', _currentFactors[5], _currentCounts[5]),
+                          _buildBarItem(
+                            'Mon',
+                            _currentFactors[0],
+                            _currentCounts[0],
+                          ),
+                          _buildBarItem(
+                            'Tue',
+                            _currentFactors[1],
+                            _currentCounts[1],
+                          ),
+                          _buildBarItem(
+                            'Wed',
+                            _currentFactors[2],
+                            _currentCounts[2],
+                          ),
+                          _buildBarItem(
+                            'Thu',
+                            _currentFactors[3],
+                            _currentCounts[3],
+                          ),
+                          _buildBarItem(
+                            'Fri',
+                            _currentFactors[4],
+                            _currentCounts[4],
+                          ),
+                          _buildBarItem(
+                            'Sat',
+                            _currentFactors[5],
+                            _currentCounts[5],
+                          ),
                         ],
                       ),
                     ],
@@ -872,21 +1214,40 @@ class _TimekeeperDashboardState extends State<TimekeeperDashboard> {
                         color: const Color(0xFFA63228),
                         borderRadius: BorderRadius.circular(20),
                         boxShadow: [
-                          BoxShadow(color: const Color(0xFFA63228).withValues(alpha: 0.25), blurRadius: 8, offset: const Offset(0, 4)),
+                          BoxShadow(
+                            color: const Color(
+                              0xFFA63228,
+                            ).withValues(alpha: 0.25),
+                            blurRadius: 8,
+                            offset: const Offset(0, 4),
+                          ),
                         ],
                       ),
                       child: Column(
                         children: [
-                          const Icon(Icons.qr_code_scanner_outlined, size: 56, color: Colors.white),
+                          const Icon(
+                            Icons.qr_code_scanner_outlined,
+                            size: 56,
+                            color: Colors.white,
+                          ),
                           const SizedBox(height: 10),
                           Text(
                             'SCAN WORKER ID',
-                            style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w900, color: Colors.white, letterSpacing: 1.0),
+                            style: GoogleFonts.inter(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w900,
+                              color: Colors.white,
+                              letterSpacing: 1.0,
+                            ),
                           ),
                           const SizedBox(height: 2),
                           Text(
                             'Tap to open camera for Time In / Out',
-                            style: GoogleFonts.inter(fontSize: 11.5, color: Colors.white70, fontWeight: FontWeight.w500),
+                            style: GoogleFonts.inter(
+                              fontSize: 11.5,
+                              color: Colors.white70,
+                              fontWeight: FontWeight.w500,
+                            ),
                           ),
                         ],
                       ),
@@ -901,7 +1262,11 @@ class _TimekeeperDashboardState extends State<TimekeeperDashboard> {
                   children: [
                     Text(
                       'Recent Logs (Today)',
-                      style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w900, color: Colors.black87),
+                      style: GoogleFonts.inter(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w900,
+                        color: Colors.black87,
+                      ),
                     ),
                     Row(
                       children: [
@@ -914,28 +1279,50 @@ class _TimekeeperDashboardState extends State<TimekeeperDashboard> {
                             );
                           },
                           style: TextButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 4,
+                            ),
                             minimumSize: Size.zero,
                             tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                           ),
-                          icon: const Icon(Icons.alarm_on_rounded, size: 16, color: Color(0xFFA63228)),
+                          icon: const Icon(
+                            Icons.alarm_on_rounded,
+                            size: 16,
+                            color: Color(0xFFA63228),
+                          ),
                           label: Text(
                             'Shift Hours',
-                            style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: const Color(0xFFA63228)),
+                            style: GoogleFonts.inter(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              color: const Color(0xFFA63228),
+                            ),
                           ),
                         ),
                         const SizedBox(width: 8),
                         TextButton.icon(
                           onPressed: _openManualEntryDialog,
                           style: TextButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 4,
+                            ),
                             minimumSize: Size.zero,
                             tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                           ),
-                          icon: const Icon(Icons.edit_note_rounded, size: 18, color: Colors.black87),
+                          icon: const Icon(
+                            Icons.edit_note_rounded,
+                            size: 18,
+                            color: Colors.black87,
+                          ),
                           label: Text(
                             'Manual Entry',
-                            style: GoogleFonts.inter(fontSize: 12.5, fontWeight: FontWeight.bold, color: Colors.black87),
+                            style: GoogleFonts.inter(
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.black87,
+                            ),
                           ),
                         ),
                       ],
@@ -947,89 +1334,107 @@ class _TimekeeperDashboardState extends State<TimekeeperDashboard> {
                 // LOGS LIST DYNAMIC BUILDER
                 _recentLogs.isEmpty
                     ? Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(24.0),
-                    child: Text("No records yet.", style: GoogleFonts.inter(color: Colors.grey)),
-                  ),
-                )
-                    : ListView.separated(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  itemCount: _recentLogs.length,
-                  separatorBuilder: (context, index) => const SizedBox(height: 8),
-                  itemBuilder: (context, index) {
-                    final log = _recentLogs[index];
-
-                    return Container(
-                      padding: const EdgeInsets.all(14),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: Colors.grey.shade200),
-                      ),
-                      child: Row(
-                        children: [
-                          Container(
-                            width: 42,
-                            height: 42,
-                            decoration: BoxDecoration(
-                              color: Colors.grey.shade100,
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(color: Colors.grey.shade300),
-                            ),
-                            child: Center(
-                              child: Text(
-                                log['type'],
-                                style: GoogleFonts.inter(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w900,
-                                    color: Colors.black87
-                                ),
-                              ),
-                            ),
+                        child: Padding(
+                          padding: const EdgeInsets.all(24.0),
+                          child: Text(
+                            "No records yet.",
+                            style: GoogleFonts.inter(color: Colors.grey),
                           ),
-                          const SizedBox(width: 14),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
+                        ),
+                      )
+                    : ListView.separated(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        itemCount: _recentLogs.length,
+                        separatorBuilder: (context, index) =>
+                            const SizedBox(height: 8),
+                        itemBuilder: (context, index) {
+                          final log = _recentLogs[index];
+
+                          return Container(
+                            padding: const EdgeInsets.all(14),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(color: Colors.grey.shade200),
+                            ),
+                            child: Row(
                               children: [
-                                Text(
-                                  log['name'],
-                                  style: GoogleFonts.inter(fontSize: 13.5, fontWeight: FontWeight.bold, color: Colors.black87),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
+                                Container(
+                                  width: 42,
+                                  height: 42,
+                                  decoration: BoxDecoration(
+                                    color: Colors.grey.shade100,
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(
+                                      color: Colors.grey.shade300,
+                                    ),
+                                  ),
+                                  child: Center(
+                                    child: Text(
+                                      log['type'],
+                                      style: GoogleFonts.inter(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w900,
+                                        color: Colors.black87,
+                                      ),
+                                    ),
+                                  ),
                                 ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  log['role'],
-                                  style: GoogleFonts.inter(fontSize: 11.5, color: Colors.grey.shade600),
+                                const SizedBox(width: 14),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        log['name'],
+                                        style: GoogleFonts.inter(
+                                          fontSize: 13.5,
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.black87,
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        log['role'],
+                                        style: GoogleFonts.inter(
+                                          fontSize: 11.5,
+                                          color: Colors.grey.shade600,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                Column(
+                                  crossAxisAlignment: CrossAxisAlignment.end,
+                                  children: [
+                                    Text(
+                                      log['time'],
+                                      style: GoogleFonts.inter(
+                                        fontSize: 13.5,
+                                        fontWeight: FontWeight.w900,
+                                        color: Colors.black87,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      log['status'],
+                                      style: GoogleFonts.inter(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.grey.shade600,
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ],
                             ),
-                          ),
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.end,
-                            children: [
-                              Text(
-                                log['time'],
-                                style: GoogleFonts.inter(fontSize: 13.5, fontWeight: FontWeight.w900, color: Colors.black87),
-                              ),
-                              const SizedBox(height: 2),
-                              Text(
-                                log['status'],
-                                style: GoogleFonts.inter(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.grey.shade600,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
+                          );
+                        },
                       ),
-                    );
-                  },
-                ),
                 const SizedBox(height: 20),
               ],
             ),
@@ -1045,7 +1450,11 @@ class _TimekeeperDashboardState extends State<TimekeeperDashboard> {
       children: [
         Text(
           count,
-          style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.grey.shade600),
+          style: GoogleFonts.inter(
+            fontSize: 10,
+            fontWeight: FontWeight.bold,
+            color: Colors.grey.shade600,
+          ),
         ),
         const SizedBox(height: 4),
         Container(
@@ -1069,7 +1478,11 @@ class _TimekeeperDashboardState extends State<TimekeeperDashboard> {
         const SizedBox(height: 6),
         Text(
           day,
-          style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.black87),
+          style: GoogleFonts.inter(
+            fontSize: 12,
+            fontWeight: FontWeight.bold,
+            color: Colors.black87,
+          ),
         ),
       ],
     );
@@ -1083,19 +1496,31 @@ class _TimekeeperDashboardState extends State<TimekeeperDashboard> {
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: Colors.grey.shade200),
         boxShadow: [
-          BoxShadow(color: Colors.black.withValues(alpha: 0.02), blurRadius: 4, offset: const Offset(0, 2)),
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.02),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
         ],
       ),
       child: Column(
         children: [
           Text(
             value,
-            style: GoogleFonts.inter(fontSize: 24, fontWeight: FontWeight.w900, color: Colors.black87),
+            style: GoogleFonts.inter(
+              fontSize: 24,
+              fontWeight: FontWeight.w900,
+              color: Colors.black87,
+            ),
           ),
           const SizedBox(height: 2),
           Text(
             label,
-            style: GoogleFonts.inter(fontSize: 11.5, fontWeight: FontWeight.w600, color: Colors.grey.shade600),
+            style: GoogleFonts.inter(
+              fontSize: 11.5,
+              fontWeight: FontWeight.w600,
+              color: Colors.grey.shade600,
+            ),
           ),
         ],
       ),

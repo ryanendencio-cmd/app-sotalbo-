@@ -17,9 +17,17 @@ class AdminService {
   static Future<Map<String, dynamic>> saveAdminProfile({
     required dynamic adminId,
     required String firstName,
+    String middleName = '',
     required String lastName,
+    String username = '',
+    String birthday = '',
+    int? age,
+    String? password,
     required String email,
     required String phone,
+    String? homeAddress,
+    String? address,
+    String? department,
     required String assignedProjectSite,
     required String terminalId,
     required bool pushNotificationsEnabled,
@@ -33,9 +41,18 @@ class AdminService {
         body: jsonEncode({
           'adminId': adminId,
           'firstName': firstName,
+          'middleName': middleName,
           'lastName': lastName,
+          'username': username,
+          'birthday': birthday,
+          if (age != null) 'age': age,
+          if (password != null && password.isNotEmpty) 'password': password,
           'email': email,
           'phone': phone,
+          if (homeAddress != null) 'homeAddress': homeAddress,
+          if (address != null || homeAddress != null)
+            'address': address ?? homeAddress,
+          if (department != null) 'department': department,
           'assignedProjectSite': assignedProjectSite,
           'terminalId': terminalId,
           'pushNotificationsEnabled': pushNotificationsEnabled,
@@ -49,7 +66,8 @@ class AdminService {
       } else {
         return {
           'success': false,
-          'error': jsonDecode(response.body)['error'] ?? 'Failed to save profile'
+          'error':
+              jsonDecode(response.body)['error'] ?? 'Failed to save profile',
         };
       }
     } catch (e) {
@@ -70,7 +88,8 @@ class AdminService {
       } else {
         return {
           'success': false,
-          'error': jsonDecode(response.body)['error'] ?? 'Failed to fetch profile'
+          'error':
+              jsonDecode(response.body)['error'] ?? 'Failed to fetch profile',
         };
       }
     } catch (e) {
@@ -101,7 +120,8 @@ class AdminService {
       } else {
         return {
           'success': false,
-          'error': jsonDecode(response.body)['error'] ?? 'Failed to update settings'
+          'error':
+              jsonDecode(response.body)['error'] ?? 'Failed to update settings',
         };
       }
     } catch (e) {
@@ -130,7 +150,8 @@ class AdminService {
       } else {
         return {
           'success': false,
-          'error': jsonDecode(response.body)['error'] ?? 'Failed to change password'
+          'error':
+              jsonDecode(response.body)['error'] ?? 'Failed to change password',
         };
       }
     } catch (e) {

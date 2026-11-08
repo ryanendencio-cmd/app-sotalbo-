@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import '../widgets/app_sidebar.dart';
 import '../widgets/shift_schedule_dialog.dart';
 import '../services/api_service.dart';
 
@@ -18,7 +17,6 @@ class _TimesheetScreenState extends State<TimesheetScreen> {
 
   final List<Map<String, dynamic>> _timesheetData = [];
   List<Map<String, dynamic>> _allWorkers = [];
-  bool _isLoadingWorkers = false;
   Map<String, dynamic>? _activeShiftOverride;
 
   @override
@@ -28,7 +26,6 @@ class _TimesheetScreenState extends State<TimesheetScreen> {
   }
 
   Future<void> _loadWorkers() async {
-    setState(() => _isLoadingWorkers = true);
     try {
       final workersList = await ApiService.getWorkers();
       final records = await ApiService.getAttendance('ALL');
@@ -95,13 +92,10 @@ class _TimesheetScreenState extends State<TimesheetScreen> {
           _allWorkers = List<Map<String, dynamic>>.from(workersList);
           _timesheetData.clear();
           _timesheetData.addAll(timesheet);
-          _isLoadingWorkers = false;
         });
       }
     } catch (e) {
-      if (mounted) {
-        setState(() => _isLoadingWorkers = false);
-      }
+      debugPrint('Failed to load timesheet data: $e');
     }
   }
 
@@ -109,108 +103,6 @@ class _TimesheetScreenState extends State<TimesheetScreen> {
   void dispose() {
     _searchController.dispose();
     super.dispose();
-  }
-
-  int? _parseTimeToMinutes(String? timeStr) {
-    if (timeStr == null ||
-        timeStr.isEmpty ||
-        timeStr == '--:--' ||
-        timeStr == '—')
-      return null;
-    final match = RegExp(
-      r'^(\d{1,2}):(\d{2})(?:\s*([AP]M))?$',
-      caseSensitive: false,
-    ).firstMatch(timeStr.trim());
-    if (match == null) return null;
-
-    int hours = int.tryParse(match.group(1) ?? '8') ?? 8;
-    final int minutes = int.tryParse(match.group(2) ?? '0') ?? 0;
-    final String? meridian = match.group(3)?.toUpperCase();
-
-    if (meridian == 'PM' && hours < 12) hours += 12;
-    if (meridian == 'AM' && hours == 12) hours = 0;
-
-    return hours * 60 + minutes;
-  }
-
-  Map<String, dynamic> _evaluateTwoSessions(
-    String? morningIn,
-    String? afternoonIn, [
-    double baseRate = 600.0,
-  ]) {
-    final mMinutes = _parseTimeToMinutes(morningIn);
-    final aMinutes = _parseTimeToMinutes(afternoonIn);
-
-    // Morning Session Check
-    String mStatus = 'Absent';
-    if (mMinutes != null) {
-      if (mMinutes <= 8 * 60 + 10) {
-        mStatus = 'Present';
-      } else if (mMinutes <= 10 * 60) {
-        mStatus = 'Late';
-      } else {
-        mStatus = 'Absent';
-      }
-    }
-
-    // Afternoon Session Check
-    String aStatus = 'Absent';
-    if (aMinutes != null) {
-      if (aMinutes <= 13 * 60 + 10) {
-        aStatus = 'Present';
-      } else if (aMinutes <= 15 * 60) {
-        aStatus = 'Late';
-      } else {
-        aStatus = 'Absent';
-      }
-    }
-
-    final bool hasMorning = mStatus != 'Absent';
-    final bool hasAfternoon = aStatus != 'Absent';
-
-    if (hasMorning && hasAfternoon) {
-      if (mStatus == 'Present' && aStatus == 'Present') {
-        return {'status': 'Present', 'tag': 'Present (Full)', 'wage': baseRate};
-      } else if (mStatus == 'Late' && aStatus == 'Late') {
-        return {
-          'status': 'Double Late',
-          'tag': 'Double Late (-₱200)',
-          'wage': (baseRate - 200).clamp(0.0, double.infinity),
-        };
-      } else {
-        return {
-          'status': 'Late',
-          'tag': 'Late (-₱100)',
-          'wage': (baseRate - 100).clamp(0.0, double.infinity),
-        };
-      }
-    } else if (hasMorning) {
-      final halfRate = baseRate * 0.5;
-      final wage = mStatus == 'Late'
-          ? (halfRate - 100).clamp(0.0, double.infinity)
-          : halfRate;
-      return {
-        'status': mStatus == 'Late' ? 'Halfday (Late)' : 'Halfday',
-        'tag': mStatus == 'Late'
-            ? 'Halfday (Morning Late)'
-            : 'Halfday (Morning)',
-        'wage': wage,
-      };
-    } else if (hasAfternoon) {
-      final halfRate = baseRate * 0.5;
-      final wage = aStatus == 'Late'
-          ? (halfRate - 100).clamp(0.0, double.infinity)
-          : halfRate;
-      return {
-        'status': aStatus == 'Late' ? 'Halfday (Late)' : 'Halfday',
-        'tag': aStatus == 'Late'
-            ? 'Halfday (Afternoon Late)'
-            : 'Halfday (Afternoon)',
-        'wage': wage,
-      };
-    }
-
-    return {'status': 'Absent', 'tag': 'Absent', 'wage': 0.0};
   }
 
   String _getFormattedDate(DateTime date) {
@@ -778,7 +670,7 @@ class _TimesheetScreenState extends State<TimesheetScreen> {
 
                       // ATTENDANCE STATUS SELECTOR
                       DropdownButtonFormField<String>(
-                        value: selectedStatus,
+                        initialValue: selectedStatus,
                         isDense: true,
                         decoration: InputDecoration(
                           labelText: 'Attendance Status',
@@ -1097,10 +989,11 @@ class _TimesheetScreenState extends State<TimesheetScreen> {
                                       label: Text(role),
                                       selected: isSelected,
                                       onSelected: (val) {
-                                        if (val)
+                                        if (val) {
                                           setState(
                                             () => _selectedFilter = role,
                                           );
+                                        }
                                       },
                                       selectedColor: Colors.black87,
                                       backgroundColor: const Color(0xFFF3EFEA),

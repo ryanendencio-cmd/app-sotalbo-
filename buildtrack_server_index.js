@@ -1567,26 +1567,62 @@ function startServer() {
   })
 
   app.put('/api/workers/:id', async (req, res) => {
-    const { first_name, middle_name, last_name, full_name, birthday, age, phone, address, role, position, daily_rate, password, approval_status, status, project_id, address_obj, rfid_uid } = req.body
-    const computedFullName = full_name || [first_name, middle_name, last_name].filter(Boolean).join(' ')
+    const has = (key) => Object.prototype.hasOwnProperty.call(req.body, key)
+    const value = (...keys) => {
+      const key = keys.find(has)
+      return key === undefined ? undefined : req.body[key]
+    }
+    const firstName = value('firstName', 'first_name')
+    const middleName = value('middleName', 'middle_name')
+    const lastName = value('lastName', 'last_name')
+    const fullName = value('fullName', 'full_name')
+    const birthday = value('birthday')
+    const age = value('age')
+    const phone = value('phone')
+    const address = value('address')
+    const role = value('role')
+    const position = value('position')
+    const daily_rate = value('daily_rate')
+    const password = value('password')
+    const approval_status = value('approval_status')
+    const status = value('status')
+    const project_id = value('project_id')
+    const address_obj = value('address_obj')
+    const rfid_uid = value('rfid_uid')
     const cleanPosition = Array.isArray(position)
       ? position.filter(Boolean).join(', ')
       : (typeof position === 'string' && position.trim().length > 0 ? position.trim() : (position === null ? null : undefined))
     
     try {
-      const updateData = {
-        first_name, middle_name: middle_name || null, last_name, full_name: computedFullName, 
-        birthday: birthday || null, age: age || null, phone: phone || null, address: address || null, 
-        role, daily_rate: daily_rate || 600, 
-        approval_status: approval_status || 'Approved', status: status || 'Active', project_id: project_id || null
+      if (has('username') || has('user_name')) {
+        return res.status(400).json({ error: 'Worker usernames cannot be changed from profile editing.' })
       }
-      if (cleanPosition !== undefined) {
-        updateData.position = cleanPosition
-      }
-      if (address_obj !== undefined) {
-        updateData.address_obj = address_obj
-      }
-      if (rfid_uid !== undefined) {
+
+      const workerRef = db.collection('workers').doc(req.params.id)
+      const workerDoc = await workerRef.get()
+      if (!workerDoc.exists) return res.status(404).json({ error: 'Worker not found' })
+      const oldWorker = workerDoc.data()
+      const nameChanged = ['firstName', 'first_name', 'middleName', 'middle_name', 'lastName', 'last_name', 'fullName', 'full_name'].some(has)
+      const computedFullName = fullName || (nameChanged
+        ? [firstName ?? oldWorker.first_name, middleName ?? oldWorker.middle_name, lastName ?? oldWorker.last_name].filter(Boolean).join(' ')
+        : oldWorker.full_name || oldWorker.name || '')
+      const updateData = {}
+      if (has('firstName') || has('first_name')) updateData.first_name = firstName ?? null
+      if (has('middleName') || has('middle_name')) updateData.middle_name = middleName || null
+      if (has('lastName') || has('last_name')) updateData.last_name = lastName ?? null
+      if (nameChanged) updateData.full_name = computedFullName
+      if (has('birthday')) updateData.birthday = birthday || null
+      if (has('age')) updateData.age = age ?? null
+      if (has('phone')) updateData.phone = phone || null
+      if (has('address')) updateData.address = address || null
+      if (has('role')) updateData.role = role || 'Worker'
+      if (has('daily_rate')) updateData.daily_rate = daily_rate || 600
+      if (has('approval_status')) updateData.approval_status = approval_status || 'Approved'
+      if (has('status')) updateData.status = status || 'Active'
+      if (has('project_id')) updateData.project_id = project_id || null
+      if (has('position')) updateData.position = cleanPosition
+      if (has('address_obj')) updateData.address_obj = address_obj ?? null
+      if (has('rfid_uid')) {
         const cleanRfid = rfid_uid ? String(rfid_uid).trim().replace(/[\s:]/g, '').toUpperCase() : null
         if (cleanRfid) {
           const existRfid = await db.collection('workers').where('rfid_uid', '==', cleanRfid).limit(1).get()
@@ -1603,14 +1639,17 @@ function startServer() {
           updateData.password = await bcrypt.hash(trimmedPass, 10)
         }
       }
-      await db.collection('workers').doc(req.params.id).update(updateData)
+      if (Object.keys(updateData).length === 0) {
+        return res.status(400).json({ error: 'No worker fields were provided to update.' })
+      }
+      await workerRef.update(updateData)
       recordNotification({
         type: 'Staff & Workers',
         title: `Worker Profile Updated: ${computedFullName}`,
-        message: `Profile data updated for ${computedFullName} (${cleanPosition || role || 'Worker'}).`,
+        message: `Profile data updated for ${computedFullName} (${cleanPosition || role || oldWorker.position || oldWorker.role || 'Worker'}).`,
         severity: 'Low',
         actor_name: computedFullName,
-        actor_role: cleanPosition || role || 'Worker',
+        actor_role: cleanPosition || role || oldWorker.position || oldWorker.role || 'Worker',
         action: 'worker_updated',
         worker_id: req.params.id,
         target_id: req.params.id,
@@ -1619,13 +1658,13 @@ function startServer() {
       recordAuditLog({
         action: 'WORKER_UPDATED',
         module: 'Workers',
-        description: `Updated worker record for "${computedFullName}" (${cleanPosition || role || 'Worker'}, Status: ${status || 'Active'}, Approval: ${approval_status || 'Approved'}).`,
+        description: `Updated worker record for "${computedFullName}" (${cleanPosition || role || oldWorker.position || oldWorker.role || 'Worker'}, Status: ${status || oldWorker.status || 'Active'}, Approval: ${approval_status || oldWorker.approval_status || 'Approved'}).`,
         target_id: req.params.id,
         target_name: computedFullName,
         details: { role, position: cleanPosition, status, approval_status, daily_rate },
         req
       }).catch(() => {})
-      res.json({ success: true, position: cleanPosition })
+      res.json({ success: true, position: cleanPosition ?? oldWorker.position })
     } catch (err) {
       res.status(500).json({ error: err.message })
     }
@@ -1674,17 +1713,21 @@ function startServer() {
     return hours * 60 + minutes
   }
 
-  function evaluateTwoSessions(morningIn, afternoonIn, baseRate) {
+  function evaluateTwoSessions(morningIn, afternoonIn, baseRate, rules = {}) {
     const rate = Number(baseRate) || 0
     const mMinutes = parseTimeToMinutes(morningIn)
     const aMinutes = parseTimeToMinutes(afternoonIn)
+    const morningStart = parseTimeToMinutes(rules.morningStartTime) ?? 8 * 60
+    const gracePeriod = Number.isInteger(Number(rules.gracePeriodMinutes))
+      ? Number(rules.gracePeriodMinutes)
+      : 10
 
     // Evaluate Morning Session
     let mStatus = 'Absent' // 'Present' | 'Late' | 'Absent'
     if (mMinutes !== null) {
-      if (mMinutes <= 8 * 60 + 10) {
+      if (mMinutes <= morningStart + gracePeriod) {
         mStatus = 'Present'
-      } else if (mMinutes <= 10 * 60) {
+      } else if (mMinutes <= morningStart + Math.max(2 * 60, gracePeriod)) {
         mStatus = 'Late'
       } else {
         mStatus = 'Absent'
@@ -1694,9 +1737,9 @@ function startServer() {
     // Evaluate Afternoon Session
     let aStatus = 'Absent' // 'Present' | 'Late' | 'Absent'
     if (aMinutes !== null) {
-      if (aMinutes <= 13 * 60 + 10) {
+      if (aMinutes <= 13 * 60 + gracePeriod) {
         aStatus = 'Present'
-      } else if (aMinutes <= 15 * 60) {
+      } else if (aMinutes <= Math.max(15 * 60, 13 * 60 + gracePeriod)) {
         aStatus = 'Late'
       } else {
         aStatus = 'Absent'
@@ -1767,6 +1810,10 @@ function startServer() {
           auto_schedule: true,
           open_time: '07:00',
           close_time: '17:30',
+          default_time_in: '08:00',
+          default_time_out: '17:00',
+          daily_work_hours: 8,
+          grace_period_minutes: 10,
           auto_sundays_off: true,
           manual_override: null,
           ...doc.data()
@@ -1776,6 +1823,10 @@ function startServer() {
           auto_schedule: true,
           open_time: '07:00',
           close_time: '17:30',
+          default_time_in: '08:00',
+          default_time_out: '17:00',
+          daily_work_hours: 8,
+          grace_period_minutes: 10,
           auto_sundays_off: true,
           manual_override: null
         })
@@ -1786,12 +1837,33 @@ function startServer() {
   })
 
   app.post('/api/attendance-settings', async (req, res) => {
-    const { auto_schedule, open_time, close_time, auto_sundays_off, manual_override, updated_by } = req.body
+    const {
+      auto_schedule, open_time, close_time, auto_sundays_off, manual_override,
+      updated_by, default_time_in, default_time_out, daily_work_hours,
+      grace_period_minutes
+    } = req.body
     try {
+      const timePattern = /^\d{2}:\d{2}$/
+      if ((default_time_in && !timePattern.test(default_time_in)) ||
+          (default_time_out && !timePattern.test(default_time_out)) ||
+          (open_time && !timePattern.test(open_time)) ||
+          (close_time && !timePattern.test(close_time))) {
+        return res.status(400).json({ error: 'Attendance times must use HH:mm format.' })
+      }
+      const workHours = Number(daily_work_hours ?? 8)
+      const graceMinutes = Number(grace_period_minutes ?? 10)
+      if (!Number.isFinite(workHours) || workHours <= 0 || workHours > 24 ||
+          !Number.isInteger(graceMinutes) || graceMinutes < 0 || graceMinutes > 180) {
+        return res.status(400).json({ error: 'Working hours or grace period is invalid.' })
+      }
       const updateData = {
         auto_schedule: auto_schedule !== undefined ? Boolean(auto_schedule) : true,
         open_time: open_time || '07:00',
         close_time: close_time || '17:30',
+        default_time_in: default_time_in || open_time || '08:00',
+        default_time_out: default_time_out || close_time || '17:00',
+        daily_work_hours: workHours,
+        grace_period_minutes: graceMinutes,
         auto_sundays_off: auto_sundays_off !== undefined ? Boolean(auto_sundays_off) : true,
         manual_override: manual_override !== undefined ? manual_override : null,
         updated_by: updated_by || 'Admin / Attendance Monitoring Officer',
@@ -1867,6 +1939,369 @@ function startServer() {
     }
   })
 
+  // ── WORKER ATTENDANCE SCHEDULES ──
+  app.get('/api/attendance-schedules', async (_req, res) => {
+    try {
+      const snapshot = await db.collection('attendance_schedules').get()
+      const schedules = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
+      schedules.sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')))
+      res.json(schedules)
+    } catch (err) {
+      res.status(500).json({ error: err.message })
+    }
+  })
+
+  const applyAttendanceSchedule = async schedule => {
+    const records = await db.collection('attendance').where('date', '==', schedule.date).get()
+    const matchingRecords = records.docs.filter(doc => (
+      !schedule.worker_id || String(doc.data().worker_id || '') === String(schedule.worker_id)
+    ))
+    const rules = await getAttendanceEvaluationRules(schedule)
+    await Promise.all(matchingRecords.map(doc => {
+      const current = doc.data()
+      const evaluation = evaluateTwoSessions(
+        current.morning_in && current.morning_in !== '—' ? current.morning_in : current.time_in,
+        current.afternoon_in,
+        current.rate,
+        rules
+      )
+      return doc.ref.update({
+        ...attendanceScheduleFields(schedule),
+        morning_status: evaluation.morningStatus,
+        afternoon_status: evaluation.afternoonStatus,
+        status: evaluation.status,
+        earned_amount: evaluation.earnedAmount
+      })
+    }))
+  }
+
+  const findAttendanceSchedule = async (date, workerId) => {
+    const snapshot = await db.collection('attendance_schedules')
+      .where('date', '==', date)
+      .get()
+    const schedules = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
+    return schedules.find(schedule => schedule.worker_id &&
+      String(schedule.worker_id) === String(workerId)) ||
+      schedules.find(schedule => !schedule.worker_id) ||
+      null
+  }
+
+  const getAttendanceEvaluationRules = async schedule => {
+    const settingsDoc = await db.collection('settings').doc('attendance').get()
+    const settings = settingsDoc.exists ? settingsDoc.data() : {}
+    return {
+      morningStartTime: schedule?.start_time || schedule?.scheduled_time_in ||
+        settings.default_time_in || '08:00',
+      gracePeriodMinutes: Number(settings.grace_period_minutes ?? 10)
+    }
+  }
+
+  const attendanceScheduleFields = schedule => schedule ? ({
+    scheduled_time_in: schedule.start_time,
+    scheduled_time_out: schedule.end_time,
+    scheduled_work_hours: schedule.working_hours,
+    attendance_schedule_id: schedule.id
+  }) : {}
+
+  app.post('/api/attendance-schedules', async (req, res) => {
+    const { date, worker_id, worker_name, start_time, end_time, working_hours, notes } = req.body
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(date || '')) ||
+        !/^\d{2}:\d{2}$/.test(String(start_time || '')) ||
+        !/^\d{2}:\d{2}$/.test(String(end_time || ''))) {
+      return res.status(400).json({ error: 'Date and times are required in YYYY-MM-DD and HH:mm format.' })
+    }
+    const startMinutes = parseTimeToMinutes(start_time)
+    const endMinutes = parseTimeToMinutes(end_time)
+    const hours = Number(working_hours || 8)
+    if (startMinutes === null || endMinutes === null || endMinutes <= startMinutes ||
+        !Number.isFinite(hours) || hours <= 0 || hours > 24) {
+      return res.status(400).json({ error: 'Schedule end time or working hours are invalid.' })
+    }
+    try {
+      const schedule = {
+        date,
+        worker_id: worker_id || null,
+        worker_name: worker_name || 'All Workers',
+        start_time,
+        end_time,
+        working_hours: hours,
+        notes: notes || '',
+        updated_at: FieldValue.serverTimestamp(),
+        updated_by: req.get('x-actor-name') || 'Attendance Administrator'
+      }
+      let id
+      if (req.body.id) {
+        id = String(req.body.id)
+        await db.collection('attendance_schedules').doc(id).set(schedule, { merge: true })
+      } else {
+        const doc = await db.collection('attendance_schedules').add({
+          ...schedule,
+          created_at: FieldValue.serverTimestamp()
+        })
+        id = doc.id
+        schedule.id = id
+      }
+      await applyAttendanceSchedule({ ...schedule, id })
+      res.json({ id, ...schedule })
+    } catch (err) {
+      res.status(500).json({ error: err.message })
+    }
+  })
+
+  app.delete('/api/attendance-schedules/:id', async (req, res) => {
+    try {
+      await db.collection('attendance_schedules').doc(req.params.id).delete()
+      res.json({ success: true })
+    } catch (err) {
+      res.status(500).json({ error: err.message })
+    }
+  })
+
+  // ── EARLY-OUT REQUESTS ──
+  app.get('/api/early-out-requests', async (req, res) => {
+    try {
+      const snapshot = await db.collection('early_out_requests').get()
+      let requests = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
+      if (req.query.worker_id) {
+        requests = requests.filter(r => String(r.worker_id || '') === String(req.query.worker_id))
+      }
+      requests.sort((a, b) => {
+        const aTime = a.created_at?._seconds || 0
+        const bTime = b.created_at?._seconds || 0
+        return bTime - aTime
+      })
+      res.json(requests)
+    } catch (err) {
+      res.status(500).json({ error: err.message })
+    }
+  })
+
+  app.post('/api/early-out-requests', async (req, res) => {
+    const { worker_id, worker_name, date, requested_out_time, reason, details } = req.body
+    if (!worker_id || !worker_name || !/^\d{4}-\d{2}-\d{2}$/.test(String(date || '')) ||
+        !/^\d{2}:\d{2}$/.test(String(requested_out_time || '')) || !reason) {
+      return res.status(400).json({ error: 'Worker, date, requested time, and reason are required.' })
+    }
+    try {
+      const requests = await db.collection('early_out_requests')
+        .where('worker_id', '==', String(worker_id))
+        .get()
+      const hasPending = requests.docs.some(doc =>
+        doc.data().date === date && doc.data().status === 'Pending'
+      )
+      if (hasPending) {
+        return res.status(409).json({ error: 'You already have a pending early-out request for this date.' })
+      }
+      const data = {
+        worker_id: String(worker_id),
+        worker_name,
+        date,
+        requested_out_time,
+        reason,
+        details: details || '',
+        status: 'Pending',
+        created_at: FieldValue.serverTimestamp(),
+        reviewed_by: null,
+        reviewed_at: null
+      }
+      const doc = await db.collection('early_out_requests').add(data)
+      res.status(201).json({ id: doc.id, ...data })
+    } catch (err) {
+      res.status(500).json({ error: err.message })
+    }
+  })
+
+  app.put('/api/early-out-requests/:id/review', async (req, res) => {
+    const { status, reviewed_by, rejection_reason } = req.body
+    if (!['Approved', 'Rejected'].includes(status)) {
+      return res.status(400).json({ error: 'Review status must be Approved or Rejected.' })
+    }
+    try {
+      const requestRef = db.collection('early_out_requests').doc(req.params.id)
+      const requestDoc = await requestRef.get()
+      if (!requestDoc.exists) return res.status(404).json({ error: 'Early-out request not found.' })
+      const request = requestDoc.data()
+      if (request.status !== 'Pending') {
+        return res.status(409).json({ error: 'This request has already been reviewed.' })
+      }
+
+      let attendanceRecord = null
+      if (status === 'Approved') {
+        const records = await db.collection('attendance').where('date', '==', request.date).get()
+        attendanceRecord = records.docs.find(doc =>
+          String(doc.data().worker_id || '') === String(request.worker_id)
+        ) || records.docs.find(doc =>
+          String(doc.data().worker_name || doc.data().name || '').trim().toLowerCase() ===
+          String(request.worker_name || '').trim().toLowerCase()
+        )
+        if (!attendanceRecord) {
+          return res.status(404).json({ error: 'No attendance record exists for this worker and date; request remains pending.' })
+        }
+        const current = attendanceRecord.data()
+        if (current.afternoon_out && current.afternoon_out !== '—') {
+          return res.status(409).json({ error: 'The worker already has a recorded time out for this date.' })
+        }
+        const requestedTime = request.requested_out_time
+        const rate = Number(current.rate || 0)
+        const rules = await getAttendanceEvaluationRules(current)
+        const evaluation = evaluateTwoSessions(
+          current.morning_in && current.morning_in !== '—' ? current.morning_in : current.time_in,
+          current.afternoon_in,
+          rate,
+          rules
+        )
+        await attendanceRecord.ref.update({
+          afternoon_out: requestedTime,
+          time_out: requestedTime,
+          early_out_approved: true,
+          early_out_request_id: req.params.id,
+          morning_status: evaluation.morningStatus,
+          afternoon_status: evaluation.afternoonStatus,
+          status: evaluation.status,
+          earned_amount: evaluation.earnedAmount
+        })
+      }
+
+      await requestRef.update({
+        status,
+        reviewed_by: reviewed_by || req.get('x-actor-name') || 'Attendance Administrator',
+        reviewed_at: FieldValue.serverTimestamp(),
+        rejection_reason: status === 'Rejected' ? (rejection_reason || '') : null,
+        applied_to_attendance: status === 'Approved'
+      })
+      res.json({ success: true, status, attendance_updated: status === 'Approved' })
+    } catch (err) {
+      res.status(500).json({ error: err.message })
+    }
+  })
+
+  // ── ATTENDANCE CORRECTION REQUESTS ──
+  app.get('/api/attendance-correction-requests', async (req, res) => {
+    try {
+      const snapshot = await db.collection('attendance_correction_requests').get()
+      let requests = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
+      if (req.query.worker_id) {
+        requests = requests.filter(request =>
+          String(request.worker_id || '') === String(req.query.worker_id)
+        )
+      }
+      requests.sort((a, b) => (b.created_at?._seconds || 0) - (a.created_at?._seconds || 0))
+      res.json(requests)
+    } catch (err) {
+      res.status(500).json({ error: err.message })
+    }
+  })
+
+  app.post('/api/attendance-correction-requests', async (req, res) => {
+    const { worker_id, worker_name, date, field, requested_time, original_time, reason } = req.body
+    if (!worker_id || !worker_name || !/^\d{4}-\d{2}-\d{2}$/.test(String(date || '')) ||
+        !['time_in', 'time_out'].includes(field) ||
+        !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(String(requested_time || '')) ||
+        !String(reason || '').trim()) {
+      return res.status(400).json({ error: 'Worker, date, correction type, time, and reason are required.' })
+    }
+    try {
+      const existing = await db.collection('attendance_correction_requests')
+        .where('worker_id', '==', String(worker_id))
+        .get()
+      const hasPending = existing.docs.some(doc =>
+        doc.data().date === date && doc.data().field === field && doc.data().status === 'Pending'
+      )
+      if (hasPending) {
+        return res.status(409).json({ error: 'A correction request for this attendance entry is already pending.' })
+      }
+      const data = {
+        worker_id: String(worker_id),
+        worker_name: String(worker_name).trim(),
+        date,
+        field,
+        requested_time,
+        original_time: original_time || '',
+        reason: String(reason).trim(),
+        status: 'Pending',
+        created_at: FieldValue.serverTimestamp(),
+        reviewed_by: null,
+        reviewed_at: null,
+        rejection_reason: null
+      }
+      const doc = await db.collection('attendance_correction_requests').add(data)
+      await recordNotification({
+        type: 'Attendance',
+        title: `Attendance correction requested: ${data.worker_name}`,
+        message: `${data.worker_name} requested a ${field === 'time_in' ? 'Time In' : 'Time Out'} correction for ${date}.`,
+        severity: 'Medium',
+        actor_name: data.worker_name,
+        actor_role: 'Worker',
+        action: 'attendance_correction_requested',
+        worker_id: data.worker_id,
+        target_id: doc.id
+      })
+      res.status(201).json({ id: doc.id, ...data })
+    } catch (err) {
+      res.status(500).json({ error: err.message })
+    }
+  })
+
+  app.put('/api/attendance-correction-requests/:id/review', async (req, res) => {
+    const { status, reviewed_by, rejection_reason } = req.body
+    if (!['Approved', 'Rejected'].includes(status)) {
+      return res.status(400).json({ error: 'Review status must be Approved or Rejected.' })
+    }
+    try {
+      const requestRef = db.collection('attendance_correction_requests').doc(req.params.id)
+      const requestDoc = await requestRef.get()
+      if (!requestDoc.exists) return res.status(404).json({ error: 'Attendance correction request not found.' })
+      const request = requestDoc.data()
+      if (request.status !== 'Pending') {
+        return res.status(409).json({ error: 'This correction request has already been reviewed.' })
+      }
+
+      if (status === 'Approved') {
+        const records = await db.collection('attendance').where('date', '==', request.date).get()
+        const attendanceRecord = records.docs.find(doc =>
+          String(doc.data().worker_id || '') === String(request.worker_id)
+        ) || records.docs.find(doc =>
+          String(doc.data().worker_name || doc.data().name || '').trim().toLowerCase() ===
+          String(request.worker_name || '').trim().toLowerCase()
+        )
+        if (!attendanceRecord) {
+          return res.status(404).json({ error: 'No attendance record exists for this worker and date; request remains pending.' })
+        }
+
+        const current = attendanceRecord.data()
+        const isTimeIn = request.field === 'time_in'
+        const updates = isTimeIn
+          ? { time_in: request.requested_time, morning_in: request.requested_time }
+          : { time_out: request.requested_time, afternoon_out: request.requested_time }
+        const rules = await getAttendanceEvaluationRules(current)
+        const evaluation = evaluateTwoSessions(
+          isTimeIn ? request.requested_time : (current.morning_in || current.time_in),
+          current.afternoon_in,
+          Number(current.rate || 0),
+          rules
+        )
+        await attendanceRecord.ref.update({
+          ...updates,
+          morning_status: evaluation.morningStatus,
+          afternoon_status: evaluation.afternoonStatus,
+          status: evaluation.status,
+          earned_amount: evaluation.earnedAmount
+        })
+      }
+
+      await requestRef.update({
+        status,
+        reviewed_by: reviewed_by || req.get('x-actor-name') || 'Attendance Administrator',
+        reviewed_at: FieldValue.serverTimestamp(),
+        rejection_reason: status === 'Rejected' ? (rejection_reason || '') : null,
+        applied_to_attendance: status === 'Approved'
+      })
+      res.json({ success: true, status, attendance_updated: status === 'Approved' })
+    } catch (err) {
+      res.status(500).json({ error: err.message })
+    }
+  })
+
   // ── ATTENDANCE ──
   app.get('/api/attendance/:project_id', async (req, res) => {
     const { project_id } = req.params
@@ -1935,10 +2370,11 @@ function startServer() {
       }
     }
 
-    const evaluated = evaluateTwoSessions(mIn, aIn, baseRate)
-    let status = req.body.status && req.body.status !== 'Present' ? req.body.status : evaluated.status
-
     try {
+      const schedule = await findAttendanceSchedule(finalDate, worker_id)
+      const rules = await getAttendanceEvaluationRules(schedule)
+      const evaluated = evaluateTwoSessions(mIn, aIn, baseRate, rules)
+      let status = req.body.status && req.body.status !== 'Present' ? req.body.status : evaluated.status
       const checkNW = await isDateNonWorkingDay(finalDate)
       if (checkNW.isNonWorking) {
         if (!status || status === 'Absent') {
@@ -1953,6 +2389,7 @@ function startServer() {
         morning_in: mIn || '—', morning_out: mOut || '—', afternoon_in: aIn || '—', afternoon_out: aOut || '—',
         morning_status: evaluated.morningStatus, afternoon_status: evaluated.afternoonStatus,
         time_in: mIn || aIn || '—', time_out: aOut || mOut || '—', rate: baseRate, earned_amount: earnedAmount, advance: advance || 0, status,
+        ...attendanceScheduleFields(schedule),
         created_at: FieldValue.serverTimestamp()
       }
       const docRef = await db.collection('attendance').add(newAttendance)
@@ -2063,8 +2500,20 @@ function startServer() {
 
       // 2. Check Date & Terminal Schedule Settings
       const now = new Date()
-      const timeString = now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
-      const todayISO = now.toISOString().slice(0, 10)
+      const timeString = now.toLocaleTimeString('en-US', {
+        timeZone: 'Asia/Manila',
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true
+      })
+      const dateParts = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'Asia/Manila',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+      }).formatToParts(now)
+      const getDatePart = type => dateParts.find(part => part.type === type)?.value
+      const todayISO = `${getDatePart('year')}-${getDatePart('month')}-${getDatePart('day')}`
       const minutes = parseTimeToMinutes(timeString)
 
       const nwCheck = await isDateNonWorkingDay(todayISO)
@@ -2234,7 +2683,8 @@ function startServer() {
           }
         }
 
-        const evalRes = evaluateTwoSessions(mIn, aIn, workerRate)
+        const rules = await getAttendanceEvaluationRules(existing)
+        const evalRes = evaluateTwoSessions(mIn, aIn, workerRate, rules)
         finalStatus = evalRes.status
         earnedAmount = evalRes.earnedAmount
 
@@ -2333,7 +2783,9 @@ function startServer() {
           action = 'AFTERNOON TIME IN (1 PM)'
         }
 
-        const evalRes = evaluateTwoSessions(mIn, aIn, workerRate)
+        const schedule = await findAttendanceSchedule(todayISO, workerId)
+        const rules = await getAttendanceEvaluationRules(schedule)
+        const evalRes = evaluateTwoSessions(mIn, aIn, workerRate, rules)
         finalStatus = evalRes.status
         earnedAmount = evalRes.earnedAmount
 
@@ -2355,6 +2807,7 @@ function startServer() {
           advance: 0,
           time_in: mIn !== '—' ? mIn : aIn,
           time_out: '—',
+          ...attendanceScheduleFields(schedule),
           created_at: FieldValue.serverTimestamp()
         }
 
@@ -2429,7 +2882,8 @@ function startServer() {
         return res.status(400).json({ error: 'Bawal mag-Time Out sa hapon kung walang naitalang Time In.' })
       }
 
-      const evaluated = evaluateTwoSessions(mIn, aIn, baseRate)
+      const rules = await getAttendanceEvaluationRules(existing)
+      const evaluated = evaluateTwoSessions(mIn, aIn, baseRate, rules)
       const finalStatus = status || evaluated.status
       const finalEarned = (finalStatus === 'Absent') ? 0 : evaluated.earnedAmount
 
@@ -4184,11 +4638,13 @@ function startServer() {
   app.post('/api/admin/profile/save', async (req, res) => {
     const {
       adminId, firstName, middleName, lastName, email, phone, homeAddress, addressObj,
-      role, empId, dept, assignedProjectSite, terminalId, pushNotificationsEnabled, biometricLoginEnabled, status
+      role, empId, dept, department, assignedProjectSite, terminalId, pushNotificationsEnabled, biometricLoginEnabled, status,
+      username, birthday, age, password
     } = req.body
 
     try {
       const fullName = [firstName, middleName, lastName].filter(Boolean).join(' ').trim()
+      const finalDepartment = department ?? dept
       const addressObjStr = typeof addressObj === 'object' ? JSON.stringify(addressObj) : (addressObj || null)
 
       let targetId = adminId
@@ -4212,9 +4668,30 @@ function startServer() {
 
       // Only update these if they are provided
       if (email !== undefined) updateData.email = email || null
+      if (username !== undefined) {
+        const cleanUsername = typeof username === 'string' ? username.trim() : ''
+        if (!/^[a-z0-9]{8,20}$/.test(cleanUsername)) {
+          return res.status(400).json({ error: 'Username must be 8 to 20 lowercase letters or numbers.' })
+        }
+        const usernameSnapshot = await db.collection('admins').where('username', '==', cleanUsername).limit(2).get()
+        if (usernameSnapshot.docs.some(doc => doc.id !== targetId)) {
+          return res.status(409).json({ error: 'Username is already in use.' })
+        }
+        updateData.username = cleanUsername
+      }
+      if (birthday !== undefined) updateData.birthday = birthday || null
+      if (age !== undefined) updateData.age = age === null ? null : Number(age)
+      if (typeof password === 'string' && password.trim()) {
+        const cleanPassword = password.trim()
+        if (cleanPassword.length < 8 || cleanPassword.length > 20 ||
+            !/[A-Z]/.test(cleanPassword) || !/[a-z]/.test(cleanPassword) || !/[0-9]/.test(cleanPassword)) {
+          return res.status(400).json({ error: 'Password must be 8 to 20 characters and include uppercase, lowercase, and a number.' })
+        }
+        updateData.password = await bcrypt.hash(cleanPassword, 10)
+      }
       if (role !== undefined) updateData.role = role || null
       if (empId !== undefined) updateData.emp_id = empId || null
-      if (dept !== undefined) updateData.dept = dept || null
+      if (finalDepartment !== undefined) updateData.dept = finalDepartment || null
       if (assignedProjectSite !== undefined) updateData.assigned_project_site = assignedProjectSite || null
       if (terminalId !== undefined) updateData.terminal_id = terminalId || null
       if (pushNotificationsEnabled !== undefined) updateData.push_notifications_enabled = pushNotificationsEnabled ? 1 : 0
@@ -4229,7 +4706,7 @@ function startServer() {
         actor_name: fullName,
         actor_role: role || 'Administrator',
         actor_id: targetId,
-        details: { email, phone, role, dept, empId },
+        details: { email, phone, role, dept: finalDepartment, empId },
         req
       }).catch(() => {})
 
@@ -4237,9 +4714,9 @@ function startServer() {
         success: true,
         message: 'Admin profile saved successfully',
         data: {
-          id: targetId, fullName, firstName, middleName, lastName, email, phone, homeAddress,
+          id: targetId, fullName, firstName, middleName, lastName, username: updateData.username ?? username, birthday, age, email, phone, homeAddress,
           addressObj: addressObj || {}, role: role || 'Administrator', empId: empId || 'SCON-ADMIN-001',
-          dept: dept || 'Management', assignedProjectSite, terminalId, pushNotificationsEnabled, biometricLoginEnabled, status
+          dept: finalDepartment || 'Management', assignedProjectSite, terminalId, pushNotificationsEnabled, biometricLoginEnabled, status
         }
       })
     } catch (e) {
@@ -4282,6 +4759,8 @@ function startServer() {
         firstName: adminData.first_name,
         middleName: adminData.middle_name,
         lastName: adminData.last_name,
+        birthday: adminData.birthday,
+        age: adminData.age,
         phone: adminData.phone,
         homeAddress: adminData.home_address,
         addressObj: parsedAddressObj,

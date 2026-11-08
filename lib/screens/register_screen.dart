@@ -4,7 +4,6 @@ import 'package:google_fonts/google_fonts.dart';
 import '../services/api_service.dart';
 import '../services/psgc_service.dart';
 import '../services/semaphore_service.dart';
-import '../widgets/app_sidebar.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -20,9 +19,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
   bool _obscureConfirmPassword = true;
   bool _agreeTerms = false;
 
-  // Mobile app registration is strictly for Workers
-  final String _selectedRole = 'Worker';
-
   final TextEditingController _firstNameController = TextEditingController();
   final TextEditingController _middleNameController = TextEditingController();
   final TextEditingController _lastNameController = TextEditingController();
@@ -35,7 +31,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   bool _isLoading = false;
   bool _isPhoneVerified = false;
-  final List<TextEditingController> _otpControllers = List.generate(6, (_) => TextEditingController());
+  final List<TextEditingController> _otpControllers = List.generate(
+    6,
+    (_) => TextEditingController(),
+  );
   final List<FocusNode> _otpFocusNodes = List.generate(6, (_) => FocusNode());
 
   @override
@@ -75,29 +74,49 @@ class _RegisterScreenState extends State<RegisterScreen> {
             children: [
               Text(
                 'By accessing BuildTrack, you agree to submit accurate attendance logs, report equipment issues responsibly, and adhere to site safety and administrative policies as supervised by S-CON management.',
-                style: GoogleFonts.inter(fontSize: 13, color: Colors.grey.shade700, height: 1.5),
+                style: GoogleFonts.inter(
+                  fontSize: 13,
+                  color: Colors.grey.shade700,
+                  height: 1.5,
+                ),
               ),
               const SizedBox(height: 12),
               Text(
                 'Data Privacy Consent:',
-                style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.black87),
+                style: GoogleFonts.inter(
+                  fontSize: 13,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black87,
+                ),
               ),
               const SizedBox(height: 4),
               Text(
                 'You also consent to the collection, processing, and secure storage of your personal information strictly for employment verification, payroll, and administrative purposes in accordance with the Data Privacy Act.',
-                style: GoogleFonts.inter(fontSize: 13, color: Colors.grey.shade700, height: 1.5),
+                style: GoogleFonts.inter(
+                  fontSize: 13,
+                  color: Colors.grey.shade700,
+                  height: 1.5,
+                ),
               ),
               const SizedBox(height: 12),
               Text(
                 'Additional Responsibilities:',
-                style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.black87),
+                style: GoogleFonts.inter(
+                  fontSize: 13,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black87,
+                ),
               ),
               const SizedBox(height: 4),
               Text(
                 '• You confirm that all submitted personal details are true and accurate.\n'
                 '• You are responsible for keeping your login credentials secure and confidential.\n'
                 '• You will not use this application for any fraudulent activities or unauthorized access.',
-                style: GoogleFonts.inter(fontSize: 13, color: Colors.grey.shade700, height: 1.5),
+                style: GoogleFonts.inter(
+                  fontSize: 13,
+                  color: Colors.grey.shade700,
+                  height: 1.5,
+                ),
               ),
             ],
           ),
@@ -107,7 +126,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
             onPressed: () => Navigator.pop(context),
             child: Text(
               'Close',
-              style: GoogleFonts.inter(fontWeight: FontWeight.bold, color: const Color(0xFFA63228)),
+              style: GoogleFonts.inter(
+                fontWeight: FontWeight.bold,
+                color: const Color(0xFFA63228),
+              ),
             ),
           ),
         ],
@@ -150,7 +172,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
               } else if (step == 1) {
                 data = await PsgcService.getProvinces(regionCode);
               } else if (step == 2) {
-                data = await PsgcService.getCitiesMunicipalities(regionCode, provinceCode);
+                data = await PsgcService.getCitiesMunicipalities(
+                  regionCode,
+                  provinceCode,
+                );
               } else if (step == 3) {
                 data = await PsgcService.getBarangays(cityCode);
               }
@@ -168,14 +193,16 @@ class _RegisterScreenState extends State<RegisterScreen> {
             String stepTitle = step == 0
                 ? "Select Region"
                 : step == 1
-                    ? "Select Province"
-                    : step == 2
-                        ? "Select City/Municipality"
-                        : "Select Barangay";
+                ? "Select Province"
+                : step == 2
+                ? "Select City/Municipality"
+                : "Select Barangay";
 
             final filteredItems = items.where((item) {
               if (searchQuery.isEmpty) return true;
-              String name = step == 0 ? PsgcService.formatRegionLabel(item) : (item['name'] ?? '').toString();
+              String name = step == 0
+                  ? PsgcService.formatRegionLabel(item)
+                  : (item['name'] ?? '').toString();
               return name.toLowerCase().contains(searchQuery.toLowerCase());
             }).toList();
 
@@ -187,12 +214,18 @@ class _RegisterScreenState extends State<RegisterScreen> {
               child: Column(
                 children: [
                   Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16.0,
+                      vertical: 12.0,
+                    ),
                     child: Row(
                       children: [
                         if (step > 0)
                           IconButton(
-                            icon: const Icon(Icons.arrow_back, color: Colors.black87),
+                            icon: const Icon(
+                              Icons.arrow_back,
+                              color: Colors.black87,
+                            ),
                             onPressed: () {
                               setModalState(() {
                                 step--;
@@ -207,7 +240,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           child: Text(
                             stepTitle,
                             textAlign: TextAlign.center,
-                            style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.black87),
+                            style: GoogleFonts.inter(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.black87,
+                            ),
                           ),
                         ),
                         IconButton(
@@ -220,7 +257,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   Divider(height: 1, color: Colors.grey.shade300),
 
                   Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16.0,
+                      vertical: 8.0,
+                    ),
                     child: TextField(
                       onChanged: (val) {
                         setModalState(() {
@@ -230,10 +270,18 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       decoration: InputDecoration(
                         isDense: true,
                         hintText: 'Search $stepTitle...',
-                        hintStyle: GoogleFonts.inter(fontSize: 13, color: Colors.grey),
+                        hintStyle: GoogleFonts.inter(
+                          fontSize: 13,
+                          color: Colors.grey,
+                        ),
                         prefixIcon: const Icon(Icons.search, size: 20),
-                        contentPadding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                        contentPadding: const EdgeInsets.symmetric(
+                          vertical: 10,
+                          horizontal: 12,
+                        ),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
                       ),
                     ),
                   ),
@@ -241,52 +289,68 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   Expanded(
                     child: isLoading
                         ? const Center(
-                            child: CircularProgressIndicator(color: Color(0xFFA63228)),
+                            child: CircularProgressIndicator(
+                              color: Color(0xFFA63228),
+                            ),
                           )
                         : filteredItems.isEmpty
-                            ? Center(
-                                child: Text('No results found', style: GoogleFonts.inter(color: Colors.grey)),
-                              )
-                            : ListView.separated(
-                                itemCount: filteredItems.length,
-                                separatorBuilder: (_, __) => Divider(height: 1, color: Colors.grey.shade200),
-                                itemBuilder: (context, index) {
-                                  final item = filteredItems[index];
-                                  String displayName = step == 0
-                                      ? PsgcService.formatRegionLabel(item)
-                                      : (item['name'] ?? '').toString();
+                        ? Center(
+                            child: Text(
+                              'No results found',
+                              style: GoogleFonts.inter(color: Colors.grey),
+                            ),
+                          )
+                        : ListView.separated(
+                            itemCount: filteredItems.length,
+                            separatorBuilder: (_, __) =>
+                                Divider(height: 1, color: Colors.grey.shade200),
+                            itemBuilder: (context, index) {
+                              final item = filteredItems[index];
+                              String displayName = step == 0
+                                  ? PsgcService.formatRegionLabel(item)
+                                  : (item['name'] ?? '').toString();
 
-                                  return ListTile(
-                                    title: Text(displayName, style: GoogleFonts.inter(fontSize: 14)),
-                                    trailing: const Icon(Icons.chevron_right, size: 18, color: Colors.grey),
-                                    onTap: () {
-                                      if (step == 0) {
-                                        regionCode = (item['code'] ?? '').toString();
-                                        regionName = displayName;
-                                        step = 1;
-                                        searchQuery = '';
-                                        loadStepData();
-                                      } else if (step == 1) {
-                                        provinceCode = (item['code'] ?? '').toString();
-                                        provinceName = displayName;
-                                        step = 2;
-                                        searchQuery = '';
-                                        loadStepData();
-                                      } else if (step == 2) {
-                                        cityCode = (item['code'] ?? '').toString();
-                                        cityName = displayName;
-                                        step = 3;
-                                        searchQuery = '';
-                                        loadStepData();
-                                      } else if (step == 3) {
-                                        String barangayName = displayName;
-                                        _addressController.text = "$regionName, $provinceName, $cityName, $barangayName";
-                                        Navigator.pop(context);
-                                      }
-                                    },
-                                  );
+                              return ListTile(
+                                title: Text(
+                                  displayName,
+                                  style: GoogleFonts.inter(fontSize: 14),
+                                ),
+                                trailing: const Icon(
+                                  Icons.chevron_right,
+                                  size: 18,
+                                  color: Colors.grey,
+                                ),
+                                onTap: () {
+                                  if (step == 0) {
+                                    regionCode = (item['code'] ?? '')
+                                        .toString();
+                                    regionName = displayName;
+                                    step = 1;
+                                    searchQuery = '';
+                                    loadStepData();
+                                  } else if (step == 1) {
+                                    provinceCode = (item['code'] ?? '')
+                                        .toString();
+                                    provinceName = displayName;
+                                    step = 2;
+                                    searchQuery = '';
+                                    loadStepData();
+                                  } else if (step == 2) {
+                                    cityCode = (item['code'] ?? '').toString();
+                                    cityName = displayName;
+                                    step = 3;
+                                    searchQuery = '';
+                                    loadStepData();
+                                  } else if (step == 3) {
+                                    String barangayName = displayName;
+                                    _addressController.text =
+                                        "$regionName, $provinceName, $cityName, $barangayName";
+                                    Navigator.pop(context);
+                                  }
                                 },
-                              ),
+                              );
+                            },
+                          ),
                   ),
                 ],
               ),
@@ -326,7 +390,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
     if (picked != null) {
       int age = today.year - picked.year;
-      if (today.month < picked.month || (today.month == picked.month && today.day < picked.day)) {
+      if (today.month < picked.month ||
+          (today.month == picked.month && today.day < picked.day)) {
         age--;
       }
 
@@ -349,18 +414,30 @@ class _RegisterScreenState extends State<RegisterScreen> {
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.hourglass_empty, color: Color(0xFFE8C547), size: 48),
+            const Icon(
+              Icons.hourglass_empty,
+              color: Color(0xFFE8C547),
+              size: 48,
+            ),
             const SizedBox(height: 16),
             Text(
               'Registration Submitted',
               textAlign: TextAlign.center,
-              style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.black87),
+              style: GoogleFonts.inter(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: Colors.black87,
+              ),
             ),
             const SizedBox(height: 8),
             Text(
               'Your phone number has been verified. Your account registration is sent to the Admin for approval before you can log in.',
               textAlign: TextAlign.center,
-              style: GoogleFonts.inter(fontSize: 13, color: Colors.grey.shade600, height: 1.5),
+              style: GoogleFonts.inter(
+                fontSize: 13,
+                color: Colors.grey.shade600,
+                height: 1.5,
+              ),
             ),
             const SizedBox(height: 24),
             SizedBox(
@@ -369,14 +446,22 @@ class _RegisterScreenState extends State<RegisterScreen> {
               child: ElevatedButton(
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFFA63228),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(30),
+                  ),
                   elevation: 0,
                 ),
                 onPressed: () {
                   Navigator.pop(context);
                   Navigator.pushReplacementNamed(context, '/login');
                 },
-                child: Text('Understood', style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.bold)),
+                child: Text(
+                  'Understood',
+                  style: GoogleFonts.inter(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
               ),
             ),
           ],
@@ -391,10 +476,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
     }
 
     final phone = '+63${_phoneController.text.trim()}';
-    
+
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('Sending OTP via Semaphore SMS to $phone...', style: GoogleFonts.inter(fontSize: 12)),
+        content: Text(
+          'Sending OTP via Semaphore SMS to $phone...',
+          style: GoogleFonts.inter(fontSize: 12),
+        ),
         duration: const Duration(seconds: 2),
       ),
     );
@@ -411,7 +499,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
       builder: (dialogContext) {
         return AlertDialog(
           backgroundColor: Colors.white,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
           contentPadding: const EdgeInsets.all(24),
           content: Column(
             mainAxisSize: MainAxisSize.min,
@@ -419,30 +509,51 @@ class _RegisterScreenState extends State<RegisterScreen> {
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFA63228).withOpacity(0.1),
+                  color: const Color(0xFFA63228).withValues(alpha: 0.1),
                   shape: BoxShape.circle,
                 ),
-                child: const Icon(Icons.mark_email_read_outlined, color: Color(0xFFA63228), size: 36),
+                child: const Icon(
+                  Icons.mark_email_read_outlined,
+                  color: Color(0xFFA63228),
+                  size: 36,
+                ),
               ),
               const SizedBox(height: 16),
               Text(
                 'Semaphore OTP Verification',
                 textAlign: TextAlign.center,
-                style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.black87),
+                style: GoogleFonts.inter(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black87,
+                ),
               ),
               const SizedBox(height: 8),
               Text(
                 'Enter the 6-digit verification code sent to $phone',
                 textAlign: TextAlign.center,
-                style: GoogleFonts.inter(fontSize: 12.5, color: Colors.grey.shade600, height: 1.4),
+                style: GoogleFonts.inter(
+                  fontSize: 12.5,
+                  color: Colors.grey.shade600,
+                  height: 1.4,
+                ),
               ),
               const SizedBox(height: 12),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 6,
+                ),
                 decoration: BoxDecoration(
-                  color: isSimulated ? Colors.amber.shade50 : Colors.green.shade50,
+                  color: isSimulated
+                      ? Colors.amber.shade50
+                      : Colors.green.shade50,
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: isSimulated ? Colors.amber.shade300 : Colors.green.shade300),
+                  border: Border.all(
+                    color: isSimulated
+                        ? Colors.amber.shade300
+                        : Colors.green.shade300,
+                  ),
                 ),
                 child: Text(
                   isSimulated
@@ -451,7 +562,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   style: GoogleFonts.inter(
                     fontSize: 11.5,
                     fontWeight: FontWeight.bold,
-                    color: isSimulated ? Colors.amber.shade900 : Colors.green.shade800,
+                    color: isSimulated
+                        ? Colors.amber.shade900
+                        : Colors.green.shade800,
                   ),
                 ),
               ),
@@ -469,19 +582,27 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       keyboardType: TextInputType.number,
                       textAlign: TextAlign.center,
                       maxLength: 1,
-                      style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.bold),
+                      style: GoogleFonts.inter(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
                       inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                       decoration: InputDecoration(
                         counterText: '',
                         contentPadding: EdgeInsets.zero,
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
                         enabledBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(8),
                           borderSide: BorderSide(color: Colors.grey.shade300),
                         ),
                         focusedBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(8),
-                          borderSide: const BorderSide(color: Color(0xFFA63228), width: 2),
+                          borderSide: const BorderSide(
+                            color: Color(0xFFA63228),
+                            width: 2,
+                          ),
                         ),
                       ),
                       onChanged: (value) {
@@ -502,12 +623,23 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 child: ElevatedButton(
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFFA63228),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(30),
+                    ),
                     elevation: 0,
                   ),
-                  onPressed: () {
-                    String enteredOtp = _otpControllers.map((c) => c.text).join();
-                    bool isValid = SemaphoreService.verifyOtp(phone, enteredOtp) || enteredOtp == activeOtp;
+                  onPressed: () async {
+                    String enteredOtp = _otpControllers
+                        .map((c) => c.text)
+                        .join();
+                    final isValid =
+                        await SemaphoreService.verifyOtp(phone, enteredOtp) ||
+                        enteredOtp == activeOtp;
+                    if (!mounted ||
+                        !dialogContext.mounted ||
+                        !context.mounted) {
+                      return;
+                    }
 
                     if (isValid) {
                       setState(() {
@@ -516,7 +648,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       Navigator.pop(dialogContext);
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
-                          content: Text('Phone number verified successfully! ✓', style: GoogleFonts.inter(fontSize: 13)),
+                          content: Text(
+                            'Phone number verified successfully! ✓',
+                            style: GoogleFonts.inter(fontSize: 13),
+                          ),
                           backgroundColor: Colors.green.shade700,
                           behavior: SnackBarBehavior.floating,
                         ),
@@ -524,29 +659,46 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     } else {
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
-                          content: Text('Invalid OTP code. Please enter the correct code.', style: GoogleFonts.inter(fontSize: 12)),
+                          content: Text(
+                            'Invalid OTP code. Please enter the correct code.',
+                            style: GoogleFonts.inter(fontSize: 12),
+                          ),
                           backgroundColor: const Color(0xFFA63228),
                         ),
                       );
                     }
                   },
-                  child: Text('Verify OTP', style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.bold)),
+                  child: Text(
+                    'Verify OTP',
+                    style: GoogleFonts.inter(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
                 ),
               ),
               const SizedBox(height: 8),
               TextButton(
                 onPressed: () async {
-                  final res = await SemaphoreService.sendOtp(phone);
+                  await SemaphoreService.sendOtp(phone);
+                  if (!mounted || !context.mounted) return;
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
-                      content: Text('OTP code resent to $phone', style: GoogleFonts.inter(fontSize: 12)),
+                      content: Text(
+                        'OTP code resent to $phone',
+                        style: GoogleFonts.inter(fontSize: 12),
+                      ),
                       behavior: SnackBarBehavior.floating,
                     ),
                   );
                 },
                 child: Text(
                   'Resend OTP Code via Semaphore',
-                  style: GoogleFonts.inter(fontSize: 12, color: Colors.grey.shade700, fontWeight: FontWeight.bold),
+                  style: GoogleFonts.inter(
+                    fontSize: 12,
+                    color: Colors.grey.shade700,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
               ),
             ],
@@ -562,7 +714,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
     if (!_isPhoneVerified) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Please verify your phone number with OTP first.', style: GoogleFonts.inter(fontSize: 13)),
+          content: Text(
+            'Please verify your phone number with OTP first.',
+            style: GoogleFonts.inter(fontSize: 13),
+          ),
           backgroundColor: const Color(0xFFA63228),
           behavior: SnackBarBehavior.floating,
         ),
@@ -590,7 +745,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
     try {
       // Convert birthday from mm/dd/yyyy to yyyy-mm-dd
       final bdayParts = _bdayController.text.split('/');
-      final birthday = bdayParts.length == 3 
+      final birthday = bdayParts.length == 3
           ? '${bdayParts[2]}-${bdayParts[0].padLeft(2, '0')}-${bdayParts[1].padLeft(2, '0')}'
           : null;
 
@@ -627,58 +782,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
     }
   }
 
-  Widget _buildDropdown({
-    required String hintText,
-    required IconData icon,
-    required String? value,
-    required List<String> items,
-    required ValueChanged<String?> onChanged,
-    String? Function(String?)? validator,
-  }) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8.0),
-      child: DropdownButtonFormField<String>(
-        initialValue: value,
-        icon: const Icon(Icons.keyboard_arrow_down, color: Colors.grey, size: 16),
-        style: GoogleFonts.inter(fontSize: 14, color: Colors.black87),
-        isExpanded: true,
-        hint: Text(hintText, style: GoogleFonts.inter(color: Colors.grey.shade400, fontSize: 13), overflow: TextOverflow.ellipsis),
-        decoration: InputDecoration(
-          isDense: true,
-          prefixIconConstraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-          prefixIcon: Icon(icon, color: Colors.grey.shade500, size: 18),
-          contentPadding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
-          errorStyle: GoogleFonts.inter(fontSize: 10, height: 1),
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide(color: Colors.grey.shade300),
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: const BorderSide(color: Color(0xFFA63228), width: 1.5),
-          ),
-          errorBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: const BorderSide(color: Colors.red, width: 1.5),
-          ),
-          focusedErrorBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: const BorderSide(color: Colors.red, width: 2),
-          ),
-        ),
-        items: items.map((String val) {
-          return DropdownMenuItem<String>(
-            value: val,
-            child: Text(val, style: GoogleFonts.inter(fontSize: 14)),
-          );
-        }).toList(),
-        onChanged: onChanged,
-        validator: validator ?? ((val) => val == null || val.isEmpty ? 'Required' : null),
-      ),
-    );
-  }
-
   Widget _buildTextField({
     required String hintText,
     required IconData icon,
@@ -711,25 +814,42 @@ class _RegisterScreenState extends State<RegisterScreen> {
         decoration: InputDecoration(
           isDense: true,
           hintText: hintText,
-          hintStyle: GoogleFonts.inter(color: Colors.grey.shade400, fontSize: 13),
+          hintStyle: GoogleFonts.inter(
+            color: Colors.grey.shade400,
+            fontSize: 13,
+          ),
           prefixText: prefixText,
-          prefixStyle: GoogleFonts.inter(color: Colors.black87, fontWeight: FontWeight.bold, fontSize: textFontSize),
-          prefixIconConstraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+          prefixStyle: GoogleFonts.inter(
+            color: Colors.black87,
+            fontWeight: FontWeight.bold,
+            fontSize: textFontSize,
+          ),
+          prefixIconConstraints: const BoxConstraints(
+            minWidth: 36,
+            minHeight: 36,
+          ),
           prefixIcon: Icon(icon, color: Colors.grey.shade500, size: 18),
-          suffixIconConstraints: (isPassword || suffixWidget != null) ? const BoxConstraints(minWidth: 36, minHeight: 36) : null,
+          suffixIconConstraints: (isPassword || suffixWidget != null)
+              ? const BoxConstraints(minWidth: 36, minHeight: 36)
+              : null,
           suffixIcon: isPassword
               ? IconButton(
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(),
-            icon: Icon(
-              obscureText! ? Icons.visibility_off_outlined : Icons.visibility_outlined,
-              color: Colors.grey.shade500,
-              size: 18,
-            ),
-            onPressed: onToggleVisibility,
-          )
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                  icon: Icon(
+                    obscureText!
+                        ? Icons.visibility_off_outlined
+                        : Icons.visibility_outlined,
+                    color: Colors.grey.shade500,
+                    size: 18,
+                  ),
+                  onPressed: onToggleVisibility,
+                )
               : suffixWidget,
-          contentPadding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+          contentPadding: const EdgeInsets.symmetric(
+            vertical: 12,
+            horizontal: 8,
+          ),
           errorStyle: GoogleFonts.inter(fontSize: 10, height: 1),
           border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
           enabledBorder: OutlineInputBorder(
@@ -759,10 +879,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
     return Scaffold(
       backgroundColor: Colors.white,
-      appBar: AppBar(
-        backgroundColor: Colors.white,
-        elevation: 0,
-      ),
+      appBar: AppBar(backgroundColor: Colors.white, elevation: 0),
       body: SafeArea(
         child: CustomScrollView(
           physics: const ClampingScrollPhysics(),
@@ -770,7 +887,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
             SliverFillRemaining(
               hasScrollBody: false,
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 12.0),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24.0,
+                  vertical: 12.0,
+                ),
                 child: Form(
                   key: _formKey,
                   autovalidateMode: AutovalidateMode.onUserInteraction,
@@ -816,11 +936,20 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         validator: (value) {
                           final trimmed = value?.trim() ?? '';
                           if (trimmed.isEmpty) return 'Required';
-                          if (RegExp(r'[^a-zA-Z\s]').hasMatch(value!)) return 'Letters only';
-                          final words = trimmed.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
+                          if (RegExp(r'[^a-zA-Z\s]').hasMatch(value!)) {
+                            return 'Letters only';
+                          }
+                          final words = trimmed
+                              .split(RegExp(r'\s+'))
+                              .where((w) => w.isNotEmpty)
+                              .toList();
                           for (final word in words) {
-                            if (word.length < 2) return 'Each word must be at least 2 letters';
-                            if (word.length > 30) return 'Each word maximum 30 letters';
+                            if (word.length < 2) {
+                              return 'Each word must be at least 2 letters';
+                            }
+                            if (word.length > 30) {
+                              return 'Each word maximum 30 letters';
+                            }
                           }
                           return null;
                         },
@@ -839,11 +968,20 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         validator: (value) {
                           if (value != null && value.trim().isNotEmpty) {
                             final trimmed = value.trim();
-                            if (RegExp(r'[^a-zA-Z\s]').hasMatch(value)) return 'Letters only';
-                            final words = trimmed.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
+                            if (RegExp(r'[^a-zA-Z\s]').hasMatch(value)) {
+                              return 'Letters only';
+                            }
+                            final words = trimmed
+                                .split(RegExp(r'\s+'))
+                                .where((w) => w.isNotEmpty)
+                                .toList();
                             for (final word in words) {
-                              if (word.length < 2) return 'Each word must be at least 2 letters';
-                              if (word.length > 30) return 'Each word maximum 30 letters';
+                              if (word.length < 2) {
+                                return 'Each word must be at least 2 letters';
+                              }
+                              if (word.length > 30) {
+                                return 'Each word maximum 30 letters';
+                              }
                             }
                           }
                           return null;
@@ -863,16 +1001,24 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         validator: (value) {
                           final trimmed = value?.trim() ?? '';
                           if (trimmed.isEmpty) return 'Required';
-                          if (RegExp(r'[^a-zA-Z\s]').hasMatch(value!)) return 'Letters only';
-                          final words = trimmed.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
+                          if (RegExp(r'[^a-zA-Z\s]').hasMatch(value!)) {
+                            return 'Letters only';
+                          }
+                          final words = trimmed
+                              .split(RegExp(r'\s+'))
+                              .where((w) => w.isNotEmpty)
+                              .toList();
                           for (final word in words) {
-                            if (word.length < 2) return 'Each word must be at least 2 letters';
-                            if (word.length > 30) return 'Each word maximum 30 letters';
+                            if (word.length < 2) {
+                              return 'Each word must be at least 2 letters';
+                            }
+                            if (word.length > 30) {
+                              return 'Each word maximum 30 letters';
+                            }
                           }
                           return null;
                         },
                       ),
-
 
                       // BIRTHDAY & AGE
                       Row(
@@ -887,9 +1033,14 @@ class _RegisterScreenState extends State<RegisterScreen> {
                               readOnly: true,
                               onTap: () => _selectDate(context),
                               validator: (value) {
-                                if (value == null || value.isEmpty) return 'Required';
-                                int? currentAge = int.tryParse(_ageController.text);
-                                if (currentAge != null && (currentAge < 18 || currentAge > 59)) {
+                                if (value == null || value.isEmpty) {
+                                  return 'Required';
+                                }
+                                int? currentAge = int.tryParse(
+                                  _ageController.text,
+                                );
+                                if (currentAge != null &&
+                                    (currentAge < 18 || currentAge > 59)) {
                                   return 'Must be 18 to 59 years old';
                                 }
                                 return null;
@@ -917,16 +1068,18 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         isNumber: true,
                         readOnly: _isPhoneVerified,
                         prefixText: '+63 ',
-                        inputFormatters: [
-                          PhilippinePhoneFormatter(),
-                        ],
+                        inputFormatters: [PhilippinePhoneFormatter()],
                         suffixWidget: Padding(
                           padding: const EdgeInsets.only(right: 8.0),
                           child: _isPhoneVerified
                               ? Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
-                                    const Icon(Icons.check_circle, color: Colors.green, size: 18),
+                                    const Icon(
+                                      Icons.check_circle,
+                                      color: Colors.green,
+                                      size: 18,
+                                    ),
                                     const SizedBox(width: 4),
                                     Text(
                                       'Verified',
@@ -940,11 +1093,21 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                 )
                               : TextButton(
                                   onPressed: () {
-                                    if (_phoneController.text.trim().length < 10) {
-                                      ScaffoldMessenger.of(context).showSnackBar(
+                                    if (_phoneController.text.trim().length <
+                                        10) {
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
                                         SnackBar(
-                                          content: Text('Please enter a valid 10-digit phone number first', style: GoogleFonts.inter(fontSize: 12)),
-                                          backgroundColor: const Color(0xFFA63228),
+                                          content: Text(
+                                            'Please enter a valid 10-digit phone number first',
+                                            style: GoogleFonts.inter(
+                                              fontSize: 12,
+                                            ),
+                                          ),
+                                          backgroundColor: const Color(
+                                            0xFFA63228,
+                                          ),
                                         ),
                                       );
                                       return;
@@ -952,9 +1115,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                     _showOtpVerificationDialog();
                                   },
                                   style: TextButton.styleFrom(
-                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 10,
+                                      vertical: 4,
+                                    ),
                                     minimumSize: Size.zero,
-                                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                    tapTargetSize:
+                                        MaterialTapTargetSize.shrinkWrap,
                                   ),
                                   child: Text(
                                     'Send OTP',
@@ -969,9 +1136,15 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         validator: (value) {
                           final trimmed = value?.trim() ?? '';
                           if (trimmed.isEmpty) return 'Required';
-                          if (trimmed.length < 10) return 'Must be 10 digits (e.g. 9XXXXXXXXX)';
-                          if (!trimmed.startsWith('9')) return 'Must start with 9';
-                          if (!_isPhoneVerified) return 'OTP verification required';
+                          if (trimmed.length < 10) {
+                            return 'Must be 10 digits (e.g. 9XXXXXXXXX)';
+                          }
+                          if (!trimmed.startsWith('9')) {
+                            return 'Must start with 9';
+                          }
+                          if (!_isPhoneVerified) {
+                            return 'OTP verification required';
+                          }
                           return null;
                         },
                       ),
@@ -984,7 +1157,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         readOnly: true,
                         onTap: _showAddressPicker,
                         textFontSize: 11.5,
-                        validator: (value) => value == null || value.isEmpty ? 'Required' : null,
+                        validator: (value) =>
+                            value == null || value.isEmpty ? 'Required' : null,
                       ),
 
                       // USERNAME
@@ -994,12 +1168,16 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         controller: _usernameController,
                         inputFormatters: [
                           LengthLimitingTextInputFormatter(20),
-                          FilteringTextInputFormatter.allow(RegExp(r'[a-z0-9]')),
+                          FilteringTextInputFormatter.allow(
+                            RegExp(r'[a-z0-9]'),
+                          ),
                         ],
                         validator: (value) {
                           final trimmed = value?.trim() ?? '';
                           if (trimmed.isEmpty) return 'Required';
-                          if (trimmed.length < 8) return 'Must be 8 to 20 characters';
+                          if (trimmed.length < 8) {
+                            return 'Must be 8 to 20 characters';
+                          }
                           if (!RegExp(r'^[a-z0-9]+$').hasMatch(trimmed)) {
                             return 'Small letters and numbers only';
                           }
@@ -1020,10 +1198,18 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         },
                         validator: (value) {
                           if (value == null || value.isEmpty) return 'Required';
-                          if (value.length < 8 || value.length > 20) return 'Must be 8 to 20 characters';
-                          if (!RegExp(r'[A-Z]').hasMatch(value)) return 'Needs capital letter (A-Z)';
-                          if (!RegExp(r'[a-z]').hasMatch(value)) return 'Needs small letter (a-z)';
-                          if (!RegExp(r'[0-9]').hasMatch(value)) return 'Needs number (0-9)';
+                          if (value.length < 8 || value.length > 20) {
+                            return 'Must be 8 to 20 characters';
+                          }
+                          if (!RegExp(r'[A-Z]').hasMatch(value)) {
+                            return 'Needs capital letter (A-Z)';
+                          }
+                          if (!RegExp(r'[a-z]').hasMatch(value)) {
+                            return 'Needs small letter (a-z)';
+                          }
+                          if (!RegExp(r'[0-9]').hasMatch(value)) {
+                            return 'Needs number (0-9)';
+                          }
                           return null;
                         },
                       ),
@@ -1036,11 +1222,16 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         obscureText: _obscureConfirmPassword,
                         inputFormatters: [LengthLimitingTextInputFormatter(20)],
                         onToggleVisibility: () {
-                          setState(() => _obscureConfirmPassword = !_obscureConfirmPassword);
+                          setState(
+                            () => _obscureConfirmPassword =
+                                !_obscureConfirmPassword,
+                          );
                         },
                         validator: (value) {
                           if (value == null || value.isEmpty) return 'Required';
-                          if (value != _passwordController.text) return 'Passwords do not match';
+                          if (value != _passwordController.text) {
+                            return 'Passwords do not match';
+                          }
                           return null;
                         },
                       ),
@@ -1056,7 +1247,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
                             child: Checkbox(
                               value: _agreeTerms,
                               activeColor: const Color(0xFFA63228),
-                              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              materialTapTargetSize:
+                                  MaterialTapTargetSize.shrinkWrap,
                               visualDensity: VisualDensity.compact,
                               onChanged: (value) {
                                 setState(() {
@@ -1076,7 +1268,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
                               child: Text.rich(
                                 TextSpan(
                                   text: 'I agree to the ',
-                                  style: GoogleFonts.inter(fontSize: 10, color: Colors.grey.shade600),
+                                  style: GoogleFonts.inter(
+                                    fontSize: 10,
+                                    color: Colors.grey.shade600,
+                                  ),
                                   children: [
                                     WidgetSpan(
                                       child: GestureDetector(
@@ -1087,7 +1282,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                             fontSize: 10,
                                             color: Colors.black87,
                                             fontWeight: FontWeight.bold,
-                                            decoration: TextDecoration.underline,
+                                            decoration:
+                                                TextDecoration.underline,
                                           ),
                                         ),
                                       ),
@@ -1110,7 +1306,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           onPressed: _isLoading ? null : _submitRegistration,
                           style: ElevatedButton.styleFrom(
                             backgroundColor: const Color(0xFFA63228),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
                             elevation: 0,
                           ),
                           child: _isLoading
@@ -1119,7 +1317,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                   height: 20,
                                   child: CircularProgressIndicator(
                                     strokeWidth: 2,
-                                    valueColor: AlwaysStoppedAnimation(Colors.white),
+                                    valueColor: AlwaysStoppedAnimation(
+                                      Colors.white,
+                                    ),
                                   ),
                                 )
                               : Text(
@@ -1140,7 +1340,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         children: [
                           Text(
                             "Already have an account? ",
-                            style: GoogleFonts.inter(fontSize: 13, color: Colors.grey.shade600),
+                            style: GoogleFonts.inter(
+                              fontSize: 13,
+                              color: Colors.grey.shade600,
+                            ),
                           ),
                           GestureDetector(
                             onTap: () => Navigator.pop(context),
@@ -1176,10 +1379,12 @@ class CapitalizeWordsInputFormatter extends TextInputFormatter {
     if (newValue.text.isEmpty) return newValue;
 
     final words = newValue.text.split(' ');
-    final capitalizedWords = words.map((word) {
-      if (word.isEmpty) return '';
-      return word[0].toUpperCase() + word.substring(1);
-    }).join(' ');
+    final capitalizedWords = words
+        .map((word) {
+          if (word.isEmpty) return '';
+          return word[0].toUpperCase() + word.substring(1);
+        })
+        .join(' ');
 
     return newValue.copyWith(
       text: capitalizedWords,
@@ -1190,7 +1395,10 @@ class CapitalizeWordsInputFormatter extends TextInputFormatter {
 
 class PhilippinePhoneFormatter extends TextInputFormatter {
   @override
-  TextEditingValue formatEditUpdate(TextEditingValue oldValue, TextEditingValue newValue) {
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
     String text = newValue.text;
     if (text.isEmpty) return newValue;
 

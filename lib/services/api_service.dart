@@ -4,8 +4,12 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 class ApiService {
+  static String androidHost = const String.fromEnvironment(
+    'API_HOST',
+    defaultValue: '10.0.2.2',
+  );
   static String get baseUrl {
-    if (!kIsWeb && Platform.isAndroid) return 'http://192.168.0.27:5000/api';
+    if (!kIsWeb && Platform.isAndroid) return 'http://$androidHost:5000/api';
     return 'http://localhost:5000/api';
   }
 
@@ -22,8 +26,10 @@ class ApiService {
     try {
       final user = currentUser;
       final userId = user?['id']?.toString();
-      final name = user?['name'] ?? user?['full_name'] ?? user?['username'] ?? 'User';
-      final role = currentUserRole ?? user?['role'] ?? user?['position'] ?? 'Worker';
+      final name =
+          user?['name'] ?? user?['full_name'] ?? user?['username'] ?? 'User';
+      final role =
+          currentUserRole ?? user?['role'] ?? user?['position'] ?? 'Worker';
 
       await _post('/logout', {
         'userId': userId,
@@ -42,13 +48,21 @@ class ApiService {
 
   static Map<String, String> get _headers => {
     'Content-Type': 'application/json',
+    'x-client-platform': 'mobile',
     if (_authToken != null) 'Authorization': 'Bearer $_authToken',
-    if (currentUser?['name'] != null || currentUser?['full_name'] != null || currentUser?['username'] != null)
-      'x-actor-name': (currentUser?['name'] ?? currentUser?['full_name'] ?? currentUser?['username'] ?? 'User').toString(),
+    if (currentUser?['name'] != null ||
+        currentUser?['full_name'] != null ||
+        currentUser?['username'] != null)
+      'x-actor-name':
+          (currentUser?['name'] ??
+                  currentUser?['full_name'] ??
+                  currentUser?['username'] ??
+                  'User')
+              .toString(),
     if (currentUserRole != null || currentUser?['role'] != null)
-      'x-actor-role': (currentUserRole ?? currentUser?['role'] ?? 'Worker').toString(),
-    if (currentUser?['id'] != null)
-      'x-actor-id': currentUser!['id'].toString(),
+      'x-actor-role': (currentUserRole ?? currentUser?['role'] ?? 'Worker')
+          .toString(),
+    if (currentUser?['id'] != null) 'x-actor-id': currentUser!['id'].toString(),
   };
 
   static Future<dynamic> _get(String path) async {
@@ -63,8 +77,21 @@ class ApiService {
       headers: _headers,
       body: jsonEncode(body),
     );
-    if (res.statusCode == 200 || res.statusCode == 201) return jsonDecode(res.body);
-    throw Exception('Failed to post $path (${res.statusCode})');
+    if (res.statusCode == 200 || res.statusCode == 201) {
+      return jsonDecode(res.body);
+    }
+    var message = 'Failed to post $path (${res.statusCode})';
+    try {
+      final response = jsonDecode(res.body);
+      if (response is Map && response['error'] != null) {
+        message = response['error'].toString();
+      } else if (response is Map && response['message'] != null) {
+        message = response['message'].toString();
+      }
+    } on FormatException {
+      // Keep the HTTP status message when the server response is not JSON.
+    }
+    throw Exception(message);
   }
 
   static Future<dynamic> _put(String path, Map<String, dynamic> body) async {
@@ -78,22 +105,33 @@ class ApiService {
   }
 
   static Future<void> _delete(String path) async {
-    final res = await http.delete(Uri.parse('$baseUrl$path'), headers: _headers);
+    final res = await http.delete(
+      Uri.parse('$baseUrl$path'),
+      headers: _headers,
+    );
     if (res.statusCode != 200 && res.statusCode != 204) {
       throw Exception('Failed to delete $path (${res.statusCode})');
     }
   }
 
   // Projects
-  static Future<List<dynamic>> getProjects() => _get('/projects').then((v) => v as List);
-  static Future<dynamic> createProject(Map<String, dynamic> data) => _post('/projects', data);
-  static Future<dynamic> updateProject(dynamic id, Map<String, dynamic> data) => _put('/projects/$id', data);
+  static Future<List<dynamic>> getProjects() =>
+      _get('/projects').then((v) => v as List);
+  static Future<dynamic> createProject(Map<String, dynamic> data) =>
+      _post('/projects', data);
+  static Future<dynamic> updateProject(dynamic id, Map<String, dynamic> data) =>
+      _put('/projects/$id', data);
   static Future<void> deleteProject(dynamic id) => _delete('/projects/$id');
 
   // Schedules
-  static Future<List<dynamic>> getSchedules() => _get('/schedules').then((v) => v as List);
-  static Future<dynamic> createSchedule(Map<String, dynamic> data) => _post('/schedules', data);
-  static Future<dynamic> updateSchedule(dynamic id, Map<String, dynamic> data) => _put('/schedules/$id', data);
+  static Future<List<dynamic>> getSchedules() =>
+      _get('/schedules').then((v) => v as List);
+  static Future<dynamic> createSchedule(Map<String, dynamic> data) =>
+      _post('/schedules', data);
+  static Future<dynamic> updateSchedule(
+    dynamic id,
+    Map<String, dynamic> data,
+  ) => _put('/schedules/$id', data);
   static Future<void> deleteSchedule(dynamic id) => _delete('/schedules/$id');
 
   // Schedule Overrides (Date-specific work shift rules)
@@ -106,34 +144,101 @@ class ApiService {
   static Future<dynamic> deleteScheduleOverride(String date) =>
       _delete('/schedule-overrides/$date');
 
+  // Attendance management
+  static Future<Map<String, dynamic>> getAttendanceSettings() => _get(
+    '/attendance-settings',
+  ).then((v) => Map<String, dynamic>.from(v as Map));
+  static Future<Map<String, dynamic>> saveAttendanceSettings(
+    Map<String, dynamic> data,
+  ) => _post(
+    '/attendance-settings',
+    data,
+  ).then((v) => Map<String, dynamic>.from(v as Map));
+  static Future<List<dynamic>> getAttendanceSchedules() =>
+      _get('/attendance-schedules').then((v) => v as List);
+  static Future<dynamic> saveAttendanceSchedule(Map<String, dynamic> data) =>
+      _post('/attendance-schedules', data);
+  static Future<void> deleteAttendanceSchedule(dynamic id) =>
+      _delete('/attendance-schedules/$id');
+  static Future<List<dynamic>> getEarlyOutRequests({dynamic workerId}) {
+    final query = workerId == null
+        ? ''
+        : '?worker_id=${Uri.encodeQueryComponent(workerId.toString())}';
+    return _get('/early-out-requests$query').then((v) => v as List);
+  }
+
+  static Future<dynamic> submitEarlyOutRequest(Map<String, dynamic> data) =>
+      _post('/early-out-requests', data);
+  static Future<dynamic> reviewEarlyOutRequest(
+    dynamic id,
+    Map<String, dynamic> data,
+  ) => _put('/early-out-requests/$id/review', data);
+  static Future<List<dynamic>> getAttendanceCorrectionRequests({
+    dynamic workerId,
+  }) {
+    final query = workerId == null
+        ? ''
+        : '?worker_id=${Uri.encodeQueryComponent(workerId.toString())}';
+    return _get('/attendance-correction-requests$query').then((v) => v as List);
+  }
+
+  static Future<dynamic> submitAttendanceCorrectionRequest(
+    Map<String, dynamic> data,
+  ) => _post('/attendance-correction-requests', data);
+  static Future<dynamic> reviewAttendanceCorrectionRequest(
+    dynamic id,
+    Map<String, dynamic> data,
+  ) => _put('/attendance-correction-requests/$id/review', data);
+
   // Workers
-  static Future<List<dynamic>> getWorkers() => _get('/workers').then((v) => v as List);
-  static Future<dynamic> createWorker(Map<String, dynamic> data) => _post('/workers', data);
-  static Future<dynamic> updateWorker(dynamic id, Map<String, dynamic> data) => _put('/workers/$id', data);
+  static Future<List<dynamic>> getWorkers() =>
+      _get('/workers').then((v) => v as List);
+  static Future<dynamic> createWorker(Map<String, dynamic> data) =>
+      _post('/workers', data);
+  static Future<dynamic> updateWorker(dynamic id, Map<String, dynamic> data) =>
+      _put('/workers/$id', data);
   static Future<void> deleteWorker(dynamic id) => _delete('/workers/$id');
 
   // Budget Additions
   static Future<List<dynamic>> getBudgetAdditions(dynamic projectId) =>
       _get('/projects/$projectId/budget-additions').then((v) => v as List);
-  static Future<dynamic> createBudgetAddition(dynamic projectId, Map<String, dynamic> data) =>
-      _post('/projects/$projectId/budget-additions', data);
+  static Future<dynamic> createBudgetAddition(
+    dynamic projectId,
+    Map<String, dynamic> data,
+  ) => _post('/projects/$projectId/budget-additions', data);
 
   // Project-scoped endpoints
   static Future<List<dynamic>> getAttendance(dynamic projectId) =>
       _get('/attendance/$projectId').then((v) => v as List);
   static Future<dynamic> saveAttendance(Map<String, dynamic> data) =>
       _post('/attendance', data);
-  static Future<dynamic> updateAttendanceRecord(dynamic id, Map<String, dynamic> data) =>
-      _put('/attendance/$id', data);
+  static Future<Map<String, dynamic>> scanAttendanceWithNfc(String rfidUid) =>
+      _post('/attendance/scan', {
+        'rfid_uid': rfidUid,
+        'scan_source': 'NFC',
+        'terminal_id': 'MOBILE-NFC',
+      }).then((value) => Map<String, dynamic>.from(value as Map));
+  static Future<Map<String, dynamic>> scanAttendanceWithQr(String workerCode) =>
+      _post('/attendance/scan', {
+        'worker_code': workerCode,
+        'scan_source': 'QR',
+        'terminal_id': 'MOBILE-QR',
+      }).then((value) => Map<String, dynamic>.from(value as Map));
+  static Future<dynamic> updateAttendanceRecord(
+    dynamic id,
+    Map<String, dynamic> data,
+  ) => _put('/attendance/$id', data);
 
   static Future<List<dynamic>> getExpenses(dynamic projectId) =>
       _get('/expenses/$projectId').then((v) => v as List);
   static Future<List<dynamic>> getAllExpenses() =>
       _get('/expenses').then((v) => v as List);
-  static Future<Map<String, dynamic>> getExpensesSummary() =>
-      _get('/expenses/summary').then((v) => Map<String, dynamic>.from(v as Map));
-  static Future<Map<String, dynamic>> getBudgetSummary() =>
-      _get('/expenses/budget-summary').then((v) => Map<String, dynamic>.from(v as Map));
+  static Future<Map<String, dynamic>> getExpensesSummary() => _get(
+    '/expenses/summary',
+  ).then((v) => Map<String, dynamic>.from(v as Map));
+  static Future<Map<String, dynamic>> getBudgetSummary() => _get(
+    '/expenses/budget-summary',
+  ).then((v) => Map<String, dynamic>.from(v as Map));
   static Future<Map<String, dynamic>> getWorkersSummary() =>
       _get('/workers/summary').then((v) => Map<String, dynamic>.from(v as Map));
   static Future<Map<String, dynamic>> getAssetsSummary() =>
@@ -144,26 +249,27 @@ class ApiService {
       _post('/expenses', data);
   static Future<dynamic> updateExpense(dynamic id, Map<String, dynamic> data) =>
       _put('/expenses/$id', data);
-  static Future<void> deleteExpense(dynamic id) =>
-      _delete('/expenses/$id');
+  static Future<void> deleteExpense(dynamic id) => _delete('/expenses/$id');
 
   static Future<List<dynamic>> getMaterials(dynamic projectId) =>
       _get('/materials/$projectId').then((v) => v as List);
   static Future<dynamic> createMaterial(Map<String, dynamic> data) =>
       _post('/materials', data);
-  static Future<dynamic> updateMaterial(dynamic id, Map<String, dynamic> data) =>
-      _put('/materials/$id', data);
-  static Future<void> deleteMaterial(dynamic id) =>
-      _delete('/materials/$id');
+  static Future<dynamic> updateMaterial(
+    dynamic id,
+    Map<String, dynamic> data,
+  ) => _put('/materials/$id', data);
+  static Future<void> deleteMaterial(dynamic id) => _delete('/materials/$id');
 
   static Future<List<dynamic>> getAssets(dynamic projectId) =>
       _get('/assets/$projectId').then((v) => v as List);
+  static Future<List<dynamic>> getAllAssets() =>
+      _get('/assets').then((v) => v as List);
   static Future<dynamic> createAsset(Map<String, dynamic> data) =>
       _post('/assets', data);
   static Future<dynamic> updateAsset(dynamic id, Map<String, dynamic> data) =>
       _put('/assets/$id', data);
-  static Future<void> deleteAsset(dynamic id) =>
-      _delete('/assets/$id');
+  static Future<void> deleteAsset(dynamic id) => _delete('/assets/$id');
 
   // Borrow History
   static Future<List<dynamic>> getBorrowHistory(dynamic projectId) =>
@@ -176,15 +282,21 @@ class ApiService {
       _get('/assets/$projectId').then((v) => v as List);
   static Future<dynamic> createAssetDoc(Map<String, dynamic> data) =>
       _post('/assets', data);
-  static Future<dynamic> updateAssetDoc(dynamic id, Map<String, dynamic> data) =>
-      _put('/assets/$id', data);
+  static Future<dynamic> updateAssetDoc(
+    dynamic id,
+    Map<String, dynamic> data,
+  ) => _put('/assets/$id', data);
   static Future<List<dynamic>> getProjectBorrowHistory(dynamic projectId) =>
       _get('/borrow-history/$projectId').then((v) => v as List);
   static Future<dynamic> logBorrowHistory(Map<String, dynamic> data) =>
       _post('/borrow-history', data);
 
   // Reports
-  static Future<List<dynamic>> getExpensesReport({dynamic projectId, String? startDate, String? endDate}) {
+  static Future<List<dynamic>> getExpensesReport({
+    dynamic projectId,
+    String? startDate,
+    String? endDate,
+  }) {
     String query = '';
     final params = <String>[];
     if (projectId != null) params.add('project_id=$projectId');
@@ -194,7 +306,11 @@ class ApiService {
     return _get('/reports/expenses$query').then((v) => v as List);
   }
 
-  static Future<List<dynamic>> getManpowerReport({dynamic projectId, String? startDate, String? endDate}) {
+  static Future<List<dynamic>> getManpowerReport({
+    dynamic projectId,
+    String? startDate,
+    String? endDate,
+  }) {
     String query = '';
     final params = <String>[];
     if (projectId != null) params.add('project_id=$projectId');
@@ -236,12 +352,18 @@ class ApiService {
     } catch (_) {}
     return [];
   }
+
   static Future<void> approveCashAdvance(dynamic id, String status) =>
       _put('/cash-advances/$id/approve', {'status': status});
   static Future<List<dynamic>> getWorkerCashAdvances(dynamic workerId) =>
       _get('/workers/$workerId/cash-advances').then((v) => v as List);
   static Future<List<dynamic>> getWorkerPayroll(dynamic workerId) =>
       _get('/workers/$workerId/payroll').then((v) => v as List);
+  static Future<Map<String, dynamic>> getWorkerSalarySummary(
+    dynamic workerId,
+  ) => _get(
+    '/workers/$workerId/salary-summary',
+  ).then((v) => Map<String, dynamic>.from(v as Map));
 
   // Notifications
   static Future<List<dynamic>> getNotifications() =>
@@ -269,14 +391,27 @@ class ApiService {
   });
 
   // Auth
-  static Future<Map<String, dynamic>> register(Map<String, dynamic> data) async {
+  static Future<Map<String, dynamic>> register(
+    Map<String, dynamic> data,
+  ) async {
     final result = await _post('/register', data);
     return result as Map<String, dynamic>;
   }
 
   static String normalizePhone(String input) {
     final trimmed = input.trim();
+    if (trimmed.isEmpty) return trimmed;
+
     final digits = trimmed.replaceAll(RegExp(r'\D'), '');
+    if (digits.length == 11 && digits.startsWith('63')) {
+      return '+$digits';
+    }
+    if (digits.length == 10 && digits.startsWith('9')) {
+      return '+63$digits';
+    }
+    if (digits.length == 10 && digits.startsWith('0')) {
+      return '+63${digits.substring(1)}';
+    }
     if (digits.length >= 10) {
       final last10 = digits.substring(digits.length - 10);
       return '+63$last10';
@@ -284,7 +419,41 @@ class ApiService {
     return trimmed;
   }
 
-  static Future<Map<String, dynamic>> login(String usernameOrPhone, String password) async {
+  static Set<String> phoneLookupVariants(String input) {
+    final raw = input.trim();
+    final compact = raw.replaceAll(RegExp(r'\D'), '');
+    final variants = <String>{raw, raw.replaceAll(' ', ''), compact};
+
+    if (compact.isEmpty) return variants;
+
+    final last10 = compact.length >= 10
+        ? compact.substring(compact.length - 10)
+        : compact;
+    variants.addAll({
+      last10,
+      '0$last10',
+      '63$last10',
+      '+63$last10',
+      '+63${compact.startsWith('0') ? compact.substring(1) : compact}',
+    });
+
+    if (compact.startsWith('63')) {
+      variants.add('+$compact');
+    }
+    if (compact.startsWith('0')) {
+      variants.add('+63${compact.substring(1)}');
+    }
+    if (compact.length == 11 && compact.startsWith('9')) {
+      variants.add('+63$compact');
+    }
+
+    return variants.map((v) => v.trim()).where((v) => v.isNotEmpty).toSet();
+  }
+
+  static Future<Map<String, dynamic>> login(
+    String usernameOrPhone,
+    String password,
+  ) async {
     final raw = usernameOrPhone.trim();
     final normalized = normalizePhone(raw);
 
@@ -299,7 +468,8 @@ class ApiService {
         for (var w in workers) {
           final wPhone = (w['phone'] ?? '').toString();
           if (wPhone == raw || wPhone == normalized || wPhone == '+63$raw') {
-            final wUsername = (w['username'] ?? w['user_name'] ?? '').toString();
+            final wUsername = (w['username'] ?? w['user_name'] ?? '')
+                .toString();
             if (wUsername.isNotEmpty) {
               identifiersToTry.add(wUsername);
             }
@@ -316,7 +486,7 @@ class ApiService {
     } else {
       identifiersToTry.add(raw);
     }
-    
+
     // Also try adding +63 to the raw input in case it was stored as +6309... during registration
     if (!raw.startsWith('+63')) {
       identifiersToTry.add('+63$raw');
@@ -334,7 +504,7 @@ class ApiService {
 
       if (res.statusCode == 200) {
         final body = jsonDecode(res.body);
-        
+
         // Extract status if available
         String? status;
         if (body['status'] != null) {
@@ -346,10 +516,12 @@ class ApiService {
         }
 
         if (status != null) {
-          if (status.toLowerCase() == 'pending' || status.toLowerCase().contains('pending')) {
+          if (status.toLowerCase() == 'pending' ||
+              status.toLowerCase().contains('pending')) {
             throw Exception('pending_approval');
           }
-          if (status.toLowerCase() == 'rejected' || status.toLowerCase().contains('reject')) {
+          if (status.toLowerCase() == 'rejected' ||
+              status.toLowerCase().contains('reject')) {
             throw Exception('Account was rejected');
           }
         }
@@ -359,8 +531,12 @@ class ApiService {
 
       if (res.statusCode == 403) {
         final body = jsonDecode(res.body);
-        if (body['error'] == 'pending_approval') throw Exception('pending_approval');
-        if (body['error'] == 'rejected') throw Exception('Account was rejected');
+        if (body['error'] == 'pending_approval') {
+          throw Exception('pending_approval');
+        }
+        if (body['error'] == 'rejected') {
+          throw Exception('Account was rejected');
+        }
       }
 
       if (res.statusCode == 401) {
@@ -416,8 +592,10 @@ class ApiService {
   }
 
   // New endpoint for phone based login (workers only)
-  static Future<Map<String, dynamic>> loginWithPhone(String phone, String password) =>
-      login(phone, password);
+  static Future<Map<String, dynamic>> loginWithPhone(
+    String phone,
+    String password,
+  ) => login(phone, password);
 
   // Pending Registrations (Admin)
   static Future<List<dynamic>> getPendingRegistrations() =>
@@ -429,7 +607,10 @@ class ApiService {
   static Future<Map<String, dynamic>> getWorker(dynamic id) =>
       _get('/workers').then((v) {
         if (v is List) {
-          final worker = v.firstWhere((w) => w['id']?.toString() == id?.toString(), orElse: () => null);
+          final worker = v.firstWhere(
+            (w) => w['id']?.toString() == id?.toString(),
+            orElse: () => null,
+          );
           if (worker != null) {
             return worker as Map<String, dynamic>;
           }
@@ -439,19 +620,50 @@ class ApiService {
 
   static Future<bool> checkPhoneExists(String phone) async {
     final raw = phone.trim();
-    final normalized = normalizePhone(raw);
+    final variants = phoneLookupVariants(raw);
+    final compactVariants = variants
+        .map((value) => value.replaceAll(RegExp(r'\D'), ''))
+        .toSet();
+
+    bool matches(dynamic stored) {
+      final storedPhone = (stored ?? '').toString().trim();
+      if (storedPhone.isEmpty || storedPhone == 'null') return false;
+      final storedCompact = storedPhone.replaceAll(RegExp(r'\D'), '');
+
+      if (storedPhone == raw || variants.contains(storedPhone)) return true;
+      if (storedCompact.isNotEmpty && compactVariants.contains(storedCompact)) {
+        return true;
+      }
+      if (normalizePhone(storedPhone) == normalizePhone(raw)) return true;
+      return false;
+    }
+
+    // 1. Check in workers list
     try {
       final res = await http.get(Uri.parse('$baseUrl/workers'));
       if (res.statusCode == 200) {
         final List<dynamic> workers = jsonDecode(res.body);
         for (var w in workers) {
-          final wPhone = (w['phone'] ?? '').toString();
-          if (wPhone == raw || wPhone == normalized || wPhone == '+63$raw') {
+          if (matches(w['phone'])) return true;
+        }
+      }
+    } catch (_) {}
+
+    // 2. Check in admins / staff list
+    try {
+      final resAdmin = await http.get(Uri.parse('$baseUrl/admins'));
+      if (resAdmin.statusCode == 200) {
+        final List<dynamic> admins = jsonDecode(resAdmin.body);
+        for (var a in admins) {
+          if (matches(a['phone']) ||
+              matches(a['contact']) ||
+              matches(a['mobile'])) {
             return true;
           }
         }
       }
     } catch (_) {}
+
     return false;
   }
 }

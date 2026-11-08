@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../services/api_service.dart';
-import '../widgets/app_sidebar.dart';
+import '../services/semaphore_service.dart';
 
 class ForgotPasswordScreen extends StatefulWidget {
   const ForgotPasswordScreen({super.key});
@@ -19,9 +19,13 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
 
   final TextEditingController _phoneController = TextEditingController();
   final TextEditingController _newPasswordController = TextEditingController();
-  final TextEditingController _confirmPasswordController = TextEditingController();
+  final TextEditingController _confirmPasswordController =
+      TextEditingController();
 
-  final List<TextEditingController> _otpControllers = List.generate(6, (_) => TextEditingController());
+  final List<TextEditingController> _otpControllers = List.generate(
+    6,
+    (_) => TextEditingController(),
+  );
   final List<FocusNode> _otpFocusNodes = List.generate(6, (_) => FocusNode());
 
   bool _obscureNewPass = true;
@@ -45,37 +49,92 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
     final phone = _phoneController.text.trim();
     if (phone.length < 10) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter a valid 10-digit phone number (e.g. 9XXXXXXXXX)')),
-      );
-      return;
-    }
-
-    setState(() => _isLoading = true);
-    final exists = await ApiService.checkPhoneExists(phone);
-    if (!mounted) return;
-    setState(() => _isLoading = false);
-
-    if (!exists) {
-      ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Phone Number not existing'),
-          backgroundColor: Colors.red,
+          content: Text(
+            'Please enter a valid 10-digit phone number (e.g. 9XXXXXXXXX)',
+          ),
         ),
       );
       return;
     }
 
-    setState(() => _currentStep = 1);
+    setState(() => _isLoading = true);
+    try {
+      final exists = await ApiService.checkPhoneExists(phone);
+      if (!mounted) return;
+
+      if (!exists) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Phone Number not existing'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+
+      final result = await SemaphoreService.sendOtp(phone);
+      if (!mounted) return;
+
+      if (result['success'] == true || result['otp'] != null) {
+        setState(() => _currentStep = 1);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              (result['message'] ?? 'OTP sent successfully').toString(),
+            ),
+            backgroundColor: Colors.green.shade700,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              (result['message'] ?? 'Unable to send OTP').toString(),
+            ),
+            backgroundColor: Colors.orange.shade700,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Unable to send OTP: ${e.toString()}'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
   }
 
-  void _handleVerifyOtp() {
-    String enteredOtp = _otpControllers.map((c) => c.text).join();
+  Future<void> _handleVerifyOtp() async {
+    final phone = _phoneController.text.trim();
+    final enteredOtp = _otpControllers.map((c) => c.text).join();
+
     if (enteredOtp.length < 6) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please enter the full 6-digit OTP')),
       );
       return;
     }
+
+    final isValid = await SemaphoreService.verifyOtp(phone, enteredOtp);
+    if (!mounted) return;
+
+    if (!isValid) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Invalid OTP code. Please try again.'),
+          backgroundColor: Color(0xFFA63228),
+        ),
+      );
+      return;
+    }
+
     setState(() => _currentStep = 2);
   }
 
@@ -86,7 +145,9 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
         barrierDismissible: false,
         builder: (context) => AlertDialog(
           backgroundColor: Colors.white,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
           contentPadding: const EdgeInsets.all(24),
           content: Column(
             mainAxisSize: MainAxisSize.min,
@@ -97,19 +158,31 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                   color: Colors.green.shade50,
                   shape: BoxShape.circle,
                 ),
-                child: Icon(Icons.check_circle_outline, color: Colors.green.shade700, size: 44),
+                child: Icon(
+                  Icons.check_circle_outline,
+                  color: Colors.green.shade700,
+                  size: 44,
+                ),
               ),
               const SizedBox(height: 16),
               Text(
                 'Password Reset Complete',
                 textAlign: TextAlign.center,
-                style: GoogleFonts.inter(fontSize: 17, fontWeight: FontWeight.bold, color: Colors.black87),
+                style: GoogleFonts.inter(
+                  fontSize: 17,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black87,
+                ),
               ),
               const SizedBox(height: 8),
               Text(
                 'Your password has been updated successfully. You can now use your new password to sign in.',
                 textAlign: TextAlign.center,
-                style: GoogleFonts.inter(fontSize: 12, color: Colors.grey.shade600, height: 1.4),
+                style: GoogleFonts.inter(
+                  fontSize: 12,
+                  color: Colors.grey.shade600,
+                  height: 1.4,
+                ),
               ),
               const SizedBox(height: 20),
               SizedBox(
@@ -118,13 +191,23 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                 child: ElevatedButton(
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFFA63228),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                     elevation: 0,
                   ),
                   onPressed: () {
-                    Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
+                    Navigator.of(
+                      context,
+                    ).pushNamedAndRemoveUntil('/login', (route) => false);
                   },
-                  child: Text('Back to Login', style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.bold)),
+                  child: Text(
+                    'Back to Login',
+                    style: GoogleFonts.inter(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
                 ),
               ),
             ],
@@ -148,7 +231,9 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
               width: circleSize,
               height: circleSize,
               decoration: BoxDecoration(
-                color: isActive ? const Color(0xFFA63228) : Colors.grey.shade200,
+                color: isActive
+                    ? const Color(0xFFA63228)
+                    : Colors.grey.shade200,
                 shape: BoxShape.circle,
               ),
               child: Center(
@@ -166,7 +251,9 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
               Container(
                 width: lineWidth,
                 height: 2,
-                color: index < _currentStep ? const Color(0xFFA63228) : Colors.grey.shade300,
+                color: index < _currentStep
+                    ? const Color(0xFFA63228)
+                    : Colors.grey.shade300,
               ),
           ],
         );
@@ -250,29 +337,46 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                       TextFormField(
                         controller: _phoneController,
                         keyboardType: TextInputType.number,
-                        style: GoogleFonts.inter(fontSize: screenWidth < 360 ? 13 : 14, color: Colors.black87),
-                        inputFormatters: [
-                          PhilippinePhoneFormatter(),
-                        ],
+                        style: GoogleFonts.inter(
+                          fontSize: screenWidth < 360 ? 13 : 14,
+                          color: Colors.black87,
+                        ),
+                        inputFormatters: [PhilippinePhoneFormatter()],
                         decoration: InputDecoration(
                           isDense: true,
                           hintText: '9XXXXXXXXX',
-                          hintStyle: GoogleFonts.inter(color: Colors.grey.shade400, fontSize: screenWidth < 360 ? 12 : 13),
+                          hintStyle: GoogleFonts.inter(
+                            color: Colors.grey.shade400,
+                            fontSize: screenWidth < 360 ? 12 : 13,
+                          ),
                           prefixText: '+63 ',
-                          prefixStyle: GoogleFonts.inter(color: Colors.black87, fontWeight: FontWeight.bold, fontSize: screenWidth < 360 ? 13 : 14),
-                          prefixIcon: Icon(Icons.phone_outlined, color: Colors.grey, size: screenWidth < 360 ? 18 : 20),
+                          prefixStyle: GoogleFonts.inter(
+                            color: Colors.black87,
+                            fontWeight: FontWeight.bold,
+                            fontSize: screenWidth < 360 ? 13 : 14,
+                          ),
+                          prefixIcon: Icon(
+                            Icons.phone_outlined,
+                            color: Colors.grey,
+                            size: screenWidth < 360 ? 18 : 20,
+                          ),
                           contentPadding: EdgeInsets.symmetric(
                             vertical: screenHeight * 0.015,
                             horizontal: 14,
                           ),
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
                           enabledBorder: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(16),
                             borderSide: BorderSide(color: Colors.grey.shade300),
                           ),
                           focusedBorder: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(16),
-                            borderSide: const BorderSide(color: Color(0xFFA63228), width: 1.5),
+                            borderSide: const BorderSide(
+                              color: Color(0xFFA63228),
+                              width: 1.5,
+                            ),
                           ),
                         ),
                       ),
@@ -285,14 +389,19 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                           onPressed: _isLoading ? null : _handleSendOtp,
                           style: ElevatedButton.styleFrom(
                             backgroundColor: const Color(0xFFA63228),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                            ),
                             elevation: 0,
                           ),
                           child: _isLoading
                               ? const SizedBox(
                                   height: 20,
                                   width: 20,
-                                  child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                                  child: CircularProgressIndicator(
+                                    color: Colors.white,
+                                    strokeWidth: 2,
+                                  ),
                                 )
                               : Text(
                                   'Send OTP Code',
@@ -329,8 +438,12 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
 
                       LayoutBuilder(
                         builder: (context, constraints) {
-                          final double fieldWidth = (constraints.maxWidth - (5 * 8)) / 6;
-                          final double finalWidth = fieldWidth.clamp(36.0, 48.0);
+                          final double fieldWidth =
+                              (constraints.maxWidth - (5 * 8)) / 6;
+                          final double finalWidth = fieldWidth.clamp(
+                            36.0,
+                            48.0,
+                          );
 
                           return Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -353,10 +466,15 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                                   ],
                                   decoration: InputDecoration(
                                     contentPadding: EdgeInsets.zero,
-                                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
                                     focusedBorder: OutlineInputBorder(
                                       borderRadius: BorderRadius.circular(10),
-                                      borderSide: const BorderSide(color: Color(0xFFA63228), width: 2),
+                                      borderSide: const BorderSide(
+                                        color: Color(0xFFA63228),
+                                        width: 2,
+                                      ),
                                     ),
                                   ),
                                   onChanged: (val) {
@@ -381,7 +499,9 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                           onPressed: _handleVerifyOtp,
                           style: ElevatedButton.styleFrom(
                             backgroundColor: const Color(0xFFA63228),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                            ),
                             elevation: 0,
                           ),
                           child: Text(
@@ -397,10 +517,42 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                       const SizedBox(height: 12),
                       Center(
                         child: TextButton(
-                          onPressed: () {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('OTP code resent to your number')),
+                          onPressed: () async {
+                            final phone = _phoneController.text.trim();
+                            final messenger = ScaffoldMessenger.maybeOf(
+                              context,
                             );
+
+                            if (phone.length < 10) {
+                              messenger?.showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                    'Please enter a valid phone number first',
+                                  ),
+                                ),
+                              );
+                              return;
+                            }
+
+                            final result = await SemaphoreService.sendOtp(
+                              phone,
+                            );
+                            if (mounted && messenger != null) {
+                              messenger.showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                    (result['message'] ??
+                                            'OTP code resent to your number')
+                                        .toString(),
+                                  ),
+                                  behavior: SnackBarBehavior.floating,
+                                ),
+                              );
+                            }
+
+                            for (final controller in _otpControllers) {
+                              controller.clear();
+                            }
                           },
                           child: Text(
                             'Resend OTP Code',
@@ -438,41 +590,70 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                       TextFormField(
                         controller: _newPasswordController,
                         obscureText: _obscureNewPass,
-                        style: GoogleFonts.inter(fontSize: screenWidth < 360 ? 13 : 14, color: Colors.black87),
+                        style: GoogleFonts.inter(
+                          fontSize: screenWidth < 360 ? 13 : 14,
+                          color: Colors.black87,
+                        ),
                         decoration: InputDecoration(
                           isDense: true,
                           hintText: 'New Password',
-                          hintStyle: GoogleFonts.inter(color: Colors.grey.shade400, fontSize: screenWidth < 360 ? 12 : 13),
-                          prefixIcon: Icon(Icons.lock_outline, color: Colors.grey, size: screenWidth < 360 ? 18 : 20),
+                          hintStyle: GoogleFonts.inter(
+                            color: Colors.grey.shade400,
+                            fontSize: screenWidth < 360 ? 12 : 13,
+                          ),
+                          prefixIcon: Icon(
+                            Icons.lock_outline,
+                            color: Colors.grey,
+                            size: screenWidth < 360 ? 18 : 20,
+                          ),
                           suffixIcon: IconButton(
                             icon: Icon(
-                              _obscureNewPass ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+                              _obscureNewPass
+                                  ? Icons.visibility_off_outlined
+                                  : Icons.visibility_outlined,
                               color: Colors.grey,
                               size: 18,
                             ),
-                            onPressed: () => setState(() => _obscureNewPass = !_obscureNewPass),
+                            onPressed: () => setState(
+                              () => _obscureNewPass = !_obscureNewPass,
+                            ),
                           ),
                           contentPadding: EdgeInsets.symmetric(
                             vertical: screenHeight * 0.015,
                             horizontal: 14,
                           ),
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
                           enabledBorder: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(16),
                             borderSide: BorderSide(color: Colors.grey.shade300),
                           ),
                           focusedBorder: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(16),
-                            borderSide: const BorderSide(color: Color(0xFFA63228), width: 1.5),
+                            borderSide: const BorderSide(
+                              color: Color(0xFFA63228),
+                              width: 1.5,
+                            ),
                           ),
                         ),
                         inputFormatters: [LengthLimitingTextInputFormatter(20)],
                         validator: (value) {
-                          if (value == null || value.isEmpty) return 'Required';
-                          if (value.length < 8 || value.length > 20) return 'Must be 8 to 20 characters';
-                          if (!RegExp(r'[A-Z]').hasMatch(value)) return 'Needs capital letter (A-Z)';
-                          if (!RegExp(r'[a-z]').hasMatch(value)) return 'Needs small letter (a-z)';
-                          if (!RegExp(r'[0-9]').hasMatch(value)) return 'Needs number (0-9)';
+                          if (value == null || value.isEmpty) {
+                            return 'Required';
+                          }
+                          if (value.length < 8 || value.length > 20) {
+                            return 'Must be 8 to 20 characters';
+                          }
+                          if (!RegExp(r'[A-Z]').hasMatch(value)) {
+                            return 'Needs capital letter (A-Z)';
+                          }
+                          if (!RegExp(r'[a-z]').hasMatch(value)) {
+                            return 'Needs small letter (a-z)';
+                          }
+                          if (!RegExp(r'[0-9]').hasMatch(value)) {
+                            return 'Needs number (0-9)';
+                          }
                           return null;
                         },
                       ),
@@ -481,38 +662,61 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                       TextFormField(
                         controller: _confirmPasswordController,
                         obscureText: _obscureConfirmPass,
-                        style: GoogleFonts.inter(fontSize: screenWidth < 360 ? 13 : 14, color: Colors.black87),
+                        style: GoogleFonts.inter(
+                          fontSize: screenWidth < 360 ? 13 : 14,
+                          color: Colors.black87,
+                        ),
                         decoration: InputDecoration(
                           isDense: true,
                           hintText: 'Confirm New Password',
-                          hintStyle: GoogleFonts.inter(color: Colors.grey.shade400, fontSize: screenWidth < 360 ? 12 : 13),
-                          prefixIcon: Icon(Icons.lock_outline, color: Colors.grey, size: screenWidth < 360 ? 18 : 20),
+                          hintStyle: GoogleFonts.inter(
+                            color: Colors.grey.shade400,
+                            fontSize: screenWidth < 360 ? 12 : 13,
+                          ),
+                          prefixIcon: Icon(
+                            Icons.lock_outline,
+                            color: Colors.grey,
+                            size: screenWidth < 360 ? 18 : 20,
+                          ),
                           suffixIcon: IconButton(
                             icon: Icon(
-                              _obscureConfirmPass ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+                              _obscureConfirmPass
+                                  ? Icons.visibility_off_outlined
+                                  : Icons.visibility_outlined,
                               color: Colors.grey,
                               size: 18,
                             ),
-                            onPressed: () => setState(() => _obscureConfirmPass = !_obscureConfirmPass),
+                            onPressed: () => setState(
+                              () => _obscureConfirmPass = !_obscureConfirmPass,
+                            ),
                           ),
                           contentPadding: EdgeInsets.symmetric(
                             vertical: screenHeight * 0.015,
                             horizontal: 14,
                           ),
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
                           enabledBorder: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(16),
                             borderSide: BorderSide(color: Colors.grey.shade300),
                           ),
                           focusedBorder: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(16),
-                            borderSide: const BorderSide(color: Color(0xFFA63228), width: 1.5),
+                            borderSide: const BorderSide(
+                              color: Color(0xFFA63228),
+                              width: 1.5,
+                            ),
                           ),
                         ),
                         inputFormatters: [LengthLimitingTextInputFormatter(20)],
                         validator: (value) {
-                          if (value == null || value.isEmpty) return 'Required';
-                          if (value != _newPasswordController.text) return 'Passwords do not match';
+                          if (value == null || value.isEmpty) {
+                            return 'Required';
+                          }
+                          if (value != _newPasswordController.text) {
+                            return 'Passwords do not match';
+                          }
                           return null;
                         },
                       ),
@@ -525,7 +729,9 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                           onPressed: _handleResetPassword,
                           style: ElevatedButton.styleFrom(
                             backgroundColor: const Color(0xFFA63228),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                            ),
                             elevation: 0,
                           ),
                           child: Text(
@@ -552,7 +758,10 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
 
 class PhilippinePhoneFormatter extends TextInputFormatter {
   @override
-  TextEditingValue formatEditUpdate(TextEditingValue oldValue, TextEditingValue newValue) {
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
     String text = newValue.text;
     if (text.isEmpty) return newValue;
 

@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "126486188973",
+    "project_id": "buildtrack-sotalbocons-system",
+    "storage_bucket": "buildtrack-sotalbocons-system.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:126486188973:android:b3bd89276c219b73154724",
+        "android_client_info": {
+          "package_name": "com.example.buildtrack"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBbtWsnf08eiKhNAsAojlwhAyESJ5qs2L8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

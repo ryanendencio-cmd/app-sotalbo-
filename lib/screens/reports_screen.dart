@@ -130,11 +130,10 @@ class _ReportsScreenState extends State<ReportsScreen> {
           _periodReports['This Cut-off'] = reportData;
           _periodReports['Previous Cut-off'] = reportData;
           _periodReports['Current Month'] = reportData;
-          _isLoading = false;
         });
       }
-    } catch (_) {
-      if (mounted) setState(() => _isLoading = false);
+    } catch (e) {
+      debugPrint('Failed to load reports: $e');
     }
   }
 
@@ -326,11 +325,11 @@ class _ReportsScreenState extends State<ReportsScreen> {
         ),
         actions: [
           IconButton(
-            icon: _isExporting
+            icon: _isExporting || _isLoading
                 ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black87))
                 : const Icon(Icons.file_download_outlined, color: Colors.black87, size: 20),
             tooltip: 'Export Report',
-            onPressed: _isExporting ? null : _showExportOptionsModal,
+            onPressed: _isExporting || _isLoading ? null : _showExportOptionsModal,
           ),
           const SizedBox(width: 2),
         ],

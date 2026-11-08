@@ -1,5 +1,7 @@
-import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'dart:io';
+
+import 'package:http/http.dart' as http;
 
 void main() async {
   try {
@@ -7,10 +9,10 @@ void main() async {
     if (res.statusCode == 200) {
       var data = jsonDecode(res.body) as List;
       for (var w in data) {
-        print('ID: ${w['id']}, Name: ${w['full_name']}, Phone: ${w['phone']}, Approval: ${w['approval_status']}');
+        stdout.writeln('ID: ${w['id']}, Name: ${w['full_name']}, Phone: ${w['phone']}, Approval: ${w['approval_status']}');
       }
     }
   } catch (e) {
-    print('ERROR: $e');
+    stderr.writeln('ERROR: $e');
   }
 }

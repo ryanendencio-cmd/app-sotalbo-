@@ -9,7 +9,7 @@ void main() async {
       inBlock = true;
     }
     if (inBlock) {
-      print(line);
+      stdout.writeln(line);
       if (line.startsWith('  app.') && !line.contains("app.put('/api/workers/:id/approve'")) {
          break;
       }

@@ -179,9 +179,9 @@ class _LoginScreenState extends State<LoginScreen> {
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
                   colors: [
-                    Colors.black.withOpacity(0.5),
-                    Colors.black.withOpacity(0.1),
-                    Colors.black.withOpacity(0.6),
+                    Colors.black.withValues(alpha: 0.5),
+                    Colors.black.withValues(alpha: 0.1),
+                    Colors.black.withValues(alpha: 0.6),
                   ],
                 ),
               ),
@@ -226,7 +226,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       child: Container(
                         width: double.infinity,
                         decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.15), // Made it more transparent
+                          color: Colors.white.withValues(alpha: 0.15), // Made it more transparent
                         ),
                         child: SingleChildScrollView(
                     physics: const ClampingScrollPhysics(),
@@ -385,7 +385,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                     style: GoogleFonts.inter(
                                       fontSize: 13,
                                       fontWeight: FontWeight.w500,
-                                      color: Colors.white.withOpacity(0.9),
+                                      color: Colors.white.withValues(alpha: 0.9),
                                     ),
                                   ),
                                 ),
@@ -436,7 +436,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                 children: [
                                   Text(
                                     "Don't have an account? ",
-                                    style: GoogleFonts.inter(fontSize: 13, color: Colors.white.withOpacity(0.9)), // Changed to white
+                                    style: GoogleFonts.inter(fontSize: 13, color: Colors.white.withValues(alpha: 0.9)), // Changed to white
                                   ),
                                   GestureDetector(
                                     onTap: () => Navigator.pushNamed(context, '/register'),

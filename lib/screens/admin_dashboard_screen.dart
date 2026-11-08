@@ -1,12 +1,21 @@
+import 'dart:convert';
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:qr_flutter/qr_flutter.dart';
+import 'package:share_plus/share_plus.dart';
 import '../services/admin_service.dart';
 import '../services/api_service.dart';
+import '../widgets/admin_mobile_chrome.dart';
 import 'tools_monitoring_screen.dart';
 
 class AdminDashboardScreen extends StatefulWidget {
-  const AdminDashboardScreen({super.key});
+  const AdminDashboardScreen({super.key, this.initialIndex = 0});
+
+  final int initialIndex;
 
   @override
   State<AdminDashboardScreen> createState() => _AdminDashboardScreenState();
@@ -25,25 +34,38 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   final List<Map<String, dynamic>> _valeHistory = [];
   bool _isLoadingValeHistory = false;
   String _valeHistoryFilter = 'All';
-  String _pendingSortFilter = 'All'; // 'All', 'Newest', 'Oldest', 'Highest Amount'
+  String _pendingSortFilter =
+      'All'; // 'All', 'Newest', 'Oldest', 'Highest Amount'
   DateTime? _pendingSelectedDate;
-  final TextEditingController _pendingSearchController = TextEditingController();
+  final TextEditingController _pendingSearchController =
+      TextEditingController();
   String _pendingSearchQuery = '';
-  final TextEditingController _historySearchController = TextEditingController();
+  final TextEditingController _historySearchController =
+      TextEditingController();
   String _historySearchQuery = '';
   DateTime? _historySelectedDate;
 
   List<Map<String, dynamic>> _allWorkers = [];
   bool _isLoadingWorkers = false;
-  final TextEditingController _manpowerSearchController = TextEditingController();
+  final TextEditingController _manpowerSearchController =
+      TextEditingController();
   String _manpowerSearchQuery = '';
 
   // Web Dashboard Parity State
   bool _isLoadingDashboard = false;
+  bool _isLoadingNotifications = false;
+  String? _notificationsError;
+  List<Map<String, dynamic>> _notifications = [];
+  int _unreadNotifications = 0;
   int _activeProjectsCount = 0;
   double _totalExpenses = 0.0;
   int _totalManpower = 0;
   int _presentToday = 0;
+  int _fullDayToday = 0;
+  int _lateToday = 0;
+  int _halfdayToday = 0;
+  bool _isLoadingAttendanceSummary = false;
+  String? _attendanceSummaryError;
   int _equipAvailable = 0;
   int _equipInUse = 0;
   int _equipMaintenance = 0;
@@ -69,12 +91,15 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   @override
   void initState() {
     super.initState();
+    _currentIndex = widget.initialIndex.clamp(0, 4);
     _loadDashboardData();
+    _loadAttendanceSummary();
     _loadAdminProfile();
     _loadPendingRegistrations();
     _loadWorkers();
     _loadPendingValeRequests();
     _loadValeHistory();
+    _loadNotifications();
   }
 
   double _parseDouble(dynamic value, [double defaultValue = 0.0]) {
@@ -88,9 +113,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     if (value == null) return defaultValue;
     if (value is int) return value;
     if (value is num) return value.toInt();
-    if (value is String)
+    if (value is String) {
       return int.tryParse(value) ??
           (double.tryParse(value)?.toInt() ?? defaultValue);
+    }
     return defaultValue;
   }
 
@@ -163,6 +189,60 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     }
   }
 
+  Future<void> _loadAttendanceSummary() async {
+    if (mounted) {
+      setState(() {
+        _isLoadingAttendanceSummary = true;
+        _attendanceSummaryError = null;
+      });
+    }
+
+    try {
+      final records = await ApiService.getAttendance('ALL');
+      final now = DateTime.now();
+      var fullDay = 0;
+      var late = 0;
+      var halfday = 0;
+
+      for (final item in records) {
+        final record = Map<String, dynamic>.from(item as Map);
+        final recordDate = DateTime.tryParse(
+          (record['date'] ?? '').toString(),
+        )?.toLocal();
+        if (recordDate == null ||
+            recordDate.year != now.year ||
+            recordDate.month != now.month ||
+            recordDate.day != now.day) {
+          continue;
+        }
+
+        final status = (record['status'] ?? '').toString().trim().toLowerCase();
+        if (status.contains('halfday') || status.contains('half day')) {
+          halfday++;
+        } else if (status.contains('late')) {
+          late++;
+        } else if (status == 'present' || status == 'full day') {
+          fullDay++;
+        }
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _fullDayToday = fullDay;
+        _lateToday = late;
+        _halfdayToday = halfday;
+        _presentToday = fullDay + late + halfday;
+        _isLoadingAttendanceSummary = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _attendanceSummaryError = 'Unable to load attendance summary: $error';
+        _isLoadingAttendanceSummary = false;
+      });
+    }
+  }
+
   Future<void> _loadPendingRegistrations() async {
     setState(() => _isLoadingPending = true);
     try {
@@ -188,7 +268,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         setState(() {
           final all = List<Map<String, dynamic>>.from(list);
           _allWorkers = all.where((w) {
-            final status = (w['approval_status'] ?? w['status'] ?? '').toString().toLowerCase();
+            final status = (w['approval_status'] ?? w['status'] ?? '')
+                .toString()
+                .toLowerCase();
             return status != 'pending';
           }).toList();
           _isLoadingWorkers = false;
@@ -212,6 +294,18 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           final rawFullName = (profile['fullName'] as String?)?.trim() ?? '';
           final rawFirstName = (profile['firstName'] as String?)?.trim() ?? '';
           final rawLastName = (profile['lastName'] as String?)?.trim() ?? '';
+          final currentUser = ApiService.currentUser;
+          final fullNameParts =
+              (rawFullName.isNotEmpty
+                      ? rawFullName
+                      : (currentUser?['name'] ??
+                            currentUser?['full_name'] ??
+                            ''))
+                  .toString()
+                  .trim()
+                  .split(RegExp(r'\s+'))
+                  .where((part) => part.isNotEmpty)
+                  .toList();
 
           if (rawFullName.isNotEmpty) {
             _adminFullName = rawFullName;
@@ -223,16 +317,24 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
           _adminFirstName = rawFirstName.isNotEmpty
               ? rawFirstName
-              : (_adminFullName.split(' ').isNotEmpty
-                  ? _adminFullName.split(' ').first
-                  : 'Aldrich');
-          _adminLastName = rawLastName;
+              : (currentUser?['firstName'] ??
+                        currentUser?['first_name'] ??
+                        (fullNameParts.isNotEmpty
+                            ? fullNameParts.first
+                            : 'Aldrich'))
+                    .toString()
+                    .trim();
+          _adminLastName = rawLastName.isNotEmpty
+              ? rawLastName
+              : (currentUser?['lastName'] ??
+                        currentUser?['last_name'] ??
+                        (fullNameParts.length > 1 ? fullNameParts.last : ''))
+                    .toString()
+                    .trim();
           _adminEmail =
               (profile['email'] as String?)?.trim() ?? 'ajsotalbo@gmail.com';
-          _adminRole =
-              (profile['role'] as String?)?.trim() ?? 'Administrator';
-          _adminPhone =
-              (profile['phone'] as String?)?.trim() ?? '09068135609';
+          _adminRole = (profile['role'] as String?)?.trim() ?? 'Administrator';
+          _adminPhone = (profile['phone'] as String?)?.trim() ?? '09068135609';
 
           final dbSite = (profile['assignedProjectSite'] as String?)?.trim();
           if (dbSite != null && dbSite.isNotEmpty) {
@@ -250,8 +352,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       debugPrint('Error loading admin profile: $e');
     }
   }
-
-
 
   Future<void> _handleAccountApproval(int index, bool isApproved) async {
     final applicant = _pendingRegistrations[index];
@@ -320,10 +420,16 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 );
                 if (matched.isNotEmpty) {
                   if (matched['role'] != null) map['role'] = matched['role'];
-                  if (matched['position'] != null) map['position'] = matched['position'];
-                  if (map['name'] == null || map['name'] == 'Worker' || map['name'] == 'Unknown') {
-                    final fullName = matched['full_name'] ??
-                        '${matched['first_name'] ?? ''} ${matched['last_name'] ?? ''}'.trim();
+                  if (matched['position'] != null) {
+                    map['position'] = matched['position'];
+                  }
+                  if (map['name'] == null ||
+                      map['name'] == 'Worker' ||
+                      map['name'] == 'Unknown') {
+                    final fullName =
+                        matched['full_name'] ??
+                        '${matched['first_name'] ?? ''} ${matched['last_name'] ?? ''}'
+                            .trim();
                     if (fullName.isNotEmpty) map['name'] = fullName;
                   }
                 }
@@ -356,12 +462,16 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 );
                 if (matched.isNotEmpty) {
                   if (matched['role'] != null) map['role'] = matched['role'];
-                  if (matched['position'] != null) map['position'] = matched['position'];
+                  if (matched['position'] != null) {
+                    map['position'] = matched['position'];
+                  }
                   if (map['workerName'] == null ||
                       map['workerName'] == 'Unknown' ||
                       map['workerName'] == 'Worker') {
-                    final fullName = matched['full_name'] ??
-                        '${matched['first_name'] ?? ''} ${matched['last_name'] ?? ''}'.trim();
+                    final fullName =
+                        matched['full_name'] ??
+                        '${matched['first_name'] ?? ''} ${matched['last_name'] ?? ''}'
+                            .trim();
                     if (fullName.isNotEmpty) map['workerName'] = fullName;
                   }
                 }
@@ -455,7 +565,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     final str = raw.toString().replaceAll('₱', '').replaceAll(',', '').trim();
     final parsed = double.tryParse(str);
     if (parsed != null) return _formatCurrency(parsed);
-    return raw.toString().startsWith('₱') ? raw.toString() : '₱${raw.toString()}';
+    return raw.toString().startsWith('₱')
+        ? raw.toString()
+        : '₱${raw.toString()}';
   }
 
   DateTime? _extractValeDateTime(dynamic dateVal) {
@@ -470,7 +582,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       final parsed = DateTime.tryParse(str);
       if (parsed != null) return parsed;
     } catch (_) {}
-    if (str.length >= 10 && RegExp(r'^\d{4}-\d{2}-\d{2}').hasMatch(str.substring(0, 10))) {
+    if (str.length >= 10 &&
+        RegExp(r'^\d{4}-\d{2}-\d{2}').hasMatch(str.substring(0, 10))) {
       try {
         return DateTime.parse(str.substring(0, 10));
       } catch (_) {}
@@ -480,8 +593,18 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
   String _formatReadableDate(DateTime dt) {
     const months = [
-      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
     ];
     return '${months[dt.month - 1]} ${dt.day.toString().padLeft(2, '0')}, ${dt.year}';
   }
@@ -523,728 +646,1182 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     return 'Good evening';
   }
 
+  List<Map<String, dynamic>> _ongoingProjects() =>
+      _projectsList.where((project) {
+        final id = project['id']?.toString().trim() ?? '';
+        final status = project['status']?.toString().toUpperCase();
+        return id.isNotEmpty && (status == 'ONGOING' || status == 'ACTIVE');
+      }).toList();
+
+  List<String> _expenseItemSuggestions(String category) {
+    switch (category) {
+      case 'Manpower':
+        return const [
+          'Project Foreman',
+          'Lead Carpenter',
+          'Master Mason',
+          'Steelman / Bar Bender',
+          'Certified Welder',
+          'Licensed Electrician',
+          'Master Plumber',
+          'Painter',
+          'General Construction Laborer',
+          'Site Helper',
+        ];
+      case 'Equipment':
+        return const [
+          'Excavator Rental',
+          'Backhoe Loader',
+          'One-Bagger Concrete Mixer',
+          'Tamping Rammer / Compactor',
+          'Electric Jackhammer',
+          'Mobile Crane Rental',
+          'Tubular Scaffolding Set',
+          '10-Wheeler Dump Truck',
+          'Diesel Generator Set',
+          'Inverter Welding Machine',
+          'Submersible Water Pump',
+          'Diesel Fuel / Gasoline',
+        ];
+      default:
+        return const [
+          'Cement',
+          'Sand',
+          'Gravel',
+          'Steel Rebar (Deformed Bars)',
+          'G.I. Tie Wire',
+          'Concrete Hollow Blocks (CHB)',
+          'Lumber / Coco Lumber',
+          'Plywood / Phenolic Board',
+          'Common Wire Nails',
+          'PVC / PPR Pipes',
+          'Paint',
+          'Floor & Wall Tiles',
+        ];
+    }
+  }
+
+  List<String> _expenseItemUnits(String category, String description) {
+    if (category == 'Manpower') {
+      return const ['day/s', 'hr/s', 'pax', 'month/s', 'lot/s'];
+    }
+    if (category == 'Equipment') {
+      return const ['day/s', 'hr/s', 'month/s', 'unit/s', 'liter/s', 'lot/s'];
+    }
+    final name = description.toLowerCase();
+    final defaultUnit = name.contains('cement')
+        ? 'bags'
+        : name.contains('sand') || name.contains('gravel')
+        ? 'cu.m'
+        : name.contains('steel') || name.contains('rebar')
+        ? 'pcs'
+        : name.contains('plywood') || name.contains('sheet')
+        ? 'sheets'
+        : name.contains('lumber') || name.contains('wood')
+        ? 'bd.ft'
+        : name.contains('paint')
+        ? 'gal'
+        : 'pcs';
+    return [
+      defaultUnit,
+      ...const [
+        'pcs',
+        'bags',
+        'sacks',
+        'cu.m',
+        'kg',
+        'sheets',
+        'bd.ft',
+        'rolls',
+        'gal',
+        'pail',
+        'meters',
+        'lengths',
+        'tubes',
+        'cans',
+        'boxes',
+        'sets',
+        'lots',
+        'sq.m',
+        'liters',
+        'truckload',
+      ].where((unit) => unit != defaultUnit),
+    ];
+  }
+
+  String _defaultExpenseUnit(String category, String description) =>
+      _expenseItemUnits(category, description).first;
+
+  Future<String?> _pickExpenseReceipt(ImageSource source) async {
+    final file = await ImagePicker().pickImage(
+      source: source,
+      imageQuality: 60,
+      maxWidth: 1280,
+      maxHeight: 1280,
+    );
+    if (file == null) return null;
+
+    final bytes = await file.readAsBytes();
+    if (bytes.length > 6 * 1024 * 1024) {
+      throw Exception(
+        'Image is larger than 6 MB after compression. Choose a smaller photo.',
+      );
+    }
+
+    final extension = file.name.split('.').last.toLowerCase();
+    final mimeType =
+        file.mimeType ??
+        switch (extension) {
+          'jpg' || 'jpeg' => 'image/jpeg',
+          'png' => 'image/png',
+          'webp' => 'image/webp',
+          'heic' || 'heif' => 'image/heic',
+          _ => 'image/jpeg',
+        };
+    return 'data:$mimeType;base64,${base64Encode(bytes)}';
+  }
+
   void _showAddExpenseDialog() {
-    if (_projectsList.isEmpty) {
+    final projectOptions = _ongoingProjects();
+    if (projectOptions.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'No projects available. Please create a project first.',
-            style: GoogleFonts.inter(fontSize: 12),
-          ),
-          backgroundColor: const Color(0xFFA63228),
+        const SnackBar(
+          content: Text('No ongoing projects are available for expenses.'),
+          backgroundColor: Color(0xFFA63228),
         ),
       );
       return;
     }
 
-    int selectedProjectId = _projectsList[0]['id'] is int
-        ? _projectsList[0]['id']
-        : int.tryParse(_projectsList[0]['id'].toString()) ?? 1;
-    String selectedCategory = 'Materials';
-    final amountController = TextEditingController();
-    final receiptController = TextEditingController();
-    final remarksController = TextEditingController();
+    const categories = ['Materials', 'Manpower', 'Equipment'];
+    Map<String, dynamic> newItem([String category = 'Materials']) => {
+      'category': category,
+      'description': '',
+      'quantity': TextEditingController(),
+      'unit': _defaultExpenseUnit(category, ''),
+      'price': TextEditingController(),
+    };
+
+    String selectedProjectId = projectOptions.first['id'].toString();
+    String receiptNumber = '';
     DateTime selectedDate = DateTime.now();
+    TimeOfDay selectedTime = TimeOfDay.now();
+    List<Map<String, dynamic>> items = [newItem()];
+    String? receiptImage;
+    bool isPickingImage = false;
+    bool isSaving = false;
+    String? formError;
 
-    final categories = [
-      'Materials',
-      'Labor',
-      'Equipment',
-      'Subcontractor',
-      'Utilities',
-      'Others',
-    ];
-
-    showDialog(
+    final dialogFuture = showDialog<void>(
       context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          backgroundColor: Colors.white,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-          title: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFA63228).withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(8),
+      barrierDismissible: false,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          double itemSubtotal(Map<String, dynamic> item) {
+            final quantity =
+                double.tryParse(
+                  (item['quantity'] as TextEditingController).text,
+                ) ??
+                0;
+            final price =
+                double.tryParse(
+                  (item['price'] as TextEditingController).text,
+                ) ??
+                0;
+            return quantity * price;
+          }
+
+          final total = items.fold<double>(
+            0,
+            (sum, item) => sum + itemSubtotal(item),
+          );
+          final screenSize = MediaQuery.sizeOf(context);
+
+          Future<void> chooseReceipt(ImageSource source) async {
+            setDialogState(() {
+              isPickingImage = true;
+              formError = null;
+            });
+            try {
+              final image = await _pickExpenseReceipt(source);
+              if (image != null && dialogContext.mounted) {
+                setDialogState(() => receiptImage = image);
+              }
+            } catch (e) {
+              if (mounted && dialogContext.mounted) {
+                final message =
+                    'Could not load receipt photo: '
+                    '${e.toString().replaceFirst('Exception: ', '')}';
+                setDialogState(() => formError = message);
+                ScaffoldMessenger.of(this.context).showSnackBar(
+                  SnackBar(
+                    content: Text(message),
+                    backgroundColor: const Color(0xFFA63228),
+                  ),
+                );
+              }
+            } finally {
+              if (mounted && dialogContext.mounted) {
+                setDialogState(() => isPickingImage = false);
+              }
+            }
+          }
+
+          Future<void> saveExpense() async {
+            if (total <= 0 || total > 999999999999) {
+              setDialogState(
+                () => formError = total <= 0
+                    ? 'Add at least one item with a quantity and unit price.'
+                    : 'Total expense cannot exceed ₱999,999,999,999.',
+              );
+              return;
+            }
+            final hasInvalidItem = items.any((item) {
+              final quantity =
+                  double.tryParse(
+                    (item['quantity'] as TextEditingController).text,
+                  ) ??
+                  0;
+              final price =
+                  double.tryParse(
+                    (item['price'] as TextEditingController).text,
+                  ) ??
+                  0;
+              return (item['description'] as String).trim().isEmpty ||
+                  quantity <= 0 ||
+                  price <= 0;
+            });
+            if (hasInvalidItem) {
+              setDialogState(
+                () => formError =
+                    'Each item needs a description, quantity, and unit price.',
+              );
+              return;
+            }
+            if (receiptImage == null) {
+              setDialogState(
+                () => formError =
+                    'Attach a receipt, signed payroll, or voucher photo before saving.',
+              );
+              return;
+            }
+
+            setDialogState(() {
+              isSaving = true;
+              formError = null;
+            });
+            try {
+              final project = projectOptions.firstWhere(
+                (item) => item['id'].toString() == selectedProjectId,
+              );
+              final resolvedItems = items.map((item) {
+                final quantity = double.parse(
+                  (item['quantity'] as TextEditingController).text,
+                );
+                final price = double.parse(
+                  (item['price'] as TextEditingController).text,
+                );
+                return {
+                  'qty': quantity,
+                  'unit': item['unit'],
+                  'description': (item['description'] as String).trim(),
+                  'price': price,
+                  'category': item['category'],
+                };
+              }).toList();
+              final itemCategories = resolvedItems
+                  .map((item) => item['category'] as String)
+                  .toSet();
+              final primaryCategory = itemCategories.length == 1
+                  ? itemCategories.first
+                  : resolvedItems.first['category'] as String;
+              final date =
+                  '${selectedDate.year}-${selectedDate.month.toString().padLeft(2, '0')}-${selectedDate.day.toString().padLeft(2, '0')}';
+
+              await ApiService.createExpense({
+                'project_id': selectedProjectId,
+                'project': project['name']?.toString() ?? '',
+                'category': primaryCategory,
+                'amount': total,
+                'receipt_no': receiptNumber.trim(),
+                'date': date,
+                'time': selectedTime.format(context),
+                'items': resolvedItems,
+                'cash_tendered': total,
+                'change': 0,
+                'image': receiptImage,
+              });
+
+              if (!mounted || !dialogContext.mounted) return;
+              Navigator.pop(dialogContext);
+              ScaffoldMessenger.of(this.context).showSnackBar(
+                const SnackBar(
+                  content: Text('Expense added successfully!'),
+                  backgroundColor: Color(0xFF1B5E20),
                 ),
-                child: const Icon(
-                  Icons.add_card_rounded,
-                  color: Color(0xFFA63228),
-                  size: 20,
-                ),
+              );
+              _loadDashboardData();
+            } catch (e) {
+              if (mounted && dialogContext.mounted) {
+                final message =
+                    'Failed to save expense: '
+                    '${e.toString().replaceFirst('Exception: ', '')}';
+                setDialogState(() {
+                  isSaving = false;
+                  formError = message;
+                });
+                ScaffoldMessenger.of(this.context).showSnackBar(
+                  SnackBar(
+                    content: Text(message),
+                    backgroundColor: const Color(0xFFA63228),
+                  ),
+                );
+              }
+            }
+          }
+
+          Widget fieldLabel(String text) => Padding(
+            padding: const EdgeInsets.only(bottom: 5),
+            child: Text(
+              text.toUpperCase(),
+              style: GoogleFonts.inter(
+                fontSize: 9,
+                fontWeight: FontWeight.w800,
+                color: Colors.grey.shade700,
+                letterSpacing: 0.3,
               ),
-              const SizedBox(width: 10),
-              Text(
-                'Add New Expense',
-                style: GoogleFonts.inter(
-                  fontSize: 15,
-                  fontWeight: FontWeight.bold,
+            ),
+          );
+
+          InputDecoration fieldDecoration(String hint, {String? prefix}) =>
+              InputDecoration(
+                hintText: hint,
+                prefixText: prefix,
+                isDense: true,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(9),
                 ),
-              ),
-            ],
-          ),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Project',
-                  style: GoogleFonts.inter(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.grey.shade700,
-                  ),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 11,
                 ),
-                const SizedBox(height: 4),
-                DropdownButtonFormField<int>(
-                  value: selectedProjectId,
-                  isDense: true,
-                  style: GoogleFonts.inter(fontSize: 12, color: Colors.black87),
-                  decoration: InputDecoration(
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 10,
-                    ),
-                  ),
-                  items: _projectsList.map((p) {
-                    final id = p['id'] is int
-                        ? p['id'] as int
-                        : int.tryParse(p['id'].toString()) ?? 1;
-                    return DropdownMenuItem<int>(
-                      value: id,
-                      child: Text(
-                        p['name'] ?? 'Project #$id',
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    );
-                  }).toList(),
-                  onChanged: (val) {
-                    if (val != null)
-                      setDialogState(() => selectedProjectId = val);
-                  },
-                ),
-                const SizedBox(height: 10),
-                Text(
-                  'Category',
-                  style: GoogleFonts.inter(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.grey.shade700,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                DropdownButtonFormField<String>(
-                  value: selectedCategory,
-                  isDense: true,
-                  style: GoogleFonts.inter(fontSize: 12, color: Colors.black87),
-                  decoration: InputDecoration(
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 10,
+              );
+
+          return Dialog(
+            insetPadding: const EdgeInsets.all(14),
+            backgroundColor: Colors.white,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: SizedBox(
+              width: (screenSize.width - 28).clamp(0, 620),
+              height: screenSize.height * 0.88,
+              child: Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 14, 8, 12),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Add Expense',
+                                style: GoogleFonts.inter(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                              const SizedBox(height: 3),
+                              Text(
+                                'Track project materials, labor, or equipment purchases.',
+                                style: GoogleFonts.inter(
+                                  fontSize: 10,
+                                  color: Colors.grey.shade600,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        IconButton(
+                          tooltip: 'Close',
+                          onPressed: isSaving
+                              ? null
+                              : () => Navigator.pop(dialogContext),
+                          icon: const Icon(Icons.close_rounded),
+                        ),
+                      ],
                     ),
                   ),
-                  items: categories
-                      .map(
-                        (cat) => DropdownMenuItem(value: cat, child: Text(cat)),
-                      )
-                      .toList(),
-                  onChanged: (val) {
-                    if (val != null)
-                      setDialogState(() => selectedCategory = val);
-                  },
-                ),
-                const SizedBox(height: 10),
-                Text(
-                  'Amount (₱)',
-                  style: GoogleFonts.inter(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.grey.shade700,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                TextField(
-                  controller: amountController,
-                  keyboardType: const TextInputType.numberWithOptions(
-                    decimal: true,
-                  ),
-                  style: GoogleFonts.inter(fontSize: 12),
-                  decoration: InputDecoration(
-                    hintText: '0.00',
-                    prefixText: '₱ ',
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 10,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 10),
-                Row(
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Receipt No. (Opt)',
-                            style: GoogleFonts.inter(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600,
-                              color: Colors.grey.shade700,
+                  const Divider(height: 1),
+                  Expanded(
+                    child: ListView(
+                      padding: const EdgeInsets.all(14),
+                      children: [
+                        if (formError != null) ...[
+                          Container(
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFFFF1F0),
+                              borderRadius: BorderRadius.circular(9),
+                              border: Border.all(
+                                color: const Color(0xFFE7A39D),
+                              ),
+                            ),
+                            child: Text(
+                              formError!,
+                              style: GoogleFonts.inter(
+                                fontSize: 11,
+                                color: const Color(0xFFA63228),
+                                fontWeight: FontWeight.w600,
+                              ),
                             ),
                           ),
-                          const SizedBox(height: 4),
-                          TextField(
-                            controller: receiptController,
-                            style: GoogleFonts.inter(fontSize: 12),
-                            decoration: InputDecoration(
-                              hintText: 'e.g. REC-1029',
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 10,
-                                vertical: 10,
-                              ),
-                            ),
-                          ),
+                          const SizedBox(height: 12),
                         ],
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Date',
-                            style: GoogleFonts.inter(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600,
-                              color: Colors.grey.shade700,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          InkWell(
-                            onTap: () async {
-                              final picked = await showDatePicker(
-                                context: context,
-                                initialDate: selectedDate,
-                                firstDate: DateTime(2020),
-                                lastDate: DateTime(2030),
-                              );
-                              if (picked != null) {
-                                setDialogState(() => selectedDate = picked);
-                              }
-                            },
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 10,
-                                vertical: 10,
+                        fieldLabel('Project'),
+                        DropdownButtonFormField<String>(
+                          initialValue: selectedProjectId,
+                          isExpanded: true,
+                          decoration: fieldDecoration('Choose project'),
+                          items: projectOptions.map((project) {
+                            final id = project['id'].toString();
+                            return DropdownMenuItem<String>(
+                              value: id,
+                              child: Text(
+                                project['name']?.toString() ?? 'Project #$id',
+                                overflow: TextOverflow.ellipsis,
                               ),
-                              decoration: BoxDecoration(
-                                border: Border.all(color: Colors.grey.shade400),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
+                            );
+                          }).toList(),
+                          onChanged: isSaving
+                              ? null
+                              : (value) {
+                                  if (value != null) {
+                                    setDialogState(
+                                      () => selectedProjectId = value,
+                                    );
+                                  }
+                                },
+                        ),
+                        const SizedBox(height: 12),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Text(
-                                    '${selectedDate.year}-${selectedDate.month.toString().padLeft(2, '0')}-${selectedDate.day.toString().padLeft(2, '0')}',
-                                    style: GoogleFonts.inter(fontSize: 12),
-                                  ),
-                                  const Icon(
-                                    Icons.calendar_today,
-                                    size: 14,
-                                    color: Colors.grey,
+                                  fieldLabel('Date Logged'),
+                                  OutlinedButton.icon(
+                                    onPressed: isSaving
+                                        ? null
+                                        : () async {
+                                            final picked = await showDatePicker(
+                                              context: dialogContext,
+                                              initialDate: selectedDate,
+                                              firstDate: DateTime(2020),
+                                              lastDate: DateTime(2035),
+                                            );
+                                            if (picked != null &&
+                                                dialogContext.mounted) {
+                                              setDialogState(
+                                                () => selectedDate = picked,
+                                              );
+                                            }
+                                          },
+                                    icon: const Icon(
+                                      Icons.calendar_today_outlined,
+                                      size: 15,
+                                    ),
+                                    label: Text(
+                                      '${selectedDate.month.toString().padLeft(2, '0')}/${selectedDate.day.toString().padLeft(2, '0')}/${selectedDate.year}',
+                                      overflow: TextOverflow.ellipsis,
+                                      style: GoogleFonts.inter(fontSize: 11),
+                                    ),
                                   ),
                                 ],
                               ),
                             ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                Text(
-                  'Remarks / Item Description',
-                  style: GoogleFonts.inter(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.grey.shade700,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                TextField(
-                  controller: remarksController,
-                  maxLines: 2,
-                  style: GoogleFonts.inter(fontSize: 12),
-                  decoration: InputDecoration(
-                    hintText: 'e.g. Portland Cement 50 bags',
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    contentPadding: const EdgeInsets.all(10),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: Text(
-                'Cancel',
-                style: GoogleFonts.inter(
-                  color: Colors.grey.shade700,
-                  fontSize: 12,
-                ),
-              ),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFFA63228),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
-              ),
-              onPressed: () async {
-                final amt =
-                    double.tryParse(amountController.text.trim()) ?? 0.0;
-                if (amt <= 0) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(
-                        'Please enter a valid expense amount.',
-                        style: GoogleFonts.inter(fontSize: 12),
-                      ),
-                      backgroundColor: const Color(0xFFA63228),
-                    ),
-                  );
-                  return;
-                }
-                Navigator.pop(context);
-                try {
-                  final dateStr =
-                      '${selectedDate.year}-${selectedDate.month.toString().padLeft(2, '0')}-${selectedDate.day.toString().padLeft(2, '0')}';
-                  await ApiService.createExpense({
-                    'project_id': selectedProjectId,
-                    'category': selectedCategory,
-                    'amount': amt,
-                    'date': dateStr,
-                    'receipt_no': receiptController.text.trim(),
-                    'remarks': remarksController.text.trim(),
-                  });
-                  if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(
-                          'Expense added successfully!',
-                          style: GoogleFonts.inter(fontSize: 12),
-                        ),
-                        backgroundColor: Colors.green.shade700,
-                      ),
-                    );
-                    _loadDashboardData();
-                  }
-                } catch (e) {
-                  if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(
-                          'Failed to save expense: $e',
-                          style: GoogleFonts.inter(fontSize: 12),
-                        ),
-                        backgroundColor: const Color(0xFFA63228),
-                      ),
-                    );
-                  }
-                }
-              },
-              child: Text(
-                'Save Expense',
-                style: GoogleFonts.inter(
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 12,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _showScanReceiptDialog() {
-    if (_projectsList.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'No projects available. Please create a project first.',
-            style: GoogleFonts.inter(fontSize: 12),
-          ),
-          backgroundColor: const Color(0xFFA63228),
-        ),
-      );
-      return;
-    }
-
-    int selectedProjectId = _projectsList[0]['id'] is int
-        ? _projectsList[0]['id']
-        : int.tryParse(_projectsList[0]['id'].toString()) ?? 1;
-    String selectedCategory = 'Materials';
-    final amountController = TextEditingController(text: '4500.00');
-    final receiptController = TextEditingController(
-      text:
-          'REC-${DateTime.now().millisecondsSinceEpoch.toString().substring(7)}',
-    );
-    final descController = TextEditingController(
-      text: 'Official Receipt - Construction Supplies',
-    );
-
-    showDialog(
-      context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          backgroundColor: Colors.white,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-          title: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFE8C547).withValues(alpha: 0.2),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Icon(
-                  Icons.document_scanner_rounded,
-                  color: Color(0xFF8B1A10),
-                  size: 20,
-                ),
-              ),
-              const SizedBox(width: 10),
-              Text(
-                'Scan Receipt (OCR)',
-                style: GoogleFonts.inter(
-                  fontSize: 15,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ],
-          ),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Scan success badge matching web
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 8,
-                  ),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFE6F4EA),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: const Color(0xFFC8E6C9)),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(
-                        Icons.check_circle_rounded,
-                        color: Color(0xFF2E7D32),
-                        size: 16,
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          'Receipt attached & optical read verified',
-                          style: GoogleFonts.inter(
-                            fontSize: 11,
-                            fontWeight: FontWeight.bold,
-                            color: const Color(0xFF2E7D32),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  'Assigned Project',
-                  style: GoogleFonts.inter(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.grey.shade700,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                DropdownButtonFormField<int>(
-                  value: selectedProjectId,
-                  isDense: true,
-                  style: GoogleFonts.inter(fontSize: 12, color: Colors.black87),
-                  decoration: InputDecoration(
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 10,
-                    ),
-                  ),
-                  items: _projectsList.map((p) {
-                    final id = p['id'] is int
-                        ? p['id'] as int
-                        : int.tryParse(p['id'].toString()) ?? 1;
-                    return DropdownMenuItem<int>(
-                      value: id,
-                      child: Text(
-                        p['name'] ?? 'Project #$id',
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    );
-                  }).toList(),
-                  onChanged: (val) {
-                    if (val != null)
-                      setDialogState(() => selectedProjectId = val);
-                  },
-                ),
-                const SizedBox(height: 10),
-                Row(
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Category',
-                            style: GoogleFonts.inter(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600,
-                              color: Colors.grey.shade700,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          DropdownButtonFormField<String>(
-                            value: selectedCategory,
-                            isDense: true,
-                            style: GoogleFonts.inter(
-                              fontSize: 12,
-                              color: Colors.black87,
-                            ),
-                            decoration: InputDecoration(
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 10,
-                                vertical: 10,
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  fieldLabel('Time'),
+                                  OutlinedButton.icon(
+                                    onPressed: isSaving
+                                        ? null
+                                        : () async {
+                                            final picked = await showTimePicker(
+                                              context: dialogContext,
+                                              initialTime: selectedTime,
+                                            );
+                                            if (picked != null &&
+                                                dialogContext.mounted) {
+                                              setDialogState(
+                                                () => selectedTime = picked,
+                                              );
+                                            }
+                                          },
+                                    icon: const Icon(
+                                      Icons.access_time_rounded,
+                                      size: 15,
+                                    ),
+                                    label: Text(
+                                      selectedTime.format(dialogContext),
+                                      style: GoogleFonts.inter(fontSize: 11),
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
-                            items:
-                                [
-                                      'Materials',
-                                      'Labor',
-                                      'Equipment',
-                                      'Subcontractor',
-                                      'Utilities',
-                                      'Others',
-                                    ]
-                                    .map(
-                                      (cat) => DropdownMenuItem(
-                                        value: cat,
-                                        child: Text(cat),
+                          ],
+                        ),
+                        const SizedBox(height: 14),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              'ITEMS / MATERIALS / SERVICES',
+                              style: GoogleFonts.inter(
+                                fontSize: 9,
+                                fontWeight: FontWeight.w800,
+                                color: Colors.grey.shade800,
+                              ),
+                            ),
+                            Text(
+                              '${items.length} item(s)',
+                              style: GoogleFonts.inter(
+                                fontSize: 9,
+                                color: Colors.grey.shade500,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        ...items.asMap().entries.map((entry) {
+                          final index = entry.key;
+                          final item = entry.value;
+                          final category = item['category'] as String;
+                          final description = item['description'] as String;
+                          final itemUnits = _expenseItemUnits(
+                            category,
+                            description,
+                          );
+                          final suggestions = _expenseItemSuggestions(category);
+                          final quantityController =
+                              item['quantity'] as TextEditingController;
+                          final priceController =
+                              item['price'] as TextEditingController;
+
+                          return Container(
+                            key: ValueKey('expense-item-$index'),
+                            margin: const EdgeInsets.only(bottom: 9),
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: Colors.grey.shade300),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 7,
+                                        vertical: 4,
                                       ),
-                                    )
-                                    .toList(),
-                            onChanged: (val) {
-                              if (val != null)
-                                setDialogState(() => selectedCategory = val);
-                            },
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFFFFF1F0),
+                                        borderRadius: BorderRadius.circular(5),
+                                      ),
+                                      child: Text(
+                                        'ITEM #${index + 1}',
+                                        style: GoogleFonts.inter(
+                                          fontSize: 9,
+                                          fontWeight: FontWeight.w800,
+                                          color: const Color(0xFFA63228),
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: DropdownButtonFormField<String>(
+                                        key: ValueKey(
+                                          'expense-category-$index-$category',
+                                        ),
+                                        initialValue: category,
+                                        isExpanded: true,
+                                        decoration: const InputDecoration(
+                                          isDense: true,
+                                          contentPadding: EdgeInsets.symmetric(
+                                            horizontal: 8,
+                                            vertical: 7,
+                                          ),
+                                          border: OutlineInputBorder(),
+                                        ),
+                                        items: categories
+                                            .map(
+                                              (value) => DropdownMenuItem(
+                                                value: value,
+                                                child: Text(
+                                                  value,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                  style: const TextStyle(
+                                                    fontSize: 11,
+                                                  ),
+                                                ),
+                                              ),
+                                            )
+                                            .toList(),
+                                        onChanged: isSaving
+                                            ? null
+                                            : (value) {
+                                                if (value == null) return;
+                                                setDialogState(() {
+                                                  item['category'] = value;
+                                                  item['unit'] =
+                                                      _defaultExpenseUnit(
+                                                        value,
+                                                        description,
+                                                      );
+                                                });
+                                              },
+                                      ),
+                                    ),
+                                    if (items.length > 1)
+                                      IconButton(
+                                        tooltip: 'Remove item',
+                                        visualDensity: VisualDensity.compact,
+                                        onPressed: isSaving
+                                            ? null
+                                            : () {
+                                                quantityController.dispose();
+                                                priceController.dispose();
+                                                setDialogState(
+                                                  () => items.removeAt(index),
+                                                );
+                                              },
+                                        icon: const Icon(
+                                          Icons.close_rounded,
+                                          size: 18,
+                                          color: Colors.grey,
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                                const SizedBox(height: 10),
+                                fieldLabel(
+                                  category == 'Manpower'
+                                      ? 'Worker / Role'
+                                      : category == 'Equipment'
+                                      ? 'Equipment / Item'
+                                      : 'Material / Item',
+                                ),
+                                Autocomplete<String>(
+                                  key: ValueKey(
+                                    'expense-description-$index-$category',
+                                  ),
+                                  initialValue: TextEditingValue(
+                                    text: description,
+                                  ),
+                                  optionsBuilder: (value) {
+                                    final query = value.text
+                                        .trim()
+                                        .toLowerCase();
+                                    return suggestions
+                                        .where(
+                                          (option) =>
+                                              query.isEmpty ||
+                                              option.toLowerCase().contains(
+                                                query,
+                                              ),
+                                        )
+                                        .take(8);
+                                  },
+                                  onSelected: (value) {
+                                    setDialogState(() {
+                                      item['description'] = value;
+                                      final validUnits = _expenseItemUnits(
+                                        category,
+                                        value,
+                                      );
+                                      if (category == 'Materials' ||
+                                          !validUnits.contains(item['unit'])) {
+                                        item['unit'] = validUnits.first;
+                                      }
+                                    });
+                                  },
+                                  fieldViewBuilder:
+                                      (
+                                        context,
+                                        controller,
+                                        focusNode,
+                                        onFieldSubmitted,
+                                      ) => TextField(
+                                        controller: controller,
+                                        focusNode: focusNode,
+                                        enabled: !isSaving,
+                                        onChanged: (value) =>
+                                            setDialogState(() {
+                                              item['description'] = value;
+                                              final validUnits =
+                                                  _expenseItemUnits(
+                                                    category,
+                                                    value,
+                                                  );
+                                              if (category == 'Materials' ||
+                                                  !validUnits.contains(
+                                                    item['unit'],
+                                                  )) {
+                                                item['unit'] = validUnits.first;
+                                              }
+                                            }),
+                                        decoration: fieldDecoration(
+                                          category == 'Materials'
+                                              ? 'Select or type material'
+                                              : category == 'Manpower'
+                                              ? 'Select or type worker / role'
+                                              : 'Select or type equipment',
+                                        ),
+                                      ),
+                                  optionsViewBuilder:
+                                      (context, onSelected, options) => Align(
+                                        alignment: Alignment.topLeft,
+                                        child: Material(
+                                          elevation: 4,
+                                          borderRadius: BorderRadius.circular(
+                                            8,
+                                          ),
+                                          child: ConstrainedBox(
+                                            constraints: const BoxConstraints(
+                                              maxHeight: 180,
+                                            ),
+                                            child: ListView.builder(
+                                              padding: EdgeInsets.zero,
+                                              shrinkWrap: true,
+                                              itemCount: options.length,
+                                              itemBuilder: (context, index) {
+                                                final option = options
+                                                    .elementAt(index);
+                                                return ListTile(
+                                                  dense: true,
+                                                  title: Text(
+                                                    option,
+                                                    style: const TextStyle(
+                                                      fontSize: 12,
+                                                    ),
+                                                  ),
+                                                  onTap: () =>
+                                                      onSelected(option),
+                                                );
+                                              },
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                ),
+                                const SizedBox(height: 10),
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          fieldLabel(
+                                            category == 'Manpower'
+                                                ? 'Days / Qty'
+                                                : 'Quantity',
+                                          ),
+                                          TextField(
+                                            controller: quantityController,
+                                            enabled: !isSaving,
+                                            keyboardType:
+                                                const TextInputType.numberWithOptions(
+                                                  decimal: true,
+                                                ),
+                                            onChanged: (_) =>
+                                                setDialogState(() {}),
+                                            decoration: fieldDecoration('0'),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          fieldLabel('Unit'),
+                                          DropdownButtonFormField<String>(
+                                            key: ValueKey(
+                                              'expense-unit-$index-${item['unit']}',
+                                            ),
+                                            initialValue:
+                                                itemUnits.contains(item['unit'])
+                                                ? item['unit'] as String
+                                                : itemUnits.first,
+                                            isExpanded: true,
+                                            decoration: const InputDecoration(
+                                              isDense: true,
+                                              contentPadding:
+                                                  EdgeInsets.symmetric(
+                                                    horizontal: 8,
+                                                    vertical: 11,
+                                                  ),
+                                              border: OutlineInputBorder(),
+                                            ),
+                                            items: itemUnits
+                                                .map(
+                                                  (unit) => DropdownMenuItem(
+                                                    value: unit,
+                                                    child: Text(
+                                                      unit,
+                                                      overflow:
+                                                          TextOverflow.ellipsis,
+                                                      style: const TextStyle(
+                                                        fontSize: 11,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                )
+                                                .toList(),
+                                            onChanged: isSaving
+                                                ? null
+                                                : (value) {
+                                                    if (value != null) {
+                                                      setDialogState(
+                                                        () => item['unit'] =
+                                                            value,
+                                                      );
+                                                    }
+                                                  },
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 9),
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          fieldLabel(
+                                            category == 'Manpower'
+                                                ? 'Daily Rate'
+                                                : 'Unit Price',
+                                          ),
+                                          TextField(
+                                            controller: priceController,
+                                            enabled: !isSaving,
+                                            keyboardType:
+                                                const TextInputType.numberWithOptions(
+                                                  decimal: true,
+                                                ),
+                                            onChanged: (_) =>
+                                                setDialogState(() {}),
+                                            decoration: fieldDecoration(
+                                              '0.00',
+                                              prefix: '₱ ',
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          fieldLabel('Subtotal'),
+                                          Container(
+                                            alignment: Alignment.centerRight,
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 10,
+                                              vertical: 12,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: const Color(0xFFFFF1F0),
+                                              borderRadius:
+                                                  BorderRadius.circular(9),
+                                              border: Border.all(
+                                                color: const Color(0xFFE8B4AF),
+                                              ),
+                                            ),
+                                            child: Text(
+                                              _formatCurrency(
+                                                itemSubtotal(item),
+                                              ),
+                                              overflow: TextOverflow.ellipsis,
+                                              style: GoogleFonts.inter(
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.w800,
+                                                color: const Color(0xFFA63228),
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          );
+                        }),
+                        OutlinedButton.icon(
+                          onPressed: isSaving
+                              ? null
+                              : () {
+                                  final lastCategory =
+                                      items.last['category'] as String;
+                                  setDialogState(
+                                    () => items.add(newItem(lastCategory)),
+                                  );
+                                },
+                          icon: const Icon(Icons.add_rounded, size: 17),
+                          label: const Text('Add Another Item'),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: const Color(0xFFA63228),
+                            side: BorderSide(color: Colors.grey.shade300),
+                            padding: const EdgeInsets.symmetric(vertical: 11),
                           ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Detected Amount',
-                            style: GoogleFonts.inter(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600,
-                              color: Colors.grey.shade700,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          TextField(
-                            controller: amountController,
-                            keyboardType: const TextInputType.numberWithOptions(
-                              decimal: true,
-                            ),
-                            style: GoogleFonts.inter(
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold,
-                              color: const Color(0xFFA63228),
-                            ),
-                            decoration: InputDecoration(
-                              prefixText: '₱ ',
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 10,
-                                vertical: 10,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                Text(
-                  'Detected Receipt #',
-                  style: GoogleFonts.inter(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.grey.shade700,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                TextField(
-                  controller: receiptController,
-                  style: GoogleFonts.inter(fontSize: 12),
-                  decoration: InputDecoration(
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 10,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 10),
-                Text(
-                  'Items / Notes',
-                  style: GoogleFonts.inter(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.grey.shade700,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                TextField(
-                  controller: descController,
-                  maxLines: 2,
-                  style: GoogleFonts.inter(fontSize: 12),
-                  decoration: InputDecoration(
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    contentPadding: const EdgeInsets.all(10),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: Text(
-                'Cancel',
-                style: GoogleFonts.inter(
-                  color: Colors.grey.shade700,
-                  fontSize: 12,
-                ),
-              ),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF8B1A10),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
-              ),
-              onPressed: () async {
-                final amt =
-                    double.tryParse(amountController.text.trim()) ?? 0.0;
-                Navigator.pop(context);
-                try {
-                  final now = DateTime.now();
-                  final dateStr =
-                      '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
-                  await ApiService.createExpense({
-                    'project_id': selectedProjectId,
-                    'category': selectedCategory,
-                    'amount': amt,
-                    'date': dateStr,
-                    'receipt_no': receiptController.text.trim(),
-                    'remarks': descController.text.trim(),
-                  });
-                  if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(
-                          'Scanned receipt saved as expense!',
-                          style: GoogleFonts.inter(fontSize: 12),
                         ),
-                        backgroundColor: Colors.green.shade700,
-                      ),
-                    );
-                    _loadDashboardData();
-                  }
-                } catch (e) {
-                  if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(
-                          'Failed to save receipt: $e',
-                          style: GoogleFonts.inter(fontSize: 12),
+                        const SizedBox(height: 14),
+                        Container(
+                          padding: const EdgeInsets.all(11),
+                          decoration: BoxDecoration(
+                            color: receiptImage == null
+                                ? const Color(0xFFFFF8E1)
+                                : const Color(0xFFF7F7F7),
+                            border: Border.all(
+                              color: receiptImage == null
+                                  ? const Color(0xFFE8C547)
+                                  : Colors.grey.shade300,
+                            ),
+                            borderRadius: BorderRadius.circular(11),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      'RECEIPT / PROOF IMAGE  * REQUIRED',
+                                      style: GoogleFonts.inter(
+                                        fontSize: 9,
+                                        fontWeight: FontWeight.w800,
+                                        color: Colors.grey.shade800,
+                                      ),
+                                    ),
+                                  ),
+                                  if (receiptImage != null)
+                                    TextButton.icon(
+                                      onPressed: isSaving
+                                          ? null
+                                          : () => setDialogState(
+                                              () => receiptImage = null,
+                                            ),
+                                      icon: const Icon(
+                                        Icons.delete_outline,
+                                        size: 15,
+                                      ),
+                                      label: const Text('Remove'),
+                                      style: TextButton.styleFrom(
+                                        foregroundColor: const Color(
+                                          0xFFA63228,
+                                        ),
+                                        visualDensity: VisualDensity.compact,
+                                      ),
+                                    ),
+                                ],
+                              ),
+                              if (receiptImage != null) ...[
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(8),
+                                  child: Image.memory(
+                                    base64Decode(
+                                      receiptImage!.substring(
+                                        receiptImage!.indexOf(',') + 1,
+                                      ),
+                                    ),
+                                    width: double.infinity,
+                                    height: 150,
+                                    fit: BoxFit.contain,
+                                    errorBuilder:
+                                        (
+                                          context,
+                                          error,
+                                          stackTrace,
+                                        ) => const SizedBox(
+                                          height: 90,
+                                          child: Center(
+                                            child: Text(
+                                              'Could not display this image. Please choose another photo.',
+                                              textAlign: TextAlign.center,
+                                            ),
+                                          ),
+                                        ),
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                              ] else
+                                Padding(
+                                  padding: const EdgeInsets.only(bottom: 7),
+                                  child: Text(
+                                    'Official receipt, signed payroll, or voucher photo (JPG / PNG)',
+                                    style: GoogleFonts.inter(
+                                      fontSize: 9,
+                                      color: Colors.grey.shade600,
+                                    ),
+                                  ),
+                                ),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: OutlinedButton.icon(
+                                      onPressed: isSaving || isPickingImage
+                                          ? null
+                                          : () => chooseReceipt(
+                                              ImageSource.camera,
+                                            ),
+                                      icon: isPickingImage
+                                          ? const SizedBox(
+                                              width: 14,
+                                              height: 14,
+                                              child: CircularProgressIndicator(
+                                                strokeWidth: 2,
+                                              ),
+                                            )
+                                          : const Icon(
+                                              Icons.camera_alt_outlined,
+                                              size: 16,
+                                            ),
+                                      label: const Text('Take Photo'),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: OutlinedButton.icon(
+                                      onPressed: isSaving || isPickingImage
+                                          ? null
+                                          : () => chooseReceipt(
+                                              ImageSource.gallery,
+                                            ),
+                                      icon: const Icon(
+                                        Icons.photo_library_outlined,
+                                        size: 16,
+                                      ),
+                                      label: const Text('Upload Photo'),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
                         ),
-                        backgroundColor: const Color(0xFFA63228),
-                      ),
-                    );
-                  }
-                }
-              },
-              child: Text(
-                'Confirm & Save',
-                style: GoogleFonts.inter(
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 12,
-                ),
+                        const SizedBox(height: 12),
+                        fieldLabel('Receipt No. (Optional)'),
+                        TextFormField(
+                          initialValue: receiptNumber,
+                          enabled: !isSaving,
+                          onChanged: (value) => receiptNumber = value,
+                          decoration: fieldDecoration('e.g. REC-078070'),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Divider(height: 1),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(14, 10, 14, 12),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'TOTAL EXPENSE COST',
+                                style: GoogleFonts.inter(
+                                  fontSize: 8,
+                                  fontWeight: FontWeight.w700,
+                                  color: Colors.grey.shade600,
+                                ),
+                              ),
+                              Text(
+                                _formatCurrency(total),
+                                style: GoogleFonts.inter(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w900,
+                                  color: const Color(0xFFA63228),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        TextButton(
+                          onPressed: isSaving
+                              ? null
+                              : () => Navigator.pop(dialogContext),
+                          child: const Text('CANCEL'),
+                        ),
+                        const SizedBox(width: 6),
+                        ElevatedButton(
+                          onPressed: isSaving ? null : saveExpense,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFFE8C547),
+                            foregroundColor: const Color(0xFF241F12),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 14,
+                              vertical: 12,
+                            ),
+                          ),
+                          child: isSaving
+                              ? const SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : Text(
+                                  'SAVE ${items.length} ITEM(S)',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
             ),
-          ],
-        ),
+          );
+        },
       ),
     );
+
+    dialogFuture.whenComplete(() {
+      for (final item in items) {
+        (item['quantity'] as TextEditingController).dispose();
+        (item['price'] as TextEditingController).dispose();
+      }
+    });
   }
 
   void _showLogoutConfirmationDialog() {
@@ -1285,7 +1862,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             onPressed: () async {
               Navigator.pop(context);
               await ApiService.logout();
-              if (mounted) {
+              if (mounted && context.mounted) {
                 Navigator.pushReplacementNamed(context, '/login');
               }
             },
@@ -1299,6 +1876,274 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Future<void> _loadNotifications() async {
+    if (mounted) {
+      setState(() {
+        _isLoadingNotifications = true;
+        _notificationsError = null;
+      });
+    }
+    try {
+      final result = await ApiService.getNotifications();
+      final notifications = result
+          .map((item) => Map<String, dynamic>.from(item as Map))
+          .toList();
+      if (!mounted) return;
+      setState(() {
+        _notifications = notifications;
+        _unreadNotifications = notifications.where((item) {
+          final read = item['read'];
+          return read != true && read?.toString().toLowerCase() != 'true';
+        }).length;
+        _isLoadingNotifications = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _notificationsError = 'Could not load notifications: $e';
+        _isLoadingNotifications = false;
+      });
+    }
+  }
+
+  void _showNotifications() {
+    var startedInitialLoad = false;
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (context, setSheetState) {
+          if (!startedInitialLoad) {
+            startedInitialLoad = true;
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (!context.mounted) return;
+              _loadNotifications().then((_) {
+                if (context.mounted) setSheetState(() {});
+              });
+            });
+          }
+
+          Future<void> refresh() async {
+            await _loadNotifications();
+            if (context.mounted) setSheetState(() {});
+          }
+
+          Future<void> markRead(Map<String, dynamic> notification) async {
+            final id = notification['id'];
+            if (id == null) return;
+            try {
+              await ApiService.markNotificationRead(id);
+              if (!mounted) return;
+              setState(() {
+                notification['read'] = true;
+                _unreadNotifications = _notifications.where((item) {
+                  final read = item['read'];
+                  return read != true &&
+                      read?.toString().toLowerCase() != 'true';
+                }).length;
+              });
+              setSheetState(() {});
+            } catch (e) {
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Could not mark as read: $e')),
+                );
+              }
+            }
+          }
+
+          Future<void> markAllRead() async {
+            try {
+              await ApiService.markAllNotificationsRead();
+              if (!mounted) return;
+              setState(() {
+                for (final notification in _notifications) {
+                  notification['read'] = true;
+                }
+                _unreadNotifications = 0;
+              });
+              setSheetState(() {});
+            } catch (e) {
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Could not mark all as read: $e')),
+                );
+              }
+            }
+          }
+
+          return FractionallySizedBox(
+            heightFactor: 0.82,
+            child: Container(
+              decoration: const BoxDecoration(
+                color: Color(0xFFF8F6F3),
+                borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+              ),
+              child: SafeArea(
+                top: false,
+                child: Column(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(18, 18, 12, 12),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              'Notifications',
+                              style: GoogleFonts.inter(
+                                fontSize: 17,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                          if (_unreadNotifications > 0)
+                            TextButton(
+                              onPressed: markAllRead,
+                              child: const Text('Mark all read'),
+                            ),
+                          IconButton(
+                            tooltip: 'Refresh notifications',
+                            onPressed: refresh,
+                            icon: const Icon(Icons.refresh_rounded),
+                          ),
+                          IconButton(
+                            tooltip: 'Close notifications',
+                            onPressed: () => Navigator.pop(sheetContext),
+                            icon: const Icon(Icons.close_rounded),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Divider(height: 1),
+                    Expanded(
+                      child: _isLoadingNotifications
+                          ? const Center(child: CircularProgressIndicator())
+                          : _notificationsError != null
+                          ? Center(
+                              child: Padding(
+                                padding: const EdgeInsets.all(24),
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      _notificationsError!,
+                                      textAlign: TextAlign.center,
+                                    ),
+                                    const SizedBox(height: 12),
+                                    OutlinedButton(
+                                      onPressed: refresh,
+                                      child: const Text('Try again'),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            )
+                          : _notifications.isEmpty
+                          ? Center(
+                              child: Text(
+                                'You’re all caught up.',
+                                style: GoogleFonts.inter(
+                                  color: Colors.grey.shade600,
+                                ),
+                              ),
+                            )
+                          : ListView.separated(
+                              padding: const EdgeInsets.all(12),
+                              itemCount: _notifications.length,
+                              separatorBuilder: (_, _) =>
+                                  const SizedBox(height: 8),
+                              itemBuilder: (context, index) {
+                                final notification = _notifications[index];
+                                final read =
+                                    notification['read'] == true ||
+                                    notification['read']
+                                            ?.toString()
+                                            .toLowerCase() ==
+                                        'true';
+                                final title =
+                                    notification['title']?.toString() ??
+                                    'Notification';
+                                final message =
+                                    notification['message']?.toString() ?? '';
+                                final type =
+                                    notification['type']?.toString() ?? '';
+                                final date =
+                                    notification['date']?.toString() ?? '';
+                                final time =
+                                    notification['time']?.toString() ?? '';
+                                return Material(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(12),
+                                  child: ListTile(
+                                    onTap: read
+                                        ? null
+                                        : () => markRead(notification),
+                                    leading: Icon(
+                                      read
+                                          ? Icons.notifications_none_rounded
+                                          : Icons.notifications_active_rounded,
+                                      color: read
+                                          ? Colors.grey
+                                          : const Color(0xFFA63228),
+                                    ),
+                                    title: Text(
+                                      title,
+                                      style: GoogleFonts.inter(
+                                        fontSize: 13,
+                                        fontWeight: read
+                                            ? FontWeight.w500
+                                            : FontWeight.bold,
+                                      ),
+                                    ),
+                                    subtitle: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        if (message.isNotEmpty) ...[
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            message,
+                                            style: GoogleFonts.inter(
+                                              fontSize: 11,
+                                            ),
+                                          ),
+                                        ],
+                                        const SizedBox(height: 5),
+                                        Text(
+                                          [type, date, time]
+                                              .where((part) => part.isNotEmpty)
+                                              .join(' • '),
+                                          style: GoogleFonts.inter(
+                                            fontSize: 10,
+                                            color: Colors.grey.shade600,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    trailing: read
+                                        ? null
+                                        : const Icon(
+                                            Icons.circle,
+                                            size: 9,
+                                            color: Color(0xFFA63228),
+                                          ),
+                                    isThreeLine: message.isNotEmpty,
+                                  ),
+                                );
+                              },
+                            ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
       ),
     );
   }
@@ -1317,14 +2162,23 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         builder: (context, setDialogState) {
           return AlertDialog(
             backgroundColor: Colors.white,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+            ),
             title: Row(
               children: [
-                const Icon(Icons.storefront_outlined, color: Color(0xFFA63228), size: 20),
+                const Icon(
+                  Icons.storefront_outlined,
+                  color: Color(0xFFA63228),
+                  size: 20,
+                ),
                 const SizedBox(width: 8),
                 Text(
                   'Project Site Configuration',
-                  style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.bold),
+                  style: GoogleFonts.inter(
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
               ],
             ),
@@ -1335,7 +2189,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 children: [
                   Text(
                     'Select an active project from the database, or enter a custom site location:',
-                    style: GoogleFonts.inter(fontSize: 11, color: Colors.grey.shade600),
+                    style: GoogleFonts.inter(
+                      fontSize: 11,
+                      color: Colors.grey.shade600,
+                    ),
                   ),
                   const SizedBox(height: 12),
                   if (_projectsList.isNotEmpty) ...[
@@ -1349,56 +2206,65 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                       ),
                     ),
                     const SizedBox(height: 6),
-                    ..._projectsList.map((proj) {
-                      final pName = proj['name']?.toString() ?? 'Project';
-                      final pStatus = proj['status']?.toString() ?? 'ONGOING';
-                      final isSelected = !isCustom && selectedSite == pName;
+                    RadioGroup<String>(
+                      groupValue: isCustom ? null : selectedSite,
+                      onChanged: (val) {
+                        if (val != null) {
+                          setDialogState(() {
+                            selectedSite = val;
+                            isCustom = false;
+                            customSiteController.clear();
+                          });
+                        }
+                      },
+                      child: Column(
+                        children: _projectsList.map((proj) {
+                          final pName = proj['name']?.toString() ?? 'Project';
+                          final pStatus =
+                              proj['status']?.toString() ?? 'ONGOING';
+                          final isSelected = !isCustom && selectedSite == pName;
 
-                      return Container(
-                        margin: const EdgeInsets.only(bottom: 6),
-                        decoration: BoxDecoration(
-                          color: isSelected
-                              ? const Color(0xFFA63228).withValues(alpha: 0.08)
-                              : Colors.grey.shade50,
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(
-                            color: isSelected
-                                ? const Color(0xFFA63228)
-                                : Colors.grey.shade200,
-                            width: isSelected ? 1.5 : 1,
-                          ),
-                        ),
-                        child: RadioListTile<String>(
-                          dense: true,
-                          value: pName,
-                          groupValue: isCustom ? null : selectedSite,
-                          activeColor: const Color(0xFFA63228),
-                          title: Text(
-                            pName,
-                            style: GoogleFonts.inter(
-                              fontSize: 12,
-                              fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                          return Container(
+                            margin: const EdgeInsets.only(bottom: 6),
+                            decoration: BoxDecoration(
+                              color: isSelected
+                                  ? const Color(
+                                      0xFFA63228,
+                                    ).withValues(alpha: 0.08)
+                                  : Colors.grey.shade50,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: isSelected
+                                    ? const Color(0xFFA63228)
+                                    : Colors.grey.shade200,
+                                width: isSelected ? 1.5 : 1,
+                              ),
                             ),
-                          ),
-                          subtitle: Text(
-                            'Status: $pStatus',
-                            style: GoogleFonts.inter(
-                              fontSize: 10,
-                              color: Colors.grey.shade500,
+                            child: RadioListTile<String>(
+                              dense: true,
+                              value: pName,
+                              activeColor: const Color(0xFFA63228),
+                              title: Text(
+                                pName,
+                                style: GoogleFonts.inter(
+                                  fontSize: 12,
+                                  fontWeight: isSelected
+                                      ? FontWeight.bold
+                                      : FontWeight.w500,
+                                ),
+                              ),
+                              subtitle: Text(
+                                'Status: $pStatus',
+                                style: GoogleFonts.inter(
+                                  fontSize: 10,
+                                  color: Colors.grey.shade500,
+                                ),
+                              ),
                             ),
-                          ),
-                          onChanged: (val) {
-                            if (val != null) {
-                              setDialogState(() {
-                                selectedSite = val;
-                                isCustom = false;
-                                customSiteController.clear();
-                              });
-                            }
-                          },
-                        ),
-                      );
-                    }),
+                          );
+                        }).toList(),
+                      ),
+                    ),
                     const SizedBox(height: 8),
                   ],
                   // Custom Site Option
@@ -1416,23 +2282,29 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                         width: isCustom ? 1.5 : 1,
                       ),
                     ),
-                    child: RadioListTile<bool>(
-                      dense: true,
-                      value: true,
+                    child: RadioGroup<bool>(
                       groupValue: isCustom,
-                      activeColor: const Color(0xFFA63228),
-                      title: Text(
-                        'Custom Project Site',
-                        style: GoogleFonts.inter(
-                          fontSize: 12,
-                          fontWeight: isCustom ? FontWeight.bold : FontWeight.w500,
+                      onChanged: (val) {
+                        if (val == true) {
+                          setDialogState(() {
+                            isCustom = true;
+                          });
+                        }
+                      },
+                      child: RadioListTile<bool>(
+                        dense: true,
+                        value: true,
+                        activeColor: const Color(0xFFA63228),
+                        title: Text(
+                          'Custom Project Site',
+                          style: GoogleFonts.inter(
+                            fontSize: 12,
+                            fontWeight: isCustom
+                                ? FontWeight.bold
+                                : FontWeight.w500,
+                          ),
                         ),
                       ),
-                      onChanged: (val) {
-                        setDialogState(() {
-                          isCustom = true;
-                        });
-                      },
                     ),
                   ),
                   if (isCustom) ...[
@@ -1452,7 +2324,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                         ),
                         focusedBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(8),
-                          borderSide: const BorderSide(color: Color(0xFFA63228)),
+                          borderSide: const BorderSide(
+                            color: Color(0xFFA63228),
+                          ),
                         ),
                       ),
                       onChanged: (val) {
@@ -1483,8 +2357,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                   ),
                 ),
                 onPressed: () async {
-                  final siteToSave =
-                      isCustom ? customSiteController.text.trim() : selectedSite;
+                  final siteToSave = isCustom
+                      ? customSiteController.text.trim()
+                      : selectedSite;
                   if (siteToSave.isEmpty) return;
 
                   try {
@@ -1494,7 +2369,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                       biometricLoginEnabled: false,
                       assignedProjectSite: siteToSave,
                     );
-                    if (mounted) {
+                    if (mounted && context.mounted) {
                       setState(() => _activeProjectSite = siteToSave);
                       Navigator.pop(context);
                       ScaffoldMessenger.of(context).showSnackBar(
@@ -1509,7 +2384,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                       );
                     }
                   } catch (e) {
-                    if (mounted) {
+                    if (mounted && context.mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
                           content: Text('Failed to update project site: $e'),
@@ -1577,15 +2452,16 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         'ID,Full Name,Role,Contact Number,Daily Rate,Status,Approval Status',
       );
       for (final w in workers) {
-        final id = w['id'] ?? w['worker_id'] ?? '';
+        final id = w['worker_code'] ?? w['id'] ?? w['worker_id'] ?? '';
         final name =
             (w['full_name'] ??
                     '${w['first_name'] ?? ''} ${w['last_name'] ?? ''}')
                 .toString()
                 .replaceAll(',', ' ')
                 .trim();
-        final role =
-            (w['role'] ?? w['trade'] ?? 'Worker').toString().replaceAll(',', ' ');
+        final role = (w['role'] ?? w['trade'] ?? 'Worker')
+            .toString()
+            .replaceAll(',', ' ');
         final phone = (w['phone'] ?? w['contact_number'] ?? 'N/A').toString();
         final rate = (w['daily_rate'] ?? w['rate'] ?? 0).toString();
         final status = (w['status'] ?? 'Active').toString();
@@ -1603,8 +2479,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       for (final v in vales) {
         final id = v['id'] ?? '';
         final wid = v['worker_id'] ?? '';
-        final wname =
-            (v['worker_name'] ?? 'Worker').toString().replaceAll(',', ' ');
+        final wname = (v['worker_name'] ?? 'Worker').toString().replaceAll(
+          ',',
+          ' ',
+        );
         final amt = (v['amount'] ?? 0).toString();
         final reason = (v['reason'] ?? '')
             .toString()
@@ -1814,23 +2692,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     );
   }
 
-  String _getTitleForIndex(int index) {
-    switch (index) {
-      case 0:
-        return 'Admin Dashboard';
-      case 1:
-        return 'Tools Monitoring';
-      case 2:
-        return 'Cash Advance Approvals';
-      case 3:
-        return 'Manpower Directory';
-      case 4:
-        return 'Admin Settings';
-      default:
-        return 'Admin Portal';
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;
@@ -1838,42 +2699,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
     return Scaffold(
       backgroundColor: const Color(0xFFF3EFEA),
-      appBar: AppBar(
-        automaticallyImplyLeading: false,
-        backgroundColor: Colors.white,
-        elevation: 0,
-        centerTitle: true,
-        iconTheme: const IconThemeData(color: Colors.black87),
-        title: Text(
-          _getTitleForIndex(_currentIndex),
-          style: GoogleFonts.inter(
-            fontSize: 14,
-            fontWeight: FontWeight.bold,
-            color: Colors.black87,
-          ),
-        ),
-        actions: [
-          GestureDetector(
-            onTap: () => Navigator.pushNamed(context, '/admin_profile'),
-            child: Padding(
-              padding: const EdgeInsets.only(right: 14),
-              child: CircleAvatar(
-                radius: 16,
-                backgroundColor: const Color(0xFFA63228),
-                child: Text(
-                  _adminFirstName.isNotEmpty
-                      ? _adminFirstName[0].toUpperCase()
-                      : 'A',
-                  style: GoogleFonts.inter(
-                    color: Colors.white,
-                    fontSize: 13,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ],
+      appBar: AdminMobileAppBar(
+        unreadCount: _unreadNotifications,
+        onNotificationsPressed: _showNotifications,
+        onLogoutPressed: _showLogoutConfirmationDialog,
       ),
       body: SafeArea(
         child: IndexedStack(
@@ -1883,18 +2712,28 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             const ToolsMonitoringScreen(hideAppBar: true),
             _buildValeApprovalsTab(screenWidth, screenHeight),
             _buildManpowerTab(screenWidth, screenHeight),
-            _buildSettingsTab(screenWidth, screenHeight),
+            ApiService.currentUserRole?.toLowerCase() == 'admin'
+                ? const SizedBox.shrink()
+                : _buildSettingsTab(screenWidth, screenHeight),
           ],
         ),
       ),
-      bottomNavigationBar: BottomNavigationBar(
+      bottomNavigationBar: AdminMobileBottomNavigationBar(
         currentIndex: _currentIndex,
+        pendingCashAdvances: _pendingValeRequests.length,
+        pendingWorkers: _pendingRegistrations.length,
         onTap: (index) {
+          if (index == 4) {
+            Navigator.pushNamed(context, '/attendance_management');
+            return;
+          }
+
           setState(() {
             _currentIndex = index;
           });
           if (index == 0) {
             _loadDashboardData();
+            _loadAttendanceSummary();
           } else if (index == 2) {
             _loadPendingValeRequests();
             _loadValeHistory();
@@ -1903,61 +2742,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             _loadPendingRegistrations();
           }
         },
-        selectedItemColor: const Color(0xFFA63228),
-        unselectedItemColor: Colors.grey.shade500,
-        showUnselectedLabels: true,
-        type: BottomNavigationBarType.fixed,
-        selectedLabelStyle: GoogleFonts.inter(
-          fontSize: 10,
-          fontWeight: FontWeight.bold,
-        ),
-        unselectedLabelStyle: GoogleFonts.inter(
-          fontSize: 10,
-          fontWeight: FontWeight.w500,
-        ),
-        items: [
-          const BottomNavigationBarItem(
-            icon: Icon(Icons.grid_view_outlined),
-            activeIcon: Icon(Icons.grid_view_rounded),
-            label: 'Overview',
-          ),
-          const BottomNavigationBarItem(
-            icon: Icon(Icons.handyman_outlined),
-            activeIcon: Icon(Icons.handyman_rounded),
-            label: 'Tools',
-          ),
-          BottomNavigationBarItem(
-            icon: Badge(
-              isLabelVisible: _pendingValeRequests.isNotEmpty,
-              label: Text('${_pendingValeRequests.length}'),
-              child: const Icon(Icons.payments_outlined),
-            ),
-            activeIcon: Badge(
-              isLabelVisible: _pendingValeRequests.isNotEmpty,
-              label: Text('${_pendingValeRequests.length}'),
-              child: const Icon(Icons.payments_rounded),
-            ),
-            label: 'Cash Adv',
-          ),
-          BottomNavigationBarItem(
-            icon: Badge(
-              isLabelVisible: _pendingRegistrations.isNotEmpty,
-              label: Text('${_pendingRegistrations.length}'),
-              child: const Icon(Icons.groups_outlined),
-            ),
-            activeIcon: Badge(
-              isLabelVisible: _pendingRegistrations.isNotEmpty,
-              label: Text('${_pendingRegistrations.length}'),
-              child: const Icon(Icons.groups_rounded),
-            ),
-            label: 'Manpower',
-          ),
-          const BottomNavigationBarItem(
-            icon: Icon(Icons.settings_outlined),
-            activeIcon: Icon(Icons.settings_rounded),
-            label: 'Settings',
-          ),
-        ],
       ),
     );
   }
@@ -1968,6 +2752,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       onRefresh: () async {
         await Future.wait([
           _loadDashboardData(),
+          _loadAttendanceSummary(),
           _loadPendingRegistrations(),
           _loadWorkers(),
         ]);
@@ -2007,7 +2792,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        '${_greeting()}, ${_adminFirstName.isNotEmpty ? _adminFirstName : 'Engr. Aldrich'}.',
+                        '${_greeting()} ${[_adminFirstName, _adminLastName].where((part) => part.trim().isNotEmpty).join(' ')}',
                         style: GoogleFonts.inter(
                           fontSize: 18,
                           fontWeight: FontWeight.w800,
@@ -2726,6 +3511,61 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 ),
               ],
             ),
+            const SizedBox(height: 6),
+            if (_attendanceSummaryError != null)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 8,
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: Colors.grey.shade200),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        _attendanceSummaryError!,
+                        style: GoogleFonts.inter(
+                          fontSize: 10,
+                          color: const Color(0xFFA63228),
+                        ),
+                      ),
+                    ),
+                    TextButton(
+                      onPressed: _isLoadingAttendanceSummary
+                          ? null
+                          : _loadAttendanceSummary,
+                      child: const Text('Retry'),
+                    ),
+                  ],
+                ),
+              )
+            else
+              Row(
+                children: [
+                  _buildStatCard(
+                    'Full day',
+                    _isLoadingAttendanceSummary ? '—' : '$_fullDayToday',
+                    Icons.task_alt_rounded,
+                  ),
+                  const SizedBox(width: 6),
+                  _buildStatCard(
+                    'Late',
+                    _isLoadingAttendanceSummary ? '—' : '$_lateToday',
+                    Icons.schedule_rounded,
+                  ),
+                  const SizedBox(width: 6),
+                  _buildStatCard(
+                    'Halfday',
+                    _isLoadingAttendanceSummary ? '—' : '$_halfdayToday',
+                    Icons.timelapse_rounded,
+                  ),
+                ],
+              ),
             const SizedBox(height: 14),
 
             // PENDING APPROVALS LIST
@@ -2741,7 +3581,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                   ),
                 ),
                 InkWell(
-                  onTap: () => setState(() => _currentIndex = 1),
+                  onTap: () => setState(() => _currentIndex = 3),
                   child: Text(
                     'View All',
                     style: GoogleFonts.inter(
@@ -2885,7 +3725,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               unselectedLabelColor: Colors.grey.shade600,
               indicatorColor: const Color(0xFFA63228),
               indicatorWeight: 2.5,
-              labelStyle: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 12),
+              labelStyle: GoogleFonts.inter(
+                fontWeight: FontWeight.bold,
+                fontSize: 12,
+              ),
               tabs: [
                 Tab(
                   child: Row(
@@ -2895,7 +3738,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                       if (_pendingValeRequests.isNotEmpty) ...[
                         const SizedBox(width: 6),
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 1,
+                          ),
                           decoration: BoxDecoration(
                             color: const Color(0xFFA63228),
                             borderRadius: BorderRadius.circular(10),
@@ -2921,7 +3767,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                       if (_valeHistory.isNotEmpty) ...[
                         const SizedBox(width: 6),
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 1,
+                          ),
                           decoration: BoxDecoration(
                             color: Colors.grey.shade200,
                             borderRadius: BorderRadius.circular(10),
@@ -2961,7 +3810,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     // 1. Filter by query and date
     var list = _pendingValeRequests.where((v) {
       if (_pendingSelectedDate != null) {
-        final dt = _extractValeDateTime(v['date'] ?? v['created_at'] ?? v['request_date']);
+        final dt = _extractValeDateTime(
+          v['date'] ?? v['created_at'] ?? v['request_date'],
+        );
         if (dt == null ||
             dt.year != _pendingSelectedDate!.year ||
             dt.month != _pendingSelectedDate!.month ||
@@ -2972,11 +3823,18 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
       if (pendingQuery.isEmpty) return true;
       final name = (v['name'] ?? v['workerName'] ?? v['workerFullName'] ?? '')
-          .toString().toLowerCase();
+          .toString()
+          .toLowerCase();
       final reason = (v['reason'] ?? '').toString().toLowerCase();
-      final role = (v['role'] ?? v['workerRole'] ?? '').toString().toLowerCase();
-      final amount = (v['amount'] ?? v['rawAmount'] ?? '').toString().toLowerCase();
-      final dateStr = _formatValeDate(v['date'] ?? v['created_at'] ?? v['request_date']).toLowerCase();
+      final role = (v['role'] ?? v['workerRole'] ?? '')
+          .toString()
+          .toLowerCase();
+      final amount = (v['amount'] ?? v['rawAmount'] ?? '')
+          .toString()
+          .toLowerCase();
+      final dateStr = _formatValeDate(
+        v['date'] ?? v['created_at'] ?? v['request_date'],
+      ).toLowerCase();
 
       return name.contains(pendingQuery) ||
           reason.contains(pendingQuery) ||
@@ -2988,8 +3846,12 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     // 2. Sort
     if (_pendingSortFilter == 'Newest') {
       list.sort((a, b) {
-        final da = _extractValeDateTime(a['date'] ?? a['created_at'] ?? a['request_date']);
-        final db = _extractValeDateTime(b['date'] ?? b['created_at'] ?? b['request_date']);
+        final da = _extractValeDateTime(
+          a['date'] ?? a['created_at'] ?? a['request_date'],
+        );
+        final db = _extractValeDateTime(
+          b['date'] ?? b['created_at'] ?? b['request_date'],
+        );
         if (da == null && db == null) return 0;
         if (da == null) return 1;
         if (db == null) return -1;
@@ -2997,8 +3859,12 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       });
     } else if (_pendingSortFilter == 'Oldest') {
       list.sort((a, b) {
-        final da = _extractValeDateTime(a['date'] ?? a['created_at'] ?? a['request_date']);
-        final db = _extractValeDateTime(b['date'] ?? b['created_at'] ?? b['request_date']);
+        final da = _extractValeDateTime(
+          a['date'] ?? a['created_at'] ?? a['request_date'],
+        );
+        final db = _extractValeDateTime(
+          b['date'] ?? b['created_at'] ?? b['request_date'],
+        );
         if (da == null && db == null) return 0;
         if (da == null) return 1;
         if (db == null) return -1;
@@ -3030,11 +3896,22 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             style: GoogleFonts.inter(fontSize: 13),
             decoration: InputDecoration(
               hintText: 'Search by name, role, reason, or date...',
-              hintStyle: GoogleFonts.inter(fontSize: 12, color: Colors.grey.shade400),
-              prefixIcon: const Icon(Icons.search_rounded, size: 20, color: Color(0xFFA63228)),
+              hintStyle: GoogleFonts.inter(
+                fontSize: 12,
+                color: Colors.grey.shade400,
+              ),
+              prefixIcon: const Icon(
+                Icons.search_rounded,
+                size: 20,
+                color: Color(0xFFA63228),
+              ),
               suffixIcon: _pendingSearchQuery.isNotEmpty
                   ? IconButton(
-                      icon: const Icon(Icons.close_rounded, size: 18, color: Colors.grey),
+                      icon: const Icon(
+                        Icons.close_rounded,
+                        size: 18,
+                        color: Colors.grey,
+                      ),
                       onPressed: () {
                         _pendingSearchController.clear();
                         setState(() => _pendingSearchQuery = '');
@@ -3043,7 +3920,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                   : null,
               filled: true,
               fillColor: Colors.grey.shade50,
-              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 10,
+              ),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(10),
                 borderSide: BorderSide(color: Colors.grey.shade200),
@@ -3054,7 +3934,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(10),
-                borderSide: const BorderSide(color: Color(0xFFA63228), width: 1.5),
+                borderSide: const BorderSide(
+                  color: Color(0xFFA63228),
+                  width: 1.5,
+                ),
               ),
             ),
           ),
@@ -3069,19 +3952,30 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             child: Row(
               children: [
                 ...['All', 'Newest', 'Oldest', 'Highest Amount'].map((filter) {
-                  final isSelected = _pendingSortFilter == filter && _pendingSelectedDate == null;
+                  final isSelected =
+                      _pendingSortFilter == filter &&
+                      _pendingSelectedDate == null;
                   return Padding(
                     padding: const EdgeInsets.only(right: 6),
                     child: FilterChip(
                       selected: isSelected,
                       showCheckmark: false,
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 2,
+                      ),
                       label: Text(
-                        filter == 'All' ? 'All (${_pendingValeRequests.length})' : filter,
+                        filter == 'All'
+                            ? 'All (${_pendingValeRequests.length})'
+                            : filter,
                         style: GoogleFonts.inter(
                           fontSize: 11,
-                          fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-                          color: isSelected ? Colors.white : Colors.grey.shade700,
+                          fontWeight: isSelected
+                              ? FontWeight.bold
+                              : FontWeight.w500,
+                          color: isSelected
+                              ? Colors.white
+                              : Colors.grey.shade700,
                         ),
                       ),
                       selectedColor: const Color(0xFFA63228),
@@ -3089,7 +3983,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(16),
                         side: BorderSide(
-                          color: isSelected ? const Color(0xFFA63228) : Colors.grey.shade300,
+                          color: isSelected
+                              ? const Color(0xFFA63228)
+                              : Colors.grey.shade300,
                         ),
                       ),
                       onSelected: (_) {
@@ -3109,7 +4005,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                           ? Icons.event_available_rounded
                           : Icons.calendar_month_rounded,
                       size: 14,
-                      color: _pendingSelectedDate != null ? Colors.white : const Color(0xFFA63228),
+                      color: _pendingSelectedDate != null
+                          ? Colors.white
+                          : const Color(0xFFA63228),
                     ),
                     backgroundColor: _pendingSelectedDate != null
                         ? const Color(0xFFA63228)
@@ -3122,15 +4020,22 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                             : Colors.grey.shade300,
                       ),
                     ),
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 2,
+                    ),
                     label: Text(
                       _pendingSelectedDate != null
                           ? '${_formatReadableDate(_pendingSelectedDate!)} ✕'
                           : 'Filter Date',
                       style: GoogleFonts.inter(
                         fontSize: 11,
-                        fontWeight: _pendingSelectedDate != null ? FontWeight.bold : FontWeight.w500,
-                        color: _pendingSelectedDate != null ? Colors.white : Colors.grey.shade700,
+                        fontWeight: _pendingSelectedDate != null
+                            ? FontWeight.bold
+                            : FontWeight.w500,
+                        color: _pendingSelectedDate != null
+                            ? Colors.white
+                            : Colors.grey.shade700,
                       ),
                     ),
                     onPressed: () async {
@@ -3176,7 +4081,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  pendingQuery.isEmpty && _pendingSelectedDate == null && _pendingSortFilter == 'All'
+                  pendingQuery.isEmpty &&
+                          _pendingSelectedDate == null &&
+                          _pendingSortFilter == 'All'
                       ? '${_pendingValeRequests.length} pending request${_pendingValeRequests.length != 1 ? 's' : ''}'
                       : '${list.length} of ${_pendingValeRequests.length} match',
                   style: GoogleFonts.inter(
@@ -3213,7 +4120,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Icon(
-                              pendingQuery.isEmpty && _pendingSelectedDate == null
+                              pendingQuery.isEmpty &&
+                                      _pendingSelectedDate == null
                                   ? Icons.payments_outlined
                                   : Icons.search_off_rounded,
                               size: 42,
@@ -3221,7 +4129,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                             ),
                             const SizedBox(height: 10),
                             Text(
-                              pendingQuery.isEmpty && _pendingSelectedDate == null
+                              pendingQuery.isEmpty &&
+                                      _pendingSelectedDate == null
                                   ? 'No Pending Vale Requests'
                                   : 'No results found',
                               style: GoogleFonts.inter(
@@ -3232,7 +4141,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                             ),
                             const SizedBox(height: 4),
                             Text(
-                              pendingQuery.isEmpty && _pendingSelectedDate == null
+                              pendingQuery.isEmpty &&
+                                      _pendingSelectedDate == null
                                   ? 'No pending cash advances. Pull down to refresh.'
                                   : 'Try adjusting your search or date filter.',
                               style: GoogleFonts.inter(
@@ -3253,20 +4163,24 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                       final vale = list[index];
                       // find original index for approval handler
                       final originalIndex = _pendingValeRequests.indexOf(vale);
-                      final name = (vale['name'] ??
-                              vale['workerName'] ??
-                              vale['workerFullName'] ??
-                              'Worker')
-                          .toString();
+                      final name =
+                          (vale['name'] ??
+                                  vale['workerName'] ??
+                                  vale['workerFullName'] ??
+                                  'Worker')
+                              .toString();
                       final rawAmount = vale['amount'] ?? vale['rawAmount'];
                       final amountFormatted = _formatValeAmount(rawAmount);
                       final role =
                           (vale['role'] ?? vale['workerRole'] ?? 'Worker')
                               .toString();
-                      final reason =
-                          (vale['reason'] ?? 'No reason provided').toString();
+                      final reason = (vale['reason'] ?? 'No reason provided')
+                          .toString();
                       final dateStr = _formatValeDate(
-                          vale['date'] ?? vale['created_at'] ?? vale['request_date']);
+                        vale['date'] ??
+                            vale['created_at'] ??
+                            vale['request_date'],
+                      );
 
                       return Container(
                         margin: const EdgeInsets.only(bottom: 8),
@@ -3288,10 +4202,13 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                                     children: [
                                       CircleAvatar(
                                         radius: 14,
-                                        backgroundColor: const Color(0xFFA63228)
-                                            .withValues(alpha: 0.1),
+                                        backgroundColor: const Color(
+                                          0xFFA63228,
+                                        ).withValues(alpha: 0.1),
                                         child: Text(
-                                          name.isNotEmpty ? name[0].toUpperCase() : 'W',
+                                          name.isNotEmpty
+                                              ? name[0].toUpperCase()
+                                              : 'W',
                                           style: GoogleFonts.inter(
                                             fontSize: 11,
                                             fontWeight: FontWeight.bold,
@@ -3335,11 +4252,16 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                             // ── Dedicated Highlighted Date Row ──
                             Container(
                               margin: const EdgeInsets.only(top: 6, bottom: 4),
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 4,
+                              ),
                               decoration: BoxDecoration(
                                 color: const Color(0xFFFDF4E7),
                                 borderRadius: BorderRadius.circular(6),
-                                border: Border.all(color: const Color(0xFFF5D8A0)),
+                                border: Border.all(
+                                  color: const Color(0xFFF5D8A0),
+                                ),
                               ),
                               child: Row(
                                 mainAxisSize: MainAxisSize.min,
@@ -3368,15 +4290,19 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                                 Expanded(
                                   child: OutlinedButton(
                                     style: OutlinedButton.styleFrom(
-                                      side: BorderSide(color: Colors.grey.shade300),
+                                      side: BorderSide(
+                                        color: Colors.grey.shade300,
+                                      ),
                                       shape: RoundedRectangleBorder(
                                         borderRadius: BorderRadius.circular(6),
                                       ),
                                       padding: EdgeInsets.zero,
                                       minimumSize: const Size(0, 30),
                                     ),
-                                    onPressed: () =>
-                                        _handleValeApproval(originalIndex, false),
+                                    onPressed: () => _handleValeApproval(
+                                      originalIndex,
+                                      false,
+                                    ),
                                     child: Text(
                                       'Reject',
                                       style: GoogleFonts.inter(
@@ -3399,8 +4325,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                                       padding: EdgeInsets.zero,
                                       minimumSize: const Size(0, 30),
                                     ),
-                                    onPressed: () =>
-                                        _handleValeApproval(originalIndex, true),
+                                    onPressed: () => _handleValeApproval(
+                                      originalIndex,
+                                      true,
+                                    ),
                                     child: Text(
                                       'Approve Vale',
                                       style: GoogleFonts.inter(
@@ -3429,14 +4357,17 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
     // 1. Filter by status, date, and query
     final filteredHistory = _valeHistory.where((v) {
-      final statusMatch = _valeHistoryFilter == 'All' ||
+      final statusMatch =
+          _valeHistoryFilter == 'All' ||
           (v['status'] ?? '').toString().toLowerCase() ==
               _valeHistoryFilter.toLowerCase();
       if (!statusMatch) return false;
 
       // Date filter
       if (_historySelectedDate != null) {
-        final dt = _extractValeDateTime(v['date'] ?? v['created_at'] ?? v['request_date']);
+        final dt = _extractValeDateTime(
+          v['date'] ?? v['created_at'] ?? v['request_date'],
+        );
         if (dt == null ||
             dt.year != _historySelectedDate!.year ||
             dt.month != _historySelectedDate!.month ||
@@ -3447,11 +4378,18 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
       if (historyQuery.isEmpty) return true;
       final name = (v['workerName'] ?? v['name'] ?? v['workerFullName'] ?? '')
-          .toString().toLowerCase();
+          .toString()
+          .toLowerCase();
       final reason = (v['reason'] ?? '').toString().toLowerCase();
-      final role = (v['role'] ?? v['workerRole'] ?? '').toString().toLowerCase();
-      final amount = (v['amount'] ?? v['rawAmount'] ?? '').toString().toLowerCase();
-      final dateStr = _formatValeDate(v['date'] ?? v['created_at'] ?? v['request_date']).toLowerCase();
+      final role = (v['role'] ?? v['workerRole'] ?? '')
+          .toString()
+          .toLowerCase();
+      final amount = (v['amount'] ?? v['rawAmount'] ?? '')
+          .toString()
+          .toLowerCase();
+      final dateStr = _formatValeDate(
+        v['date'] ?? v['created_at'] ?? v['request_date'],
+      ).toLowerCase();
 
       return name.contains(historyQuery) ||
           reason.contains(historyQuery) ||
@@ -3462,8 +4400,12 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
     // 2. Sort newest first
     filteredHistory.sort((a, b) {
-      final da = _extractValeDateTime(a['date'] ?? a['created_at'] ?? a['request_date']);
-      final db = _extractValeDateTime(b['date'] ?? b['created_at'] ?? b['request_date']);
+      final da = _extractValeDateTime(
+        a['date'] ?? a['created_at'] ?? a['request_date'],
+      );
+      final db = _extractValeDateTime(
+        b['date'] ?? b['created_at'] ?? b['request_date'],
+      );
       if (da == null && db == null) return 0;
       if (da == null) return 1;
       if (db == null) return -1;
@@ -3496,14 +4438,22 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               style: GoogleFonts.inter(fontSize: 13),
               decoration: InputDecoration(
                 hintText: 'Search history by name, role, reason, or date...',
-                hintStyle:
-                    GoogleFonts.inter(fontSize: 12, color: Colors.grey.shade400),
-                prefixIcon: const Icon(Icons.search_rounded,
-                    size: 20, color: Color(0xFFA63228)),
+                hintStyle: GoogleFonts.inter(
+                  fontSize: 12,
+                  color: Colors.grey.shade400,
+                ),
+                prefixIcon: const Icon(
+                  Icons.search_rounded,
+                  size: 20,
+                  color: Color(0xFFA63228),
+                ),
                 suffixIcon: _historySearchQuery.isNotEmpty
                     ? IconButton(
-                        icon: const Icon(Icons.close_rounded,
-                            size: 18, color: Colors.grey),
+                        icon: const Icon(
+                          Icons.close_rounded,
+                          size: 18,
+                          color: Colors.grey,
+                        ),
                         onPressed: () {
                           _historySearchController.clear();
                           setState(() => _historySearchQuery = '');
@@ -3512,8 +4462,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                     : null,
                 filled: true,
                 fillColor: Colors.grey.shade50,
-                contentPadding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 10,
+                ),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(10),
                   borderSide: BorderSide(color: Colors.grey.shade200),
@@ -3524,8 +4476,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(10),
-                  borderSide:
-                      const BorderSide(color: Color(0xFFA63228), width: 1.5),
+                  borderSide: const BorderSide(
+                    color: Color(0xFFA63228),
+                    width: 1.5,
+                  ),
                 ),
               ),
             ),
@@ -3543,10 +4497,14 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                     final count = filter == 'All'
                         ? _valeHistory.length
                         : _valeHistory
-                            .where((v) =>
-                                (v['status'] ?? '').toString().toLowerCase() ==
-                                filter.toLowerCase())
-                            .length;
+                              .where(
+                                (v) =>
+                                    (v['status'] ?? '')
+                                        .toString()
+                                        .toLowerCase() ==
+                                    filter.toLowerCase(),
+                              )
+                              .length;
 
                     return Padding(
                       padding: const EdgeInsets.only(right: 6),
@@ -3554,13 +4512,16 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                         selected: isSelected,
                         showCheckmark: false,
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 6, vertical: 2),
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
                         label: Text(
                           '$filter ($count)',
                           style: GoogleFonts.inter(
                             fontSize: 11,
-                            fontWeight:
-                                isSelected ? FontWeight.bold : FontWeight.w500,
+                            fontWeight: isSelected
+                                ? FontWeight.bold
+                                : FontWeight.w500,
                             color: isSelected
                                 ? Colors.white
                                 : Colors.grey.shade700,
@@ -3606,7 +4567,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                               : Colors.grey.shade300,
                         ),
                       ),
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 2,
+                      ),
                       label: Text(
                         _historySelectedDate != null
                             ? '${_formatReadableDate(_historySelectedDate!)} ✕'
@@ -3664,7 +4628,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
-                    historyQuery.isEmpty && _historySelectedDate == null && _valeHistoryFilter == 'All'
+                    historyQuery.isEmpty &&
+                            _historySelectedDate == null &&
+                            _valeHistoryFilter == 'All'
                         ? '${_valeHistory.length} total record${_valeHistory.length != 1 ? 's' : ''}'
                         : '${filteredHistory.length} of ${_valeHistory.length} shown',
                     style: GoogleFonts.inter(
@@ -3690,241 +4656,237 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           Expanded(
             child: _isLoadingValeHistory
                 ? const Center(
-                    child:
-                        CircularProgressIndicator(color: Color(0xFFA63228)),
+                    child: CircularProgressIndicator(color: Color(0xFFA63228)),
                   )
                 : filteredHistory.isEmpty
-                    ? ListView(
-                        physics: const AlwaysScrollableScrollPhysics(),
-                        children: [
-                          SizedBox(height: screenHeight * 0.18),
-                          Center(
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(
-                                  historyQuery.isNotEmpty || _historySelectedDate != null
-                                      ? Icons.search_off_rounded
-                                      : Icons.receipt_long_outlined,
-                                  size: 42,
-                                  color: Colors.grey.shade400,
-                                ),
-                                const SizedBox(height: 10),
-                                Text(
-                                  historyQuery.isNotEmpty || _historySelectedDate != null
-                                      ? 'No matching records'
-                                      : 'No Cash Advance History',
-                                  style: GoogleFonts.inter(
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.black87,
-                                  ),
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  historyQuery.isNotEmpty || _historySelectedDate != null
-                                      ? 'Try a different keyword or clear the date filter.'
-                                      : _valeHistoryFilter == 'All'
-                                          ? 'No processed cash advances found. Pull to refresh.'
-                                          : 'No $_valeHistoryFilter records found.',
-                                  style: GoogleFonts.inter(
-                                    fontSize: 11,
-                                    color: Colors.grey.shade600,
-                                  ),
-                                ),
-                              ],
+                ? ListView(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    children: [
+                      SizedBox(height: screenHeight * 0.18),
+                      Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              historyQuery.isNotEmpty ||
+                                      _historySelectedDate != null
+                                  ? Icons.search_off_rounded
+                                  : Icons.receipt_long_outlined,
+                              size: 42,
+                              color: Colors.grey.shade400,
                             ),
-                          ),
-                        ],
-                      )
-                    : ListView.builder(
-                        physics: const AlwaysScrollableScrollPhysics(),
-                        padding: const EdgeInsets.all(10),
-                        itemCount: filteredHistory.length,
-                        itemBuilder: (context, index) {
-                          final item = filteredHistory[index];
-                          final name = (item['workerName'] ??
+                            const SizedBox(height: 10),
+                            Text(
+                              historyQuery.isNotEmpty ||
+                                      _historySelectedDate != null
+                                  ? 'No matching records'
+                                  : 'No Cash Advance History',
+                              style: GoogleFonts.inter(
+                                fontSize: 14,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.black87,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              historyQuery.isNotEmpty ||
+                                      _historySelectedDate != null
+                                  ? 'Try a different keyword or clear the date filter.'
+                                  : _valeHistoryFilter == 'All'
+                                  ? 'No processed cash advances found. Pull to refresh.'
+                                  : 'No $_valeHistoryFilter records found.',
+                              style: GoogleFonts.inter(
+                                fontSize: 11,
+                                color: Colors.grey.shade600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  )
+                : ListView.builder(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    padding: const EdgeInsets.all(10),
+                    itemCount: filteredHistory.length,
+                    itemBuilder: (context, index) {
+                      final item = filteredHistory[index];
+                      final name =
+                          (item['workerName'] ??
                                   item['name'] ??
                                   item['workerFullName'] ??
                                   'Worker')
                               .toString();
-                          final rawAmount =
-                              item['amount'] ?? item['rawAmount'];
-                          final amountFormatted =
-                              _formatValeAmount(rawAmount);
-                          final role = (item['role'] ??
-                                  item['workerRole'] ??
-                                  'Worker')
+                      final rawAmount = item['amount'] ?? item['rawAmount'];
+                      final amountFormatted = _formatValeAmount(rawAmount);
+                      final role =
+                          (item['role'] ?? item['workerRole'] ?? 'Worker')
                               .toString();
-                          final reason =
-                              (item['reason'] ?? 'No reason provided')
-                                  .toString();
-                          final status =
-                              (item['status'] ?? 'Pending').toString();
-                          final dateStr = _formatValeDate(
-                              item['date'] ??
-                                  item['created_at'] ??
-                                  item['request_date']);
+                      final reason = (item['reason'] ?? 'No reason provided')
+                          .toString();
+                      final status = (item['status'] ?? 'Pending').toString();
+                      final dateStr = _formatValeDate(
+                        item['date'] ??
+                            item['created_at'] ??
+                            item['request_date'],
+                      );
 
-                          final isApproved =
-                              status.toLowerCase() == 'approved';
-                          final isRejected =
-                              status.toLowerCase() == 'rejected';
-                          final isPending =
-                              status.toLowerCase() == 'pending';
+                      final isApproved = status.toLowerCase() == 'approved';
+                      final isRejected = status.toLowerCase() == 'rejected';
+                      final isPending = status.toLowerCase() == 'pending';
 
-                          Color statusBg = Colors.grey.shade100;
-                          Color statusBorder = Colors.grey.shade300;
-                          Color statusText = Colors.grey.shade700;
-                          IconData statusIcon = Icons.info_outline;
+                      Color statusBg = Colors.grey.shade100;
+                      Color statusBorder = Colors.grey.shade300;
+                      Color statusText = Colors.grey.shade700;
+                      IconData statusIcon = Icons.info_outline;
 
-                          if (isApproved) {
-                            statusBg = Colors.green.shade50;
-                            statusBorder = Colors.green.shade200;
-                            statusText = Colors.green.shade700;
-                            statusIcon = Icons.check_circle_outline;
-                          } else if (isRejected) {
-                            statusBg = Colors.red.shade50;
-                            statusBorder = Colors.red.shade200;
-                            statusText = const Color(0xFFA63228);
-                            statusIcon = Icons.cancel_outlined;
-                          } else if (isPending) {
-                            statusBg = Colors.orange.shade50;
-                            statusBorder = Colors.orange.shade200;
-                            statusText = Colors.orange.shade800;
-                            statusIcon = Icons.hourglass_top_rounded;
-                          }
+                      if (isApproved) {
+                        statusBg = Colors.green.shade50;
+                        statusBorder = Colors.green.shade200;
+                        statusText = Colors.green.shade700;
+                        statusIcon = Icons.check_circle_outline;
+                      } else if (isRejected) {
+                        statusBg = Colors.red.shade50;
+                        statusBorder = Colors.red.shade200;
+                        statusText = const Color(0xFFA63228);
+                        statusIcon = Icons.cancel_outlined;
+                      } else if (isPending) {
+                        statusBg = Colors.orange.shade50;
+                        statusBorder = Colors.orange.shade200;
+                        statusText = Colors.orange.shade800;
+                        statusIcon = Icons.hourglass_top_rounded;
+                      }
 
-                          return Container(
-                            margin: const EdgeInsets.only(bottom: 8),
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(10),
-                              border: Border.all(color: Colors.grey.shade200),
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 8),
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: Colors.grey.shade200),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
-                                Row(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Expanded(
-                                      child: Row(
-                                        children: [
-                                          CircleAvatar(
-                                            radius: 14,
-                                            backgroundColor:
-                                                const Color(0xFFA63228)
-                                                    .withValues(alpha: 0.1),
-                                            child: Text(
-                                              name.isNotEmpty
-                                                  ? name[0].toUpperCase()
-                                                  : 'W',
-                                              style: GoogleFonts.inter(
-                                                fontSize: 11,
-                                                fontWeight: FontWeight.bold,
-                                                color:
-                                                    const Color(0xFFA63228),
-                                              ),
-                                            ),
-                                          ),
-                                          const SizedBox(width: 8),
-                                          Expanded(
-                                            child: Text(
-                                              name,
-                                              style: GoogleFonts.inter(
-                                                fontSize: 12.5,
-                                                fontWeight: FontWeight.bold,
-                                              ),
-                                              overflow: TextOverflow.ellipsis,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                    Text(
-                                      amountFormatted,
-                                      style: GoogleFonts.inter(
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.w900,
-                                        color: isApproved
-                                            ? Colors.green.shade700
-                                            : isRejected
-                                                ? const Color(0xFFA63228)
-                                                : Colors.black87,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 6),
-                                Text(
-                                  'Role: $role  •  Reason: $reason',
-                                  style: GoogleFonts.inter(
-                                    fontSize: 11,
-                                    color: Colors.grey.shade700,
-                                  ),
-                                ),
-                                const Divider(height: 12),
-                                Row(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    // ── Formatted Date Row ──
-                                    Row(
-                                      children: [
-                                        Icon(
-                                          Icons.calendar_today_rounded,
-                                          size: 11,
-                                          color: Colors.grey.shade600,
-                                        ),
-                                        const SizedBox(width: 4),
-                                        Text(
-                                          dateStr,
+                                Expanded(
+                                  child: Row(
+                                    children: [
+                                      CircleAvatar(
+                                        radius: 14,
+                                        backgroundColor: const Color(
+                                          0xFFA63228,
+                                        ).withValues(alpha: 0.1),
+                                        child: Text(
+                                          name.isNotEmpty
+                                              ? name[0].toUpperCase()
+                                              : 'W',
                                           style: GoogleFonts.inter(
                                             fontSize: 11,
-                                            fontWeight: FontWeight.w500,
-                                            color: Colors.grey.shade700,
+                                            fontWeight: FontWeight.bold,
+                                            color: const Color(0xFFA63228),
                                           ),
                                         ),
-                                      ],
-                                    ),
-                                    // Status Badge
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(
-                                          horizontal: 7, vertical: 2),
-                                      decoration: BoxDecoration(
-                                        color: statusBg,
-                                        borderRadius:
-                                            BorderRadius.circular(6),
-                                        border:
-                                            Border.all(color: statusBorder),
                                       ),
-                                      child: Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          Icon(statusIcon,
-                                              size: 11, color: statusText),
-                                          const SizedBox(width: 3),
-                                          Text(
-                                            status,
-                                            style: GoogleFonts.inter(
-                                              fontSize: 10,
-                                              fontWeight: FontWeight.bold,
-                                              color: statusText,
-                                            ),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Text(
+                                          name,
+                                          style: GoogleFonts.inter(
+                                            fontSize: 12.5,
+                                            fontWeight: FontWeight.bold,
                                           ),
-                                        ],
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
                                       ),
-                                    ),
-                                  ],
+                                    ],
+                                  ),
+                                ),
+                                Text(
+                                  amountFormatted,
+                                  style: GoogleFonts.inter(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w900,
+                                    color: isApproved
+                                        ? Colors.green.shade700
+                                        : isRejected
+                                        ? const Color(0xFFA63228)
+                                        : Colors.black87,
+                                  ),
                                 ),
                               ],
                             ),
-                          );
-                        },
-                      ),
+                            const SizedBox(height: 6),
+                            Text(
+                              'Role: $role  •  Reason: $reason',
+                              style: GoogleFonts.inter(
+                                fontSize: 11,
+                                color: Colors.grey.shade700,
+                              ),
+                            ),
+                            const Divider(height: 12),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                // ── Formatted Date Row ──
+                                Row(
+                                  children: [
+                                    Icon(
+                                      Icons.calendar_today_rounded,
+                                      size: 11,
+                                      color: Colors.grey.shade600,
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      dateStr,
+                                      style: GoogleFonts.inter(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w500,
+                                        color: Colors.grey.shade700,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                // Status Badge
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 7,
+                                    vertical: 2,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: statusBg,
+                                    borderRadius: BorderRadius.circular(6),
+                                    border: Border.all(color: statusBorder),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        statusIcon,
+                                        size: 11,
+                                        color: statusText,
+                                      ),
+                                      const SizedBox(width: 3),
+                                      Text(
+                                        status,
+                                        style: GoogleFonts.inter(
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.bold,
+                                          color: statusText,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
           ),
         ],
       ),
@@ -3933,55 +4895,338 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
   // TAB 3: MANPOWER DIRECTORY (With All Manpower & Account Approvals Tabs)
   Widget _buildManpowerTab(double screenWidth, double screenHeight) {
-    return DefaultTabController(
-      length: 2,
-      child: Column(
-        children: [
-          Container(
-            color: Colors.white,
-            child: TabBar(
-              labelColor: const Color(0xFFA63228),
-              unselectedLabelColor: Colors.grey.shade600,
-              indicatorColor: const Color(0xFFA63228),
-              indicatorWeight: 2.5,
-              labelStyle: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 12),
-              tabs: [
-                const Tab(text: 'All Manpower'),
-                Tab(
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Text('Account Approvals'),
-                      if (_pendingRegistrations.isNotEmpty) ...[
+    if (ApiService.currentUserRole?.toLowerCase() == 'admin') {
+      return DefaultTabController(
+        length: 2,
+        child: Column(
+          children: [
+            Container(
+              color: Colors.white,
+              child: TabBar(
+                labelColor: const Color(0xFFA63228),
+                unselectedLabelColor: Colors.grey.shade600,
+                indicatorColor: const Color(0xFFA63228),
+                tabs: [
+                  const Tab(icon: Icon(Icons.groups_outlined), text: 'Workers'),
+                  Tab(
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(Icons.person_add_alt_1_outlined, size: 18),
                         const SizedBox(width: 6),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFA63228),
-                            borderRadius: BorderRadius.circular(10),
+                        const Text('Requests'),
+                        if (_pendingRegistrations.isNotEmpty) ...[
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 2,
+                            ),
+                            decoration: const BoxDecoration(
+                              color: Color(0xFFA63228),
+                              shape: BoxShape.circle,
+                            ),
+                            child: Text(
+                              _pendingRegistrations.length > 99
+                                  ? '99+'
+                                  : '${_pendingRegistrations.length}',
+                              style: GoogleFonts.inter(
+                                color: Colors.white,
+                                fontSize: 9,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
                           ),
-                          child: Text(
-                            '${_pendingRegistrations.length}',
+                        ],
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: TabBarView(
+                children: [
+                  _buildActiveWorkersList(screenWidth, screenHeight),
+                  _buildAccountApprovalsTab(screenWidth, screenHeight),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+    return _buildActiveWorkersList(screenWidth, screenHeight);
+  }
+
+  void _showWorkerProfile(Map<String, dynamic> worker) {
+    final name = (worker['full_name'] as String?)?.trim().isNotEmpty == true
+        ? worker['full_name'].toString().trim()
+        : '${worker['first_name'] ?? ''} ${worker['last_name'] ?? ''}'.trim();
+    final displayName = name.isEmpty ? 'Worker' : name;
+    final role = (worker['role'] ?? 'Worker').toString();
+    final position = (worker['position'] ?? '—').toString();
+    final status = (worker['approval_status'] ?? worker['status'] ?? 'Active')
+        .toString();
+
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => SafeArea(
+        child: Container(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.sizeOf(context).height * 0.78,
+          ),
+          decoration: const BoxDecoration(
+            color: Color(0xFFF3EFEA),
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(18, 18, 12, 14),
+                child: Row(
+                  children: [
+                    CircleAvatar(
+                      radius: 25,
+                      backgroundColor: const Color(0xFFA63228),
+                      child: Text(
+                        displayName[0].toUpperCase(),
+                        style: GoogleFonts.inter(
+                          color: Colors.white,
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            displayName,
                             style: GoogleFonts.inter(
-                              color: Colors.white,
-                              fontSize: 10,
+                              fontSize: 16,
                               fontWeight: FontWeight.bold,
                             ),
                           ),
-                        ),
-                      ],
-                    ],
+                          const SizedBox(height: 3),
+                          Text(
+                            '$role • $position',
+                            style: GoogleFonts.inter(
+                              fontSize: 11,
+                              color: Colors.grey.shade700,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: 'Close profile',
+                      onPressed: () => Navigator.pop(context),
+                      icon: const Icon(Icons.close_rounded),
+                    ),
+                  ],
+                ),
+              ),
+              const Divider(height: 1),
+              Flexible(
+                child: ListView(
+                  shrinkWrap: true,
+                  padding: const EdgeInsets.all(14),
+                  children: [
+                    _workerQrCodeCard(
+                      (worker['worker_code'] ?? worker['id'] ?? '').toString(),
+                      displayName,
+                    ),
+                    _workerProfileRow(
+                      'Worker ID',
+                      worker['worker_code'] ?? worker['id'],
+                    ),
+                    _workerProfileRow('Status', status),
+                    _workerProfileRow('Phone', worker['phone']),
+                    _workerProfileRow('Email', worker['email']),
+                    _workerProfileRow('Address', worker['address']),
+                    _workerProfileRow('Birthday', worker['birthday']),
+                    _workerProfileRow('Age', worker['age']),
+                    _workerProfileRow(
+                      'Daily Rate',
+                      _formatCurrency(
+                        _parseDouble(worker['daily_rate'] ?? 600),
+                      ),
+                    ),
+                    _workerProfileRow(
+                      'Project',
+                      worker['project'] ?? worker['project_name'],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _workerQrCodeCard(String workerId, String workerName) {
+    if (workerId.trim().isEmpty) return const SizedBox.shrink();
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(9),
+      ),
+      child: Row(
+        children: [
+          QrImageView(
+            data: workerId,
+            version: QrVersions.auto,
+            size: 96,
+            padding: const EdgeInsets.all(6),
+            backgroundColor: Colors.white,
+            semanticsLabel: 'QR code for worker ID $workerId',
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'WORKER ID QR CODE',
+                  style: GoogleFonts.inter(
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.grey.shade600,
+                    letterSpacing: 0.4,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  workerId,
+                  style: GoogleFonts.inter(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black87,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  onPressed: () => _downloadWorkerQrCode(workerId, workerName),
+                  icon: const Icon(Icons.download_rounded, size: 16),
+                  label: Text(
+                    'Save QR image',
+                    style: GoogleFonts.inter(
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: const Color(0xFFA63228),
+                    visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 6,
+                    ),
                   ),
                 ),
               ],
             ),
           ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _downloadWorkerQrCode(String workerId, String workerName) async {
+    try {
+      const imageSize = 1024.0;
+      final painter = QrPainter(
+        data: workerId,
+        version: QrVersions.auto,
+        gapless: true,
+      );
+      final recorder = ui.PictureRecorder();
+      final canvas = Canvas(recorder);
+      canvas.drawRect(
+        const Rect.fromLTWH(0, 0, imageSize, imageSize),
+        Paint()..color = Colors.white,
+      );
+      painter.paint(canvas, const Size(imageSize, imageSize));
+      final picture = recorder.endRecording();
+      final image = await picture.toImage(imageSize.toInt(), imageSize.toInt());
+      final imageData = await image.toByteData(format: ui.ImageByteFormat.png);
+      image.dispose();
+      picture.dispose();
+      if (imageData == null) {
+        throw StateError('Could not generate the worker QR image.');
+      }
+
+      final safeWorkerId = workerId.replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '_');
+      final fileName = 'worker-$safeWorkerId-qr.png';
+      await SharePlus.instance.share(
+        ShareParams(
+          title: 'Worker ID QR Code',
+          text: '$workerName - $workerId',
+          files: [
+            XFile.fromData(
+              imageData.buffer.asUint8List(),
+              mimeType: 'image/png',
+              name: fileName,
+            ),
+          ],
+          fileNameOverrides: [fileName],
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Could not save QR image: $error'),
+          backgroundColor: const Color(0xFFA63228),
+        ),
+      );
+    }
+  }
+
+  Widget _workerProfileRow(String label, dynamic value) {
+    final text = value?.toString().trim();
+    if (text == null || text.isEmpty || text == 'null') {
+      return const SizedBox.shrink();
+    }
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(9),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 92,
+            child: Text(
+              label,
+              style: GoogleFonts.inter(
+                fontSize: 11,
+                color: Colors.grey.shade600,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
           Expanded(
-            child: TabBarView(
-              children: [
-                _buildActiveWorkersList(screenWidth, screenHeight),
-                _buildAccountApprovalsTab(screenWidth, screenHeight),
-              ],
+            child: Text(
+              text,
+              style: GoogleFonts.inter(
+                fontSize: 11,
+                color: Colors.black87,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ),
         ],
@@ -4001,10 +5246,14 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             final role = (w['role'] ?? '').toString().toLowerCase();
             final position = (w['position'] ?? '').toString().toLowerCase();
             final phone = (w['phone'] ?? '').toString().toLowerCase();
+            final workerCode = (w['worker_code'] ?? w['id'] ?? '')
+                .toString()
+                .toLowerCase();
             return name.toLowerCase().contains(query) ||
                 role.contains(query) ||
                 position.contains(query) ||
-                phone.contains(query);
+                phone.contains(query) ||
+                workerCode.contains(query);
           }).toList();
 
     return Column(
@@ -4018,7 +5267,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             onChanged: (val) => setState(() => _manpowerSearchQuery = val),
             style: GoogleFonts.inter(fontSize: 13),
             decoration: InputDecoration(
-              hintText: 'Search by name, role, position, phone...',
+              hintText: 'Search name, role, phone, or worker ID...',
               hintStyle: GoogleFonts.inter(
                 fontSize: 12,
                 color: Colors.grey.shade400,
@@ -4091,197 +5340,201 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                   child: CircularProgressIndicator(color: Color(0xFFA63228)),
                 )
               : filteredWorkers.isEmpty
-                  ? RefreshIndicator(
-                      onRefresh: _loadWorkers,
-                      color: const Color(0xFFA63228),
-                      child: ListView(
-                        physics: const AlwaysScrollableScrollPhysics(),
-                        children: [
-                          SizedBox(height: screenHeight * 0.18),
-                          Center(
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(
-                                  query.isEmpty
-                                      ? Icons.people_outline_rounded
-                                      : Icons.search_off_rounded,
-                                  size: 42,
-                                  color: Colors.grey.shade300,
+              ? RefreshIndicator(
+                  onRefresh: _loadWorkers,
+                  color: const Color(0xFFA63228),
+                  child: ListView(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    children: [
+                      SizedBox(height: screenHeight * 0.18),
+                      Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              query.isEmpty
+                                  ? Icons.people_outline_rounded
+                                  : Icons.search_off_rounded,
+                              size: 42,
+                              color: Colors.grey.shade300,
+                            ),
+                            const SizedBox(height: 10),
+                            Text(
+                              query.isEmpty
+                                  ? 'No active workers.'
+                                  : 'No workers match "$query"',
+                              style: GoogleFonts.inter(
+                                fontSize: 13,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.black87,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              query.isEmpty
+                                  ? 'Pull down to refresh the list.'
+                                  : 'Try a different keyword.',
+                              style: GoogleFonts.inter(
+                                fontSize: 11,
+                                color: Colors.grey.shade500,
+                              ),
+                            ),
+                            if (query.isEmpty) ...[
+                              const SizedBox(height: 12),
+                              TextButton.icon(
+                                onPressed: _loadWorkers,
+                                icon: const Icon(
+                                  Icons.refresh,
+                                  size: 16,
+                                  color: Color(0xFFA63228),
                                 ),
-                                const SizedBox(height: 10),
-                                Text(
-                                  query.isEmpty
-                                      ? 'No active workers.'
-                                      : 'No workers match "$query"',
+                                label: Text(
+                                  'Refresh',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 12,
+                                    color: const Color(0xFFA63228),
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                )
+              : RefreshIndicator(
+                  onRefresh: _loadWorkers,
+                  color: const Color(0xFFA63228),
+                  child: ListView.separated(
+                    padding: const EdgeInsets.all(10),
+                    itemCount: filteredWorkers.length,
+                    separatorBuilder: (_, __) => const SizedBox(height: 6),
+                    itemBuilder: (context, i) {
+                      final w = filteredWorkers[i];
+                      final String name =
+                          (w['full_name'] as String?)?.isNotEmpty == true
+                          ? w['full_name']
+                          : '${w['first_name'] ?? ''} ${w['last_name'] ?? ''}'
+                                .trim();
+                      final role = w['role'] ?? 'Worker';
+                      final position = w['position'] ?? 'N/A';
+                      final phone = w['phone'] ?? 'N/A';
+                      final status =
+                          w['approval_status'] ?? w['status'] ?? 'Active';
+
+                      // Highlight matching text helper
+                      List<TextSpan> highlight(String text) {
+                        if (query.isEmpty) {
+                          return [TextSpan(text: text)];
+                        }
+                        final lower = text.toLowerCase();
+                        final idx = lower.indexOf(query);
+                        if (idx < 0) return [TextSpan(text: text)];
+                        return [
+                          TextSpan(text: text.substring(0, idx)),
+                          TextSpan(
+                            text: text.substring(idx, idx + query.length),
+                            style: const TextStyle(
+                              backgroundColor: Color(0xFFFFE082),
+                              color: Colors.black,
+                            ),
+                          ),
+                          TextSpan(text: text.substring(idx + query.length)),
+                        ];
+                      }
+
+                      final displayName = name.isEmpty
+                          ? 'Worker #${w['id']}'
+                          : name;
+
+                      return InkWell(
+                        onTap: () => _showWorkerProfile(w),
+                        borderRadius: BorderRadius.circular(10),
+                        child: Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: Colors.grey.shade200),
+                          ),
+                          child: Row(
+                            children: [
+                              CircleAvatar(
+                                radius: 18,
+                                backgroundColor: const Color(
+                                  0xFFA63228,
+                                ).withValues(alpha: 0.1),
+                                child: Text(
+                                  displayName.isNotEmpty
+                                      ? displayName[0].toUpperCase()
+                                      : 'W',
                                   style: GoogleFonts.inter(
                                     fontSize: 13,
                                     fontWeight: FontWeight.bold,
-                                    color: Colors.black87,
+                                    color: const Color(0xFFA63228),
                                   ),
                                 ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  query.isEmpty
-                                      ? 'Pull down to refresh the list.'
-                                      : 'Try a different keyword.',
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    RichText(
+                                      overflow: TextOverflow.ellipsis,
+                                      text: TextSpan(
+                                        style: GoogleFonts.inter(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.black87,
+                                        ),
+                                        children: highlight(displayName),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    RichText(
+                                      overflow: TextOverflow.ellipsis,
+                                      text: TextSpan(
+                                        style: GoogleFonts.inter(
+                                          fontSize: 10.5,
+                                          color: Colors.grey.shade600,
+                                        ),
+                                        children: highlight(
+                                          '$role ($position) • $phone',
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 6,
+                                  vertical: 2,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.green.shade50,
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: Text(
+                                  status,
                                   style: GoogleFonts.inter(
-                                    fontSize: 11,
-                                    color: Colors.grey.shade500,
+                                    fontSize: 9.5,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.green.shade700,
                                   ),
                                 ),
-                                if (query.isEmpty) ...[
-                                  const SizedBox(height: 12),
-                                  TextButton.icon(
-                                    onPressed: _loadWorkers,
-                                    icon: const Icon(
-                                      Icons.refresh,
-                                      size: 16,
-                                      color: Color(0xFFA63228),
-                                    ),
-                                    label: Text(
-                                      'Refresh',
-                                      style: GoogleFonts.inter(
-                                        fontSize: 12,
-                                        color: const Color(0xFFA63228),
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ],
-                            ),
+                              ),
+                            ],
                           ),
-                        ],
-                      ),
-                    )
-                  : RefreshIndicator(
-                      onRefresh: _loadWorkers,
-                      color: const Color(0xFFA63228),
-                      child: ListView.separated(
-                        padding: const EdgeInsets.all(10),
-                        itemCount: filteredWorkers.length,
-                        separatorBuilder: (_, __) => const SizedBox(height: 6),
-                        itemBuilder: (context, i) {
-                          final w = filteredWorkers[i];
-                          final String name =
-                              (w['full_name'] as String?)?.isNotEmpty == true
-                                  ? w['full_name']
-                                  : '${w['first_name'] ?? ''} ${w['last_name'] ?? ''}'
-                                        .trim();
-                          final role = w['role'] ?? 'Worker';
-                          final position = w['position'] ?? 'N/A';
-                          final phone = w['phone'] ?? 'N/A';
-                          final status =
-                              w['approval_status'] ?? w['status'] ?? 'Active';
-
-                          // Highlight matching text helper
-                          List<TextSpan> highlight(String text) {
-                            if (query.isEmpty) {
-                              return [TextSpan(text: text)];
-                            }
-                            final lower = text.toLowerCase();
-                            final idx = lower.indexOf(query);
-                            if (idx < 0) return [TextSpan(text: text)];
-                            return [
-                              TextSpan(text: text.substring(0, idx)),
-                              TextSpan(
-                                text: text.substring(idx, idx + query.length),
-                                style: const TextStyle(
-                                  backgroundColor: Color(0xFFFFE082),
-                                  color: Colors.black,
-                                ),
-                              ),
-                              TextSpan(
-                                text: text.substring(idx + query.length),
-                              ),
-                            ];
-                          }
-
-                          final displayName =
-                              name.isEmpty ? 'Worker #${w['id']}' : name;
-
-                          return Container(
-                            padding: const EdgeInsets.all(10),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(10),
-                              border: Border.all(color: Colors.grey.shade200),
-                            ),
-                            child: Row(
-                              children: [
-                                CircleAvatar(
-                                  radius: 18,
-                                  backgroundColor: const Color(0xFFA63228)
-                                      .withValues(alpha: 0.1),
-                                  child: Text(
-                                    displayName.isNotEmpty
-                                        ? displayName[0].toUpperCase()
-                                        : 'W',
-                                    style: GoogleFonts.inter(
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.bold,
-                                      color: const Color(0xFFA63228),
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      RichText(
-                                        overflow: TextOverflow.ellipsis,
-                                        text: TextSpan(
-                                          style: GoogleFonts.inter(
-                                            fontSize: 12,
-                                            fontWeight: FontWeight.bold,
-                                            color: Colors.black87,
-                                          ),
-                                          children: highlight(displayName),
-                                        ),
-                                      ),
-                                      const SizedBox(height: 2),
-                                      RichText(
-                                        overflow: TextOverflow.ellipsis,
-                                        text: TextSpan(
-                                          style: GoogleFonts.inter(
-                                            fontSize: 10.5,
-                                            color: Colors.grey.shade600,
-                                          ),
-                                          children: highlight(
-                                              '$role ($position) • $phone'),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 6,
-                                    vertical: 2,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: Colors.green.shade50,
-                                    borderRadius: BorderRadius.circular(4),
-                                  ),
-                                  child: Text(
-                                    status,
-                                    style: GoogleFonts.inter(
-                                      fontSize: 9.5,
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.green.shade700,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          );
-                        },
-                      ),
-                    ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
         ),
       ],
     );
@@ -4347,9 +5600,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                               vertical: 2,
                             ),
                             decoration: BoxDecoration(
-                              color: const Color(0xFFA63228).withValues(
-                                alpha: 0.1,
-                              ),
+                              color: const Color(
+                                0xFFA63228,
+                              ).withValues(alpha: 0.1),
                               borderRadius: BorderRadius.circular(4),
                             ),
                             child: Text(
@@ -4401,22 +5654,22 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           ),
           tileColor: Colors.white,
           leading: const Icon(
-            Icons.storefront_outlined,
+            Icons.location_on_outlined,
             color: Colors.black87,
             size: 20,
           ),
           title: Text(
-            'Project Site Configuration',
+            'Assigned Project Site',
             style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600),
           ),
           subtitle: Text(
             _activeProjectSite,
-            style: GoogleFonts.inter(fontSize: 10, color: Colors.grey.shade500),
+            style: GoogleFonts.inter(fontSize: 10, color: Colors.grey.shade600),
           ),
           trailing: const Icon(Icons.chevron_right, size: 16),
           onTap: _showSiteConfigDialog,
         ),
-        const SizedBox(height: 6),
+        const SizedBox(height: 8),
         ListTile(
           dense: true,
           shape: RoundedRectangleBorder(
@@ -4486,46 +5739,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             }
           },
         ),
-        const SizedBox(height: 24),
-        // LOGOUT BUTTON
-        GestureDetector(
-          onTap: _showLogoutConfirmationDialog,
-          child: Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(vertical: 14),
-            decoration: BoxDecoration(
-              color: const Color(0xFFA63228),
-              borderRadius: BorderRadius.circular(12),
-              boxShadow: [
-                BoxShadow(
-                  color: const Color(0xFFA63228).withValues(alpha: 0.3),
-                  blurRadius: 8,
-                  offset: const Offset(0, 3),
-                ),
-              ],
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Icon(
-                  Icons.logout_rounded,
-                  color: Colors.white,
-                  size: 18,
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  'Log Out',
-                  style: GoogleFonts.inter(
-                    color: Colors.white,
-                    fontSize: 14,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-        const SizedBox(height: 12),
       ],
     );
   }
@@ -4921,7 +6134,9 @@ class _ExpenseTrajectoryPainter extends CustomPainter {
         style: TextStyle(
           fontSize: 8.0,
           fontWeight: i == currentMonth ? FontWeight.bold : FontWeight.w500,
-          color: i == currentMonth ? const Color(0xFFA63228) : Colors.grey.shade500,
+          color: i == currentMonth
+              ? const Color(0xFFA63228)
+              : Colors.grey.shade500,
         ),
       );
       final textPainter = TextPainter(
@@ -4980,13 +6195,15 @@ class _ExpenseTrajectoryPainter extends CustomPainter {
     canvas.drawCircle(peakPt, 2.0, dotInner);
 
     // Peak badge
-    final currentVal = currentMonth < monthlyValues.length ? monthlyValues[currentMonth] : 0.0;
-    final fmtVal = currentVal >= 1000000 
-        ? '${(currentVal/1000000).toStringAsFixed(1)}M' 
-        : currentVal >= 1000 
-            ? '${(currentVal/1000).round()}k' 
-            : currentVal.round().toString();
-            
+    final currentVal = currentMonth < monthlyValues.length
+        ? monthlyValues[currentMonth]
+        : 0.0;
+    final fmtVal = currentVal >= 1000000
+        ? '${(currentVal / 1000000).toStringAsFixed(1)}M'
+        : currentVal >= 1000
+        ? '${(currentVal / 1000).round()}k'
+        : currentVal.round().toString();
+
     final badgeSpan = TextSpan(
       text: '₱$fmtVal',
       style: const TextStyle(
@@ -5065,12 +6282,12 @@ class _MonthlyVolumeBarPainter extends CustomPainter {
       canvas.drawRRect(rrect, barPaint);
 
       if (isCurrent && val > 0) {
-        final fmtVal = val >= 1000000 
-            ? '${(val/1000000).toStringAsFixed(1)}M' 
-            : val >= 1000 
-                ? '${(val/1000).round()}k' 
-                : val.round().toString();
-                
+        final fmtVal = val >= 1000000
+            ? '${(val / 1000000).toStringAsFixed(1)}M'
+            : val >= 1000
+            ? '${(val / 1000).round()}k'
+            : val.round().toString();
+
         final badgeSpan = TextSpan(
           text: '₱$fmtVal',
           style: const TextStyle(

@@ -17,14 +17,24 @@ class AppSidebar extends StatelessWidget {
   Widget build(BuildContext context) {
     final currentRoute = ModalRoute.of(context)?.settings.name;
     final role = ApiService.currentUserRole ?? 'worker';
-    final position = (ApiService.currentUser?['position'] ?? '').toString();
-    final isAdmin = role == 'admin';
-    final isStaff = role == 'staff';
-    final isTool = role == 'tool';
-    final isWorker = role == 'worker';
+    final position = [
+      ApiService.currentUser?['position'],
+      ApiService.currentUser?['positions'],
+    ].where((value) => value != null).join(' ').toLowerCase();
+    final normalizedRole = role.toLowerCase();
+    final isAdmin = normalizedRole == 'admin';
+    final isStaff = normalizedRole == 'staff';
+    final isTool = normalizedRole == 'tool';
+    final isWorker = normalizedRole == 'worker';
 
-    final bool showAttendanceMonitoring = isAdmin || isStaff || (isWorker && position.contains('Attendance Monitoring'));
-    final bool showToolsMonitoring = isAdmin || isTool || (isWorker && position.contains('Tools Monitoring'));
+    final bool showAttendanceMonitoring =
+        isAdmin ||
+        isStaff ||
+        (isWorker && position.contains('attendance monitoring'));
+    final bool showToolsMonitoring =
+        isAdmin ||
+        isTool ||
+        (isWorker && position.contains('tools monitoring'));
 
     return Drawer(
       backgroundColor: Colors.white,
@@ -38,7 +48,11 @@ class AppSidebar extends StatelessWidget {
               child: const Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Icon(Icons.construction_rounded, color: Colors.white, size: 28),
+                  Icon(
+                    Icons.construction_rounded,
+                    color: Colors.white,
+                    size: 28,
+                  ),
                   SizedBox(height: 10),
                   Text(
                     'S-CON BuildTrack',
@@ -61,57 +75,65 @@ class AppSidebar extends StatelessWidget {
                 padding: const EdgeInsets.symmetric(vertical: 8),
                 children: [
                   _sectionLabel('WORKSPACES'),
-                  if (isWorker) _item(
-                    context,
-                    currentRoute,
-                    route: '/worker_dashboard',
-                    icon: Icons.dashboard_outlined,
-                    label: 'Worker Dashboard',
-                  ),
-                  if (showAttendanceMonitoring) _item(
-                    context,
-                    currentRoute,
-                    route: '/timekeeper_dashboard',
-                    icon: Icons.fact_check_outlined,
-                    label: isStaff ? 'Timekeeper Dashboard' : 'Manage Attendance',
-                  ),
-                  if (showToolsMonitoring) _item(
-                    context,
-                    currentRoute,
-                    route: '/tools_monitoring',
-                    icon: Icons.handyman_outlined,
-                    label: 'Tools Monitoring',
-                  ),
-                  if (isAdmin) _item(
-                    context,
-                    currentRoute,
-                    route: '/admin_dashboard',
-                    icon: Icons.admin_panel_settings_outlined,
-                    label: 'Admin Dashboard',
-                  ),
-                  if (isAdmin) _item(
-                    context,
-                    currentRoute,
-                    route: '/admin_profile',
-                    icon: Icons.manage_accounts_outlined,
-                    label: 'Admin Profile',
-                  ),
+                  if (isWorker)
+                    _item(
+                      context,
+                      currentRoute,
+                      route: '/worker_dashboard',
+                      icon: Icons.dashboard_outlined,
+                      label: 'Worker Dashboard',
+                    ),
+                  if (showAttendanceMonitoring)
+                    _item(
+                      context,
+                      currentRoute,
+                      route: '/timekeeper_dashboard',
+                      icon: Icons.fact_check_outlined,
+                      label: isStaff
+                          ? 'Timekeeper Dashboard'
+                          : 'Manage Attendance',
+                    ),
+                  if (showAttendanceMonitoring)
+                    _item(
+                      context,
+                      currentRoute,
+                      route: '/attendance_management',
+                      icon: Icons.event_note_outlined,
+                      label: 'Attendance Management',
+                    ),
+                  if (isAdmin)
+                    _item(
+                      context,
+                      currentRoute,
+                      route: '/projects',
+                      icon: Icons.domain_outlined,
+                      label: 'Projects & Budgets',
+                    ),
+                  if (showToolsMonitoring)
+                    _item(
+                      context,
+                      currentRoute,
+                      route: '/tools_monitoring',
+                      icon: Icons.handyman_outlined,
+                      label: 'Tools Monitoring',
+                    ),
+                  if (isAdmin)
+                    _item(
+                      context,
+                      currentRoute,
+                      route: '/admin_dashboard',
+                      icon: Icons.admin_panel_settings_outlined,
+                      label: 'Admin Dashboard',
+                    ),
                   if (isAdmin) ...[
                     const Divider(height: 24),
-                    _sectionLabel('APPROVALS & MONITORING'),
+                    _sectionLabel('WORKER REQUESTS'),
                     _item(
                       context,
                       currentRoute,
                       route: '/cash_advance',
                       icon: Icons.payments_outlined,
                       label: 'Cash Advance Requests',
-                    ),
-                    _item(
-                      context,
-                      currentRoute,
-                      route: '/workers',
-                      icon: Icons.badge_outlined,
-                      label: 'Manpower Directory',
                     ),
                   ],
                 ],
@@ -122,7 +144,10 @@ class AppSidebar extends StatelessWidget {
               leading: const Icon(Icons.logout_rounded, color: _primaryColor),
               title: const Text(
                 'Log out',
-                style: TextStyle(fontWeight: FontWeight.w700, color: _primaryColor),
+                style: TextStyle(
+                  fontWeight: FontWeight.w700,
+                  color: _primaryColor,
+                ),
               ),
               onTap: () async {
                 await ApiService.logout();
@@ -159,7 +184,8 @@ class AppSidebar extends StatelessWidget {
     required IconData icon,
     required String label,
   }) {
-    final isSelected = currentRoute == route ||
+    final isSelected =
+        currentRoute == route ||
         (route == '/worker_dashboard' && currentRoute == '/dashboard') ||
         (route == '/timekeeper_dashboard' && currentRoute == '/timekeeper');
 
@@ -169,7 +195,10 @@ class AppSidebar extends StatelessWidget {
         dense: true,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
         tileColor: isSelected ? _primaryColor.withValues(alpha: 0.10) : null,
-        leading: Icon(icon, color: isSelected ? _primaryColor : const Color(0xFF514A46)),
+        leading: Icon(
+          icon,
+          color: isSelected ? _primaryColor : const Color(0xFF514A46),
+        ),
         title: Text(
           label,
           style: TextStyle(
@@ -211,7 +240,9 @@ class AppSidebarOverlayButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final foreground = darkBackground ? Colors.white : const Color(0xFF2F2A27);
-    final background = darkBackground ? Colors.black.withValues(alpha: 0.30) : Colors.white;
+    final background = darkBackground
+        ? Colors.black.withValues(alpha: 0.30)
+        : Colors.white;
 
     return SafeArea(
       child: Padding(

@@ -12,7 +12,6 @@ class PayslipScreen extends StatefulWidget {
 class _PayslipScreenState extends State<PayslipScreen> {
   final Map<String, Set<int>> _monthlyWorkDays = {};
   final Map<String, Map<int, String>> _monthlyValeDays = {};
-  bool _isLoading = false;
 
   final List<String> _monthNames = [
     'January', 'February', 'March', 'April', 'May', 'June',
@@ -26,7 +25,6 @@ class _PayslipScreenState extends State<PayslipScreen> {
   }
 
   Future<void> _fetchPayslipData() async {
-    setState(() => _isLoading = true);
     try {
       final user = ApiService.currentUser;
       final userId = user?['id']?.toString();
@@ -71,11 +69,10 @@ class _PayslipScreenState extends State<PayslipScreen> {
           _monthlyWorkDays.addAll(workDays);
           _monthlyValeDays.clear();
           _monthlyValeDays.addAll(valeDays);
-          _isLoading = false;
         });
       }
-    } catch (_) {
-      if (mounted) setState(() => _isLoading = false);
+    } catch (e) {
+      debugPrint('Failed to load payslip data: $e');
     }
   }
 

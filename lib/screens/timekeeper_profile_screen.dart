@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import '../widgets/app_sidebar.dart';
 import '../services/api_service.dart';
 
 class TimekeeperProfileScreen extends StatefulWidget {
