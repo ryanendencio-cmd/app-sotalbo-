@@ -29,6 +29,18 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final TextEditingController _phoneController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
 
+  // Focus nodes for validation checklist
+  final FocusNode _firstNameFocus = FocusNode();
+  final FocusNode _middleNameFocus = FocusNode();
+  final FocusNode _lastNameFocus = FocusNode();
+  final FocusNode _usernameFocus = FocusNode();
+  final FocusNode _phoneFocus = FocusNode();
+  final FocusNode _passwordFocus = FocusNode();
+  final FocusNode _confirmPasswordFocus = FocusNode();
+
+  // Confirm password controller
+  final TextEditingController _confirmPasswordController = TextEditingController();
+
   bool _isLoading = false;
   bool _isPhoneVerified = false;
   final List<TextEditingController> _otpControllers = List.generate(
@@ -36,6 +48,27 @@ class _RegisterScreenState extends State<RegisterScreen> {
     (_) => TextEditingController(),
   );
   final List<FocusNode> _otpFocusNodes = List.generate(6, (_) => FocusNode());
+
+  @override
+  void initState() {
+    super.initState();
+    // Listen to controllers for real-time validation checklist updates
+    _firstNameController.addListener(() => setState(() {}));
+    _middleNameController.addListener(() => setState(() {}));
+    _lastNameController.addListener(() => setState(() {}));
+    _usernameController.addListener(() => setState(() {}));
+    _phoneController.addListener(() => setState(() {}));
+    _passwordController.addListener(() => setState(() {}));
+    _confirmPasswordController.addListener(() => setState(() {}));
+    // Listen to focus changes to show/hide checklist
+    _firstNameFocus.addListener(() => setState(() {}));
+    _middleNameFocus.addListener(() => setState(() {}));
+    _lastNameFocus.addListener(() => setState(() {}));
+    _usernameFocus.addListener(() => setState(() {}));
+    _phoneFocus.addListener(() => setState(() {}));
+    _passwordFocus.addListener(() => setState(() {}));
+    _confirmPasswordFocus.addListener(() => setState(() {}));
+  }
 
   @override
   void dispose() {
@@ -48,6 +81,14 @@ class _RegisterScreenState extends State<RegisterScreen> {
     _addressController.dispose();
     _phoneController.dispose();
     _passwordController.dispose();
+    _confirmPasswordController.dispose();
+    _firstNameFocus.dispose();
+    _middleNameFocus.dispose();
+    _lastNameFocus.dispose();
+    _usernameFocus.dispose();
+    _phoneFocus.dispose();
+    _passwordFocus.dispose();
+    _confirmPasswordFocus.dispose();
     for (var c in _otpControllers) {
       c.dispose();
     }
@@ -55,6 +96,106 @@ class _RegisterScreenState extends State<RegisterScreen> {
       f.dispose();
     }
     super.dispose();
+  }
+
+  // ─── VALIDATION CHECKLIST HELPERS ─────────────────────────────────────────
+
+  Widget _buildCheckItem(String label, bool passes) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        children: [
+          Icon(
+            passes ? Icons.check_circle_rounded : Icons.radio_button_unchecked,
+            size: 14,
+            color: passes ? Colors.green.shade600 : Colors.grey.shade400,
+          ),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: GoogleFonts.inter(
+              fontSize: 11.5,
+              color: passes ? Colors.green.shade700 : Colors.grey.shade600,
+              fontWeight: passes ? FontWeight.w600 : FontWeight.normal,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _validationChecklist({required List<MapEntry<String, bool>> rules}) {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 200),
+      margin: const EdgeInsets.only(bottom: 8, top: 2),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade50,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: rules
+            .map((e) => _buildCheckItem(e.key, e.value))
+            .toList(),
+      ),
+    );
+  }
+
+  List<MapEntry<String, bool>> _nameRules(String value) {
+    final trimmed = value.trim();
+    final words = trimmed.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
+    final allLetters = !RegExp(r'[^a-zA-Z\s]').hasMatch(trimmed);
+    final allWordsLongEnough = words.isNotEmpty && words.every((w) => w.length >= 2);
+    return [
+      MapEntry('Required', trimmed.isNotEmpty),
+      MapEntry('Letters only (no numbers/symbols)', trimmed.isEmpty || allLetters),
+      MapEntry('Each word at least 2 letters', trimmed.isEmpty || allWordsLongEnough),
+    ];
+  }
+
+  List<MapEntry<String, bool>> _middleNameRules(String value) {
+    final trimmed = value.trim();
+    if (trimmed.isEmpty) {
+      return [const MapEntry('Optional – leave blank or enter valid middle name', true)];
+    }
+    return _nameRules(value);
+  }
+
+  List<MapEntry<String, bool>> _usernameRules(String value) {
+    final trimmed = value.trim();
+    return [
+      MapEntry('Required', trimmed.isNotEmpty),
+      MapEntry('8 to 20 characters', trimmed.length >= 8 && trimmed.length <= 20),
+      MapEntry('Lowercase letters and numbers only', RegExp(r'^[a-z0-9]*$').hasMatch(trimmed)),
+    ];
+  }
+
+  List<MapEntry<String, bool>> _phoneRules(String value) {
+    final trimmed = value.trim();
+    return [
+      MapEntry('Required', trimmed.isNotEmpty),
+      MapEntry('Starts with 9', trimmed.startsWith('9')),
+      MapEntry('Exactly 10 digits', trimmed.length == 10),
+    ];
+  }
+
+  List<MapEntry<String, bool>> _passwordRules(String value) {
+    return [
+      MapEntry('Required', value.isNotEmpty),
+      MapEntry('8 to 20 characters', value.length >= 8 && value.length <= 20),
+      MapEntry('At least one uppercase letter (A-Z)', RegExp(r'[A-Z]').hasMatch(value)),
+      MapEntry('At least one lowercase letter (a-z)', RegExp(r'[a-z]').hasMatch(value)),
+      MapEntry('At least one number (0-9)', RegExp(r'[0-9]').hasMatch(value)),
+    ];
+  }
+
+  List<MapEntry<String, bool>> _confirmPasswordRules(String value) {
+    return [
+      MapEntry('Required', value.isNotEmpty),
+      MapEntry('Passwords match', value.isNotEmpty && value == _passwordController.text),
+    ];
   }
 
   void _showTermsDialog() {
@@ -798,11 +939,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
     TextCapitalization textCapitalization = TextCapitalization.none,
     String? prefixText,
     Widget? suffixWidget,
+    FocusNode? focusNode,
   }) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8.0),
       child: TextFormField(
         controller: controller,
+        focusNode: focusNode,
         readOnly: readOnly,
         onTap: onTap,
         obscureText: obscureText ?? false,
@@ -928,6 +1071,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         hintText: 'First Name',
                         icon: Icons.person_outline,
                         controller: _firstNameController,
+                        focusNode: _firstNameFocus,
                         textCapitalization: TextCapitalization.words,
                         inputFormatters: [
                           LengthLimitingTextInputFormatter(50),
@@ -954,12 +1098,17 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           return null;
                         },
                       ),
+                      if (_firstNameFocus.hasFocus)
+                        _validationChecklist(
+                          rules: _nameRules(_firstNameController.text),
+                        ),
 
                       // MIDDLE NAME
                       _buildTextField(
                         hintText: 'Middle Name (Optional)',
                         icon: Icons.person_outline,
                         controller: _middleNameController,
+                        focusNode: _middleNameFocus,
                         textCapitalization: TextCapitalization.words,
                         inputFormatters: [
                           LengthLimitingTextInputFormatter(50),
@@ -987,12 +1136,17 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           return null;
                         },
                       ),
+                      if (_middleNameFocus.hasFocus)
+                        _validationChecklist(
+                          rules: _middleNameRules(_middleNameController.text),
+                        ),
 
                       // LAST NAME
                       _buildTextField(
                         hintText: 'Last Name',
                         icon: Icons.person_outline,
                         controller: _lastNameController,
+                        focusNode: _lastNameFocus,
                         textCapitalization: TextCapitalization.words,
                         inputFormatters: [
                           LengthLimitingTextInputFormatter(50),
@@ -1019,6 +1173,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           return null;
                         },
                       ),
+                      if (_lastNameFocus.hasFocus)
+                        _validationChecklist(
+                          rules: _nameRules(_lastNameController.text),
+                        ),
 
                       // BIRTHDAY & AGE
                       Row(
@@ -1063,6 +1221,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       // PHONE NUMBER WITH OTP VERIFICATION
                       _buildTextField(
                         controller: _phoneController,
+                        focusNode: _phoneFocus,
                         hintText: '9XXXXXXXXX',
                         icon: Icons.phone_outlined,
                         isNumber: true,
@@ -1149,6 +1308,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         },
                       ),
 
+                      if (_phoneFocus.hasFocus && !_isPhoneVerified)
+                        _validationChecklist(
+                          rules: _phoneRules(_phoneController.text),
+                        ),
+
                       // ADDRESS PICKER
                       _buildTextField(
                         hintText: 'Select Address (Region, Prov, City, Brgy)',
@@ -1166,6 +1330,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         hintText: 'Username',
                         icon: Icons.alternate_email_outlined,
                         controller: _usernameController,
+                        focusNode: _usernameFocus,
                         inputFormatters: [
                           LengthLimitingTextInputFormatter(20),
                           FilteringTextInputFormatter.allow(
@@ -1184,6 +1349,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           return null;
                         },
                       ),
+                      if (_usernameFocus.hasFocus)
+                        _validationChecklist(
+                          rules: _usernameRules(_usernameController.text),
+                        ),
 
                       // PASSWORD
                       _buildTextField(
@@ -1192,6 +1361,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         isPassword: true,
                         obscureText: _obscurePassword,
                         controller: _passwordController,
+                        focusNode: _passwordFocus,
                         inputFormatters: [LengthLimitingTextInputFormatter(20)],
                         onToggleVisibility: () {
                           setState(() => _obscurePassword = !_obscurePassword);
@@ -1213,6 +1383,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           return null;
                         },
                       ),
+                      if (_passwordFocus.hasFocus)
+                        _validationChecklist(
+                          rules: _passwordRules(_passwordController.text),
+                        ),
 
                       // CONFIRM PASSWORD
                       _buildTextField(
@@ -1220,6 +1394,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         icon: Icons.lock_outline,
                         isPassword: true,
                         obscureText: _obscureConfirmPassword,
+                        controller: _confirmPasswordController,
+                        focusNode: _confirmPasswordFocus,
                         inputFormatters: [LengthLimitingTextInputFormatter(20)],
                         onToggleVisibility: () {
                           setState(
@@ -1235,6 +1411,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           return null;
                         },
                       ),
+                      if (_confirmPasswordFocus.hasFocus)
+                        _validationChecklist(
+                          rules: _confirmPasswordRules(_confirmPasswordController.text),
+                        ),
 
                       const Expanded(child: SizedBox(height: 12)),
 
