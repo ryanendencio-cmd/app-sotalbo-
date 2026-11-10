@@ -119,7 +119,18 @@ class _AdminMobileAppBarState extends State<AdminMobileAppBar> {
                             ? null
                             : () async {
                                 try {
-                                  await ApiService.markAllNotificationsRead();
+                                  await ApiService.markAllNotificationsRead(
+                                    notificationIds: _notifications
+                                        .where(
+                                          (notification) =>
+                                              notification['id'] != null,
+                                        )
+                                        .map(
+                                          (notification) =>
+                                              notification['id'].toString(),
+                                        )
+                                        .toList(),
+                                  );
                                   if (!mounted) return;
                                   setState(() {
                                     for (final notification in _notifications) {
@@ -134,14 +145,6 @@ class _AdminMobileAppBarState extends State<AdminMobileAppBar> {
                                 }
                               },
                         child: const Text('Mark all read'),
-                      ),
-                      IconButton(
-                        tooltip: 'Refresh notifications',
-                        onPressed: () async {
-                          await _loadNotifications();
-                          if (sheetContext.mounted) setSheetState(() {});
-                        },
-                        icon: const Icon(Icons.refresh_rounded),
                       ),
                     ],
                   ),

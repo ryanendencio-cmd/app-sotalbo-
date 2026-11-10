@@ -8,6 +8,7 @@ import 'package:nfc_manager/nfc_manager_android.dart';
 
 import '../services/api_service.dart';
 import '../widgets/admin_mobile_chrome.dart';
+import '../widgets/paginated_list_view.dart';
 
 class AttendanceManagementScreen extends StatefulWidget {
   const AttendanceManagementScreen({super.key});
@@ -311,7 +312,18 @@ class _AttendanceManagementScreenState extends State<AttendanceManagementScreen>
                             ? null
                             : () async {
                                 try {
-                                  await ApiService.markAllNotificationsRead();
+                                  await ApiService.markAllNotificationsRead(
+                                    notificationIds: _notifications
+                                        .where(
+                                          (notification) =>
+                                              notification['id'] != null,
+                                        )
+                                        .map(
+                                          (notification) =>
+                                              notification['id'].toString(),
+                                        )
+                                        .toList(),
+                                  );
                                   if (!mounted) return;
                                   setState(() {
                                     for (final notification in _notifications) {
@@ -326,14 +338,6 @@ class _AttendanceManagementScreenState extends State<AttendanceManagementScreen>
                                 }
                               },
                         child: const Text('Mark all read'),
-                      ),
-                      IconButton(
-                        tooltip: 'Refresh notifications',
-                        onPressed: () async {
-                          await _loadNotifications();
-                          if (sheetContext.mounted) setSheetState(() {});
-                        },
-                        icon: const Icon(Icons.refresh_rounded),
                       ),
                     ],
                   ),
@@ -361,7 +365,7 @@ class _AttendanceManagementScreenState extends State<AttendanceManagementScreen>
                             style: GoogleFonts.inter(color: Colors.grey),
                           ),
                         )
-                      : ListView.separated(
+                      : PaginatedListView.separated(
                           itemCount: _notifications.length,
                           separatorBuilder: (_, _) => const Divider(height: 1),
                           itemBuilder: (context, index) {
@@ -1038,7 +1042,7 @@ class _AttendanceManagementScreenState extends State<AttendanceManagementScreen>
                 _emptyMessage('No early-out requests have been submitted.'),
               ],
             )
-          : ListView.separated(
+          : PaginatedListView.separated(
               physics: const AlwaysScrollableScrollPhysics(
                 parent: BouncingScrollPhysics(),
               ),
@@ -1074,7 +1078,7 @@ class _AttendanceManagementScreenState extends State<AttendanceManagementScreen>
                 ),
               ],
             )
-          : ListView.separated(
+          : PaginatedListView.separated(
               physics: const AlwaysScrollableScrollPhysics(
                 parent: BouncingScrollPhysics(),
               ),
@@ -1734,13 +1738,6 @@ class _AttendanceManagementScreenState extends State<AttendanceManagementScreen>
       backgroundColor: const Color(0xFFF3EFEA),
       appBar: _isAdminMobile
           ? AdminMobileAppBar(
-              actions: [
-                IconButton(
-                  tooltip: 'Refresh',
-                  onPressed: _isLoading ? null : _loadData,
-                  icon: const Icon(Icons.refresh, color: Colors.black87),
-                ),
-              ],
               onNotificationsPressed: _showNotifications,
               unreadCount: _unreadNotifications,
               bottom: _buildAttendanceTabs(),
@@ -1757,13 +1754,6 @@ class _AttendanceManagementScreenState extends State<AttendanceManagementScreen>
                 ),
               ),
               centerTitle: true,
-              actions: [
-                IconButton(
-                  tooltip: 'Refresh',
-                  onPressed: _isLoading ? null : _loadData,
-                  icon: const Icon(Icons.refresh, color: Colors.black87),
-                ),
-              ],
               bottom: _buildAttendanceTabs(),
             ),
       body: _isLoading
@@ -1774,15 +1764,7 @@ class _AttendanceManagementScreenState extends State<AttendanceManagementScreen>
                 padding: const EdgeInsets.all(24),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(_loadError!, textAlign: TextAlign.center),
-                    const SizedBox(height: 12),
-                    OutlinedButton.icon(
-                      onPressed: _loadData,
-                      icon: const Icon(Icons.refresh),
-                      label: const Text('Retry'),
-                    ),
-                  ],
+                  children: [Text(_loadError!, textAlign: TextAlign.center)],
                 ),
               ),
             )

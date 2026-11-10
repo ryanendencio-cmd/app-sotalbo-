@@ -4,6 +4,8 @@ import 'package:google_fonts/google_fonts.dart';
 import '../services/api_service.dart';
 import '../services/psgc_service.dart';
 import '../services/semaphore_service.dart';
+import '../widgets/public_email_input.dart';
+import '../widgets/worker_photo_picker.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -27,6 +29,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final TextEditingController _ageController = TextEditingController();
   final TextEditingController _addressController = TextEditingController();
   final TextEditingController _phoneController = TextEditingController();
+  final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
 
   // Focus nodes for validation checklist
@@ -39,10 +42,15 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final FocusNode _confirmPasswordFocus = FocusNode();
 
   // Confirm password controller
-  final TextEditingController _confirmPasswordController = TextEditingController();
+  final TextEditingController _confirmPasswordController =
+      TextEditingController();
 
   bool _isLoading = false;
   bool _isPhoneVerified = false;
+  bool _useEmailOtp = false;
+  String _emailDomain = 'gmail.com';
+  String? _emailVerificationToken;
+  String? _profilePhoto;
   final List<TextEditingController> _otpControllers = List.generate(
     6,
     (_) => TextEditingController(),
@@ -80,6 +88,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
     _ageController.dispose();
     _addressController.dispose();
     _phoneController.dispose();
+    _emailController.dispose();
     _passwordController.dispose();
     _confirmPasswordController.dispose();
     _firstNameFocus.dispose();
@@ -136,29 +145,42 @@ class _RegisterScreenState extends State<RegisterScreen> {
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        children: rules
-            .map((e) => _buildCheckItem(e.key, e.value))
-            .toList(),
+        children: rules.map((e) => _buildCheckItem(e.key, e.value)).toList(),
       ),
     );
   }
 
   List<MapEntry<String, bool>> _nameRules(String value) {
     final trimmed = value.trim();
-    final words = trimmed.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
+    final words = trimmed
+        .split(RegExp(r'\s+'))
+        .where((w) => w.isNotEmpty)
+        .toList();
     final allLetters = !RegExp(r'[^a-zA-Z\s]').hasMatch(trimmed);
-    final allWordsLongEnough = words.isNotEmpty && words.every((w) => w.length >= 2);
+    final allWordsLongEnough =
+        words.isNotEmpty && words.every((w) => w.length >= 2);
     return [
       MapEntry('Required', trimmed.isNotEmpty),
-      MapEntry('Letters only (no numbers/symbols)', trimmed.isEmpty || allLetters),
-      MapEntry('Each word at least 2 letters', trimmed.isEmpty || allWordsLongEnough),
+      MapEntry(
+        'Letters only (no numbers/symbols)',
+        trimmed.isEmpty || allLetters,
+      ),
+      MapEntry(
+        'Each word at least 2 letters',
+        trimmed.isEmpty || allWordsLongEnough,
+      ),
     ];
   }
 
   List<MapEntry<String, bool>> _middleNameRules(String value) {
     final trimmed = value.trim();
     if (trimmed.isEmpty) {
-      return [const MapEntry('Optional – leave blank or enter valid middle name', true)];
+      return [
+        const MapEntry(
+          'Optional – leave blank or enter valid middle name',
+          true,
+        ),
+      ];
     }
     return _nameRules(value);
   }
@@ -167,8 +189,14 @@ class _RegisterScreenState extends State<RegisterScreen> {
     final trimmed = value.trim();
     return [
       MapEntry('Required', trimmed.isNotEmpty),
-      MapEntry('8 to 20 characters', trimmed.length >= 8 && trimmed.length <= 20),
-      MapEntry('Lowercase letters and numbers only', RegExp(r'^[a-z0-9]*$').hasMatch(trimmed)),
+      MapEntry(
+        '8 to 20 characters',
+        trimmed.length >= 8 && trimmed.length <= 20,
+      ),
+      MapEntry(
+        'Lowercase letters and numbers only',
+        RegExp(r'^[a-z0-9]*$').hasMatch(trimmed),
+      ),
     ];
   }
 
@@ -185,8 +213,14 @@ class _RegisterScreenState extends State<RegisterScreen> {
     return [
       MapEntry('Required', value.isNotEmpty),
       MapEntry('8 to 20 characters', value.length >= 8 && value.length <= 20),
-      MapEntry('At least one uppercase letter (A-Z)', RegExp(r'[A-Z]').hasMatch(value)),
-      MapEntry('At least one lowercase letter (a-z)', RegExp(r'[a-z]').hasMatch(value)),
+      MapEntry(
+        'At least one uppercase letter (A-Z)',
+        RegExp(r'[A-Z]').hasMatch(value),
+      ),
+      MapEntry(
+        'At least one lowercase letter (a-z)',
+        RegExp(r'[a-z]').hasMatch(value),
+      ),
       MapEntry('At least one number (0-9)', RegExp(r'[0-9]').hasMatch(value)),
     ];
   }
@@ -194,7 +228,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
   List<MapEntry<String, bool>> _confirmPasswordRules(String value) {
     return [
       MapEntry('Required', value.isNotEmpty),
-      MapEntry('Passwords match', value.isNotEmpty && value == _passwordController.text),
+      MapEntry(
+        'Passwords match',
+        value.isNotEmpty && value == _passwordController.text,
+      ),
     ];
   }
 
@@ -852,7 +889,17 @@ class _RegisterScreenState extends State<RegisterScreen> {
   Future<void> _submitRegistration() async {
     if (!_formKey.currentState!.validate()) return;
 
-    if (!_isPhoneVerified) {
+    if (_useEmailOtp && _emailVerificationToken == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please verify your email address with OTP first.'),
+          backgroundColor: Color(0xFFA63228),
+        ),
+      );
+      return;
+    }
+
+    if (!_useEmailOtp && !_isPhoneVerified) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -900,7 +947,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
         'phone': _phoneController.text.trim().startsWith('+63')
             ? _phoneController.text.trim()
             : '+63${_phoneController.text.trim()}',
+        'email': _emailController.text.trim().isEmpty
+            ? null
+            : '${_emailController.text.trim()}@$_emailDomain',
+        if (_useEmailOtp) 'email_verification_token': _emailVerificationToken,
         'address': _addressController.text.trim(),
+        if (_profilePhoto != null) 'profile_photo': _profilePhoto,
         'role': 'Worker',
         'position': 'Worker',
         'password': _passwordController.text,
@@ -923,11 +975,176 @@ class _RegisterScreenState extends State<RegisterScreen> {
     }
   }
 
+  String get _registrationEmail =>
+      '${_emailController.text.trim()}@$_emailDomain';
+
+  Future<void> _sendRegistrationEmailOtp() async {
+    if (_emailController.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Enter your email username first.')),
+      );
+      return;
+    }
+    if (!RegExp(r'^[A-Za-z0-9._+-]+$').hasMatch(_emailController.text.trim()) ||
+        _emailController.text.trim().startsWith('.') ||
+        _emailController.text.trim().endsWith('.') ||
+        _emailController.text.trim().contains('..')) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Enter a valid email username.')),
+      );
+      return;
+    }
+
+    setState(() => _isLoading = true);
+    try {
+      await ApiService.sendEmailOtp(
+        email: _registrationEmail,
+        purpose: 'registration',
+      );
+      if (!mounted) return;
+      final token = await _showEmailOtpDialog(_registrationEmail);
+      if (!mounted || token == null) return;
+      setState(() => _emailVerificationToken = token);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Email verified successfully.'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Unable to verify email: $error'),
+          backgroundColor: const Color(0xFFA63228),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<String?> _showEmailOtpDialog(String email) async {
+    final controller = TextEditingController();
+    var isVerifying = false;
+    String? errorMessage;
+    try {
+      return await showDialog<String>(
+        context: context,
+        barrierDismissible: false,
+        builder: (dialogContext) => StatefulBuilder(
+          builder: (dialogContext, setDialogState) => AlertDialog(
+            title: const Text('Verify email'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text('Enter the 6-digit code sent to $email.'),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: controller,
+                  autofocus: true,
+                  keyboardType: TextInputType.number,
+                  maxLength: 6,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  decoration: InputDecoration(
+                    labelText: 'Verification code',
+                    errorText: errorMessage,
+                  ),
+                ),
+              ],
+            ),
+            actionsAlignment: MainAxisAlignment.spaceBetween,
+            actionsOverflowButtonSpacing: 4,
+            actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+            contentPadding: const EdgeInsets.fromLTRB(24, 20, 24, 0),
+            titlePadding: const EdgeInsets.fromLTRB(24, 20, 24, 0),
+            semanticLabel: 'Email verification',
+            actions: [
+              TextButton(
+                onPressed: isVerifying
+                    ? null
+                    : () async {
+                        try {
+                          await ApiService.sendEmailOtp(
+                            email: email,
+                            purpose: 'registration',
+                          );
+                          if (dialogContext.mounted) {
+                            setDialogState(
+                              () => errorMessage = 'A new code was sent.',
+                            );
+                          }
+                        } catch (error) {
+                          if (dialogContext.mounted) {
+                            setDialogState(
+                              () => errorMessage = error.toString(),
+                            );
+                          }
+                        }
+                      },
+                child: const Text('Resend code'),
+              ),
+              TextButton(
+                onPressed: isVerifying
+                    ? null
+                    : () => Navigator.pop(dialogContext),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: isVerifying
+                    ? null
+                    : () async {
+                        if (controller.text.trim().length != 6) {
+                          setDialogState(
+                            () => errorMessage = 'Enter all 6 digits.',
+                          );
+                          return;
+                        }
+                        setDialogState(() {
+                          isVerifying = true;
+                          errorMessage = null;
+                        });
+                        try {
+                          final token = await ApiService.verifyEmailOtp(
+                            email: email,
+                            purpose: 'registration',
+                            code: controller.text.trim(),
+                          );
+                          if (dialogContext.mounted) {
+                            Navigator.pop(dialogContext, token);
+                          }
+                        } catch (error) {
+                          if (dialogContext.mounted) {
+                            setDialogState(() {
+                              errorMessage = error.toString();
+                              isVerifying = false;
+                            });
+                          }
+                        }
+                      },
+                child: isVerifying
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Text('Verify'),
+              ),
+            ],
+          ),
+        ),
+      );
+    } finally {
+      controller.dispose();
+    }
+  }
+
   Widget _buildTextField({
     required String hintText,
     required IconData icon,
     bool isPassword = false,
     bool isNumber = false,
+    TextInputType? keyboardType,
     bool? obscureText,
     VoidCallback? onToggleVisibility,
     TextEditingController? controller,
@@ -949,7 +1166,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
         readOnly: readOnly,
         onTap: onTap,
         obscureText: obscureText ?? false,
-        keyboardType: isNumber ? TextInputType.number : TextInputType.text,
+        keyboardType:
+            keyboardType ??
+            (isNumber ? TextInputType.number : TextInputType.text),
         textCapitalization: textCapitalization,
         inputFormatters: inputFormatters,
         validator: validator,
@@ -1016,6 +1235,30 @@ class _RegisterScreenState extends State<RegisterScreen> {
     );
   }
 
+  Widget _buildSectionTitle(String title) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 8, bottom: 8),
+      child: Text(
+        title,
+        style: GoogleFonts.inter(
+          fontSize: 13,
+          fontWeight: FontWeight.bold,
+          color: Colors.grey.shade800,
+        ),
+      ),
+    );
+  }
+
+  String _getRegistrationInitials() {
+    final first = _firstNameController.text.trim();
+    final last = _lastNameController.text.trim();
+    if (first.isNotEmpty && last.isNotEmpty) {
+      return '${first[0]}${last[0]}'.toUpperCase();
+    }
+    if (first.isNotEmpty) return first[0].toUpperCase();
+    return 'W';
+  }
+
   @override
   Widget build(BuildContext context) {
     final screenHeight = MediaQuery.of(context).size.height;
@@ -1065,6 +1308,31 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         ),
                       ),
                       SizedBox(height: screenHeight < 700 ? 12 : 16),
+
+                      Center(
+                        child: Column(
+                          children: [
+                            WorkerPhotoPicker(
+                              photoData: _profilePhoto,
+                              initials: _getRegistrationInitials(),
+                              onChanged: (photo) {
+                                setState(() => _profilePhoto = photo);
+                              },
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              'Profile Photo (Optional)',
+                              style: GoogleFonts.inter(
+                                fontSize: 11,
+                                color: Colors.grey.shade600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+
+                      _buildSectionTitle('Worker Information'),
 
                       // FIRST NAME
                       _buildTextField(
@@ -1218,6 +1486,34 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         ],
                       ),
 
+                      _buildSectionTitle('Worker Contacts'),
+                      Text(
+                        'Verify your account using:',
+                        style: GoogleFonts.inter(
+                          fontSize: 11,
+                          color: Colors.grey.shade600,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Wrap(
+                        spacing: 8,
+                        children: [
+                          ChoiceChip(
+                            label: const Text('Phone OTP'),
+                            selected: !_useEmailOtp,
+                            onSelected: (_) =>
+                                setState(() => _useEmailOtp = false),
+                          ),
+                          ChoiceChip(
+                            label: const Text('Email OTP'),
+                            selected: _useEmailOtp,
+                            onSelected: (_) =>
+                                setState(() => _useEmailOtp = true),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+
                       // PHONE NUMBER WITH OTP VERIFICATION
                       _buildTextField(
                         controller: _phoneController,
@@ -1225,12 +1521,14 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         hintText: '9XXXXXXXXX',
                         icon: Icons.phone_outlined,
                         isNumber: true,
-                        readOnly: _isPhoneVerified,
+                        readOnly: _isPhoneVerified && !_useEmailOtp,
                         prefixText: '+63 ',
                         inputFormatters: [PhilippinePhoneFormatter()],
                         suffixWidget: Padding(
                           padding: const EdgeInsets.only(right: 8.0),
-                          child: _isPhoneVerified
+                          child: _useEmailOtp
+                              ? const SizedBox.shrink()
+                              : _isPhoneVerified
                               ? Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
@@ -1301,7 +1599,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           if (!trimmed.startsWith('9')) {
                             return 'Must start with 9';
                           }
-                          if (!_isPhoneVerified) {
+                          if (!_useEmailOtp && !_isPhoneVerified) {
                             return 'OTP verification required';
                           }
                           return null;
@@ -1311,6 +1609,43 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       if (_phoneFocus.hasFocus && !_isPhoneVerified)
                         _validationChecklist(
                           rules: _phoneRules(_phoneController.text),
+                        ),
+                      PublicEmailInput(
+                        controller: _emailController,
+                        domain: _emailDomain,
+                        requiredField: _useEmailOtp,
+                        onChanged: (_) {
+                          if (_emailVerificationToken != null) {
+                            setState(() => _emailVerificationToken = null);
+                          }
+                        },
+                        onDomainChanged: (domain) {
+                          setState(() {
+                            _emailDomain = domain;
+                            _emailVerificationToken = null;
+                          });
+                        },
+                      ),
+                      if (_useEmailOtp)
+                        SizedBox(
+                          width: double.infinity,
+                          child: OutlinedButton.icon(
+                            onPressed: _isLoading
+                                ? null
+                                : _emailVerificationToken != null
+                                ? null
+                                : _sendRegistrationEmailOtp,
+                            icon: Icon(
+                              _emailVerificationToken != null
+                                  ? Icons.verified_outlined
+                                  : Icons.mark_email_read_outlined,
+                            ),
+                            label: Text(
+                              _emailVerificationToken != null
+                                  ? 'Email Verified'
+                                  : 'Send Email OTP',
+                            ),
+                          ),
                         ),
 
                       // ADDRESS PICKER
@@ -1324,6 +1659,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         validator: (value) =>
                             value == null || value.isEmpty ? 'Required' : null,
                       ),
+
+                      _buildSectionTitle('Account Information'),
 
                       // USERNAME
                       _buildTextField(
@@ -1413,7 +1750,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       ),
                       if (_confirmPasswordFocus.hasFocus)
                         _validationChecklist(
-                          rules: _confirmPasswordRules(_confirmPasswordController.text),
+                          rules: _confirmPasswordRules(
+                            _confirmPasswordController.text,
+                          ),
                         ),
 
                       const Expanded(child: SizedBox(height: 12)),

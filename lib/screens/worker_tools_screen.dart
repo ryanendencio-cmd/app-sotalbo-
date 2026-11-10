@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../services/api_service.dart';
 import '../widgets/worker_app_header.dart';
+import '../widgets/paginated_list_view.dart';
 
 class WorkerToolsScreen extends StatefulWidget {
   const WorkerToolsScreen({super.key});
@@ -447,63 +448,71 @@ class _WorkerToolsScreenState extends State<WorkerToolsScreen>
                         RefreshIndicator(
                           color: const Color(0xFFA63228),
                           onRefresh: _loadToolsData,
-                          child: ListView(
+                          child: PaginatedListView.builder(
                             physics: const AlwaysScrollableScrollPhysics(
                               parent: BouncingScrollPhysics(),
                             ),
                             padding: EdgeInsets.fromLTRB(hp, 10, hp, 80),
-                            children: [
-                              TextField(
-                                controller: _availableSearchController,
-                                onChanged: (_) => setState(() {}),
-                                decoration: InputDecoration(
-                                  hintText: 'Search available tools...',
-                                  prefixIcon: const Icon(Icons.search),
-                                  suffixIcon:
-                                      _availableSearchController.text.isEmpty
-                                      ? null
-                                      : IconButton(
-                                          icon: const Icon(Icons.clear),
-                                          onPressed: () {
-                                            _availableSearchController.clear();
-                                            setState(() {});
-                                          },
-                                        ),
-                                  isDense: true,
-                                  contentPadding: const EdgeInsets.symmetric(
-                                    horizontal: 12,
-                                    vertical: 10,
+                            leadingItemCount: 2,
+                            itemCount: _filteredAvailableTools.isEmpty
+                                ? 3
+                                : _filteredAvailableTools.length + 2,
+                            itemBuilder: (context, index) {
+                              if (index == 0) {
+                                return TextField(
+                                  controller: _availableSearchController,
+                                  onChanged: (_) => setState(() {}),
+                                  decoration: InputDecoration(
+                                    hintText: 'Search available tools...',
+                                    prefixIcon: const Icon(Icons.search),
+                                    suffixIcon:
+                                        _availableSearchController.text.isEmpty
+                                        ? null
+                                        : IconButton(
+                                            icon: const Icon(Icons.clear),
+                                            onPressed: () {
+                                              _availableSearchController
+                                                  .clear();
+                                              setState(() {});
+                                            },
+                                          ),
+                                    isDense: true,
+                                    contentPadding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: 10,
+                                    ),
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                    filled: true,
+                                    fillColor: Colors.white,
                                   ),
-                                  border: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(10),
-                                  ),
-                                  filled: true,
-                                  fillColor: Colors.white,
+                                  style: GoogleFonts.inter(fontSize: 12),
+                                );
+                              }
+                              if (index == 1) {
+                                return const SizedBox(height: 20);
+                              }
+                              if (_filteredAvailableTools.isEmpty) {
+                                return _allTools.isEmpty
+                                    ? _buildEmpty(
+                                        Icons.build_circle_outlined,
+                                        'No available tools',
+                                        'There are no tools currently available to borrow.',
+                                      )
+                                    : _buildEmpty(
+                                        Icons.search_off_rounded,
+                                        'No matching tools',
+                                        'Try a different search.',
+                                      );
+                              }
+                              return Padding(
+                                padding: const EdgeInsets.only(bottom: 8),
+                                child: _buildInventoryCard(
+                                  _filteredAvailableTools[index - 2],
                                 ),
-                                style: GoogleFonts.inter(fontSize: 12),
-                              ),
-                              const SizedBox(height: 10),
-                              const SizedBox(height: 10),
-                              if (_allTools.isEmpty)
-                                _buildEmpty(
-                                  Icons.build_circle_outlined,
-                                  'No available tools',
-                                  'There are no tools currently available to borrow.',
-                                )
-                              else if (_filteredAvailableTools.isEmpty)
-                                _buildEmpty(
-                                  Icons.search_off_rounded,
-                                  'No matching tools',
-                                  'Try a different search.',
-                                )
-                              else
-                                ..._filteredAvailableTools.expand(
-                                  (tool) => [
-                                    _buildInventoryCard(tool),
-                                    const SizedBox(height: 8),
-                                  ],
-                                ),
-                            ],
+                              );
+                            },
                           ),
                         ),
 
@@ -517,7 +526,7 @@ class _WorkerToolsScreenState extends State<WorkerToolsScreen>
                                   'No tools currently issued',
                                   'Tools issued to you will appear here.',
                                 )
-                              : ListView.separated(
+                              : PaginatedListView.separated(
                                   physics: const AlwaysScrollableScrollPhysics(
                                     parent: BouncingScrollPhysics(),
                                   ),
@@ -548,7 +557,7 @@ class _WorkerToolsScreenState extends State<WorkerToolsScreen>
     return RefreshIndicator(
       color: const Color(0xFFA63228),
       onRefresh: _loadToolsData,
-      child: ListView(
+      child: PaginatedListView.builder(
         physics: const AlwaysScrollableScrollPhysics(
           parent: BouncingScrollPhysics(),
         ),
@@ -558,83 +567,92 @@ class _WorkerToolsScreenState extends State<WorkerToolsScreen>
           horizontalPadding,
           80,
         ),
-        children: [
-          TextField(
-            controller: _historySearchController,
-            onChanged: (_) => setState(() {}),
-            decoration: InputDecoration(
-              hintText: 'Search tool, borrower, or condition...',
-              prefixIcon: const Icon(Icons.search),
-              suffixIcon: _historySearchController.text.isEmpty
-                  ? null
-                  : IconButton(
-                      icon: const Icon(Icons.clear),
-                      onPressed: () {
-                        _historySearchController.clear();
-                        setState(() {});
-                      },
-                    ),
-              isDense: true,
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 12,
-                vertical: 10,
-              ),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(10),
-              ),
-              filled: true,
-              fillColor: Colors.white,
-            ),
-            style: GoogleFonts.inter(fontSize: 12),
-          ),
-          const SizedBox(height: 10),
-          Wrap(
-            spacing: 8,
-            children: ['All', 'Borrowed', 'Returned'].map((status) {
-              final selected = _historyStatusFilter == status;
-              return ChoiceChip(
-                label: Text(status),
-                selected: selected,
-                onSelected: (_) => setState(() {
-                  _historyStatusFilter = status;
-                }),
-                selectedColor: const Color(0xFFA63228).withValues(alpha: 0.12),
-                labelStyle: GoogleFonts.inter(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                  color: selected
-                      ? const Color(0xFFA63228)
-                      : Colors.grey.shade700,
+        leadingItemCount: 4,
+        itemCount: filteredTools.isEmpty ? 5 : filteredTools.length + 4,
+        itemBuilder: (context, index) {
+          if (index == 0) {
+            return TextField(
+              controller: _historySearchController,
+              onChanged: (_) => setState(() {}),
+              decoration: InputDecoration(
+                hintText: 'Search tool, borrower, or condition...',
+                prefixIcon: const Icon(Icons.search),
+                suffixIcon: _historySearchController.text.isEmpty
+                    ? null
+                    : IconButton(
+                        icon: const Icon(Icons.clear),
+                        onPressed: () {
+                          _historySearchController.clear();
+                          setState(() {});
+                        },
+                      ),
+                isDense: true,
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 10,
                 ),
-                side: BorderSide(
-                  color: selected
-                      ? const Color(0xFFA63228)
-                      : Colors.grey.shade300,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
                 ),
-              );
-            }).toList(),
-          ),
-          const SizedBox(height: 8),
-          if (_historyTools.isEmpty)
-            _buildHistoryEmpty(
-              Icons.history_rounded,
-              'No tool history yet',
-              'Past tool records will appear here.',
-            )
-          else if (filteredTools.isEmpty)
-            _buildHistoryEmpty(
-              Icons.search_off_rounded,
-              'No matching records',
-              'Try changing your search or status filter.',
-            )
-          else
-            ...filteredTools.expand(
-              (tool) => [
-                _buildToolCard(tool, isCurrentlyBorrowed: false),
-                const SizedBox(height: 8),
-              ],
+                filled: true,
+                fillColor: Colors.white,
+              ),
+              style: GoogleFonts.inter(fontSize: 12),
+            );
+          }
+          if (index == 1) return const SizedBox(height: 10);
+          if (index == 2) {
+            return Wrap(
+              spacing: 8,
+              children: ['All', 'Borrowed', 'Returned'].map((status) {
+                final selected = _historyStatusFilter == status;
+                return ChoiceChip(
+                  label: Text(status),
+                  selected: selected,
+                  onSelected: (_) => setState(() {
+                    _historyStatusFilter = status;
+                  }),
+                  selectedColor: const Color(
+                    0xFFA63228,
+                  ).withValues(alpha: 0.12),
+                  labelStyle: GoogleFonts.inter(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: selected
+                        ? const Color(0xFFA63228)
+                        : Colors.grey.shade700,
+                  ),
+                  side: BorderSide(
+                    color: selected
+                        ? const Color(0xFFA63228)
+                        : Colors.grey.shade300,
+                  ),
+                );
+              }).toList(),
+            );
+          }
+          if (index == 3) return const SizedBox(height: 8);
+          if (filteredTools.isEmpty) {
+            return _buildHistoryEmpty(
+              _historyTools.isEmpty
+                  ? Icons.history_rounded
+                  : Icons.search_off_rounded,
+              _historyTools.isEmpty
+                  ? 'No tool history yet'
+                  : 'No matching records',
+              _historyTools.isEmpty
+                  ? 'Past tool records will appear here.'
+                  : 'Try changing your search or status filter.',
+            );
+          }
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: _buildToolCard(
+              filteredTools[index - 4],
+              isCurrentlyBorrowed: false,
             ),
-        ],
+          );
+        },
       ),
     );
   }

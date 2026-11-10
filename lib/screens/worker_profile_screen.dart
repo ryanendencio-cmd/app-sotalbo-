@@ -6,6 +6,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 import 'package:share_plus/share_plus.dart';
 import '../services/api_service.dart';
 import '../widgets/worker_app_header.dart';
+import '../widgets/worker_photo_picker.dart';
 import 'worker_edit_profile_screen.dart';
 
 class WorkerProfileScreen extends StatefulWidget {
@@ -19,6 +20,7 @@ class _WorkerProfileScreenState extends State<WorkerProfileScreen> {
   Map<String, dynamic>? _userData;
   List<Map<String, dynamic>> _vales = [];
   bool _isLoading = false;
+  bool _isSavingProfilePhoto = false;
 
   @override
   void initState() {
@@ -80,6 +82,51 @@ class _WorkerProfileScreenState extends State<WorkerProfileScreen> {
     }
   }
 
+  Future<void> _saveProfilePhoto(String? photo) async {
+    if (_isSavingProfilePhoto) return;
+    final user = _userData ?? ApiService.currentUser ?? {};
+    final workerId = user['id'];
+    if (workerId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Unable to save photo: worker ID was not found.'),
+          backgroundColor: Color(0xFFA63228),
+        ),
+      );
+      return;
+    }
+
+    setState(() => _isSavingProfilePhoto = true);
+    try {
+      await ApiService.updateWorker(workerId, {'profile_photo': photo});
+      if (!mounted) return;
+      final updatedUser = {...user, 'profile_photo': photo};
+      setState(() => _userData = updatedUser);
+      ApiService.currentUser = {
+        ...ApiService.currentUser ?? {},
+        'profile_photo': photo,
+      };
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            photo == null ? 'Profile photo removed.' : 'Profile photo updated.',
+          ),
+          backgroundColor: Colors.green.shade700,
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Unable to save profile photo: $error'),
+          backgroundColor: const Color(0xFFA63228),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isSavingProfilePhoto = false);
+    }
+  }
+
   String _getInitials(String name) {
     final parts = name.trim().split(RegExp(r'\s+'));
     if (parts.length >= 2 && parts[0].isNotEmpty && parts[1].isNotEmpty) {
@@ -135,6 +182,7 @@ class _WorkerProfileScreenState extends State<WorkerProfileScreen> {
     final role = _formatRoles(user);
     final status = user?['status'] ?? 'Active';
     final phone = user?['phone'] ?? user?['contact_number'] ?? '—';
+    final email = (user?['email'] ?? '').toString().trim();
     final address = user?['address'] ?? '—';
     final department = user?['department'] ?? user?['project'] ?? 'Operations';
 
@@ -185,6 +233,7 @@ class _WorkerProfileScreenState extends State<WorkerProfileScreen> {
         : '—';
 
     final initials = _getInitials(fullName != '—' ? fullName : 'Worker');
+    final profilePhoto = user?['profile_photo']?.toString();
 
     return Scaffold(
       backgroundColor: const Color(0xFFF3EFEA),
@@ -294,12 +343,16 @@ class _WorkerProfileScreenState extends State<WorkerProfileScreen> {
                                               crossAxisAlignment:
                                                   CrossAxisAlignment.start,
                                               children: [
-                                                _buildAvatarCircle(initials),
+                                                _buildAvatarCircle(
+                                                  initials,
+                                                  profilePhoto,
+                                                ),
                                                 const SizedBox(width: 18),
                                                 Expanded(
                                                   child: _buildInfoTable(
                                                     fullName: fullName,
                                                     phone: phone,
+                                                    email: email,
                                                     role: role,
                                                     address: address,
                                                     id: id,
@@ -315,12 +368,14 @@ class _WorkerProfileScreenState extends State<WorkerProfileScreen> {
                                                 Center(
                                                   child: _buildAvatarCircle(
                                                     initials,
+                                                    profilePhoto,
                                                   ),
                                                 ),
                                                 const SizedBox(height: 16),
                                                 _buildInfoTable(
                                                   fullName: fullName,
                                                   phone: phone,
+                                                  email: email,
                                                   role: role,
                                                   address: address,
                                                   id: id,
@@ -569,30 +624,19 @@ class _WorkerProfileScreenState extends State<WorkerProfileScreen> {
     }
   }
 
-  Widget _buildAvatarCircle(String initials) {
-    return Container(
-      width: 76,
-      height: 76,
-      decoration: BoxDecoration(
-        color: const Color(0xFFA63228).withValues(alpha: 0.12),
-        shape: BoxShape.circle,
-      ),
-      child: Center(
-        child: Text(
-          initials,
-          style: GoogleFonts.inter(
-            fontSize: 26,
-            fontWeight: FontWeight.bold,
-            color: const Color(0xFFA63228),
-          ),
-        ),
-      ),
+  Widget _buildAvatarCircle(String initials, String? photoData) {
+    return WorkerPhotoPicker(
+      photoData: photoData,
+      initials: initials,
+      onChanged: _saveProfilePhoto,
+      radius: 38,
     );
   }
 
   Widget _buildInfoTable({
     required String fullName,
     required String phone,
+    required String email,
     required String role,
     required String address,
     required String id,
@@ -601,14 +645,12 @@ class _WorkerProfileScreenState extends State<WorkerProfileScreen> {
     required String age,
   }) {
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        _buildInfoGroupTitle('Worker Information'),
         _buildInfoRow('FULL NAME', fullName),
         _buildDivider(),
         _buildInfoRow('ROLE', role),
-        _buildDivider(),
-        _buildInfoRow('PHONE NUMBER', phone),
-        _buildDivider(),
-        _buildInfoRow('HOME ADDRESS', address),
         _buildDivider(),
         _buildInfoRow('EMPLOYEE ID', id),
         _buildDivider(),
@@ -617,7 +659,32 @@ class _WorkerProfileScreenState extends State<WorkerProfileScreen> {
         _buildInfoRow('BIRTHDATE', birthday),
         _buildDivider(),
         _buildInfoRow('AGE', age),
+        const SizedBox(height: 8),
+        _buildInfoGroupTitle('Worker Contacts'),
+        _buildInfoRow('PHONE NUMBER', phone),
+        _buildDivider(),
+        _buildInfoRow('EMAIL ADDRESS', email),
+        _buildDivider(),
+        _buildInfoRow('HOME ADDRESS', address),
       ],
+    );
+  }
+
+  Widget _buildInfoGroupTitle(String title) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 8, bottom: 10),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: Text(
+          title,
+          style: GoogleFonts.inter(
+            fontSize: 11,
+            fontWeight: FontWeight.bold,
+            color: const Color(0xFFA63228),
+            letterSpacing: 0.3,
+          ),
+        ),
+      ),
     );
   }
 

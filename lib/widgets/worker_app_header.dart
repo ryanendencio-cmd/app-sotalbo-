@@ -2,7 +2,32 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../services/api_service.dart';
 
-class WorkerAppHeader extends StatelessWidget implements PreferredSizeWidget {
+final ValueNotifier<bool> workerHasUnreadAnnouncements = ValueNotifier(false);
+
+void updateWorkerAnnouncementBadge(Iterable<Map<String, dynamic>> items) {
+  workerHasUnreadAnnouncements.value = items.any((item) {
+    final isAnnouncement =
+        (item['type'] ?? '').toString().toLowerCase() == 'announcement';
+    final isRead =
+        item['read'] == true ||
+        item['read']?.toString().toLowerCase() == 'true';
+    return isAnnouncement && !isRead;
+  });
+}
+
+Future<void> refreshWorkerAnnouncementBadge() async {
+  try {
+    final notifications = await ApiService.getNotifications();
+    final announcements = notifications
+        .map((item) => Map<String, dynamic>.from(item as Map))
+        .toList();
+    updateWorkerAnnouncementBadge(announcements);
+  } catch (error) {
+    debugPrint('Failed to refresh announcement badge: $error');
+  }
+}
+
+class WorkerAppHeader extends StatefulWidget implements PreferredSizeWidget {
   const WorkerAppHeader({
     super.key,
     this.bottom,
@@ -16,7 +41,7 @@ class WorkerAppHeader extends StatelessWidget implements PreferredSizeWidget {
   final List<Widget> actions;
   final Widget? leading;
   final bool automaticallyImplyLeading;
-  final VoidCallback? onNotificationsPressed;
+  final Future<void> Function()? onNotificationsPressed;
 
   static const _brandColor = Color(0xFFA63228);
 
@@ -25,10 +50,30 @@ class WorkerAppHeader extends StatelessWidget implements PreferredSizeWidget {
       Size.fromHeight(56 + (bottom?.preferredSize.height ?? 0));
 
   @override
+  State<WorkerAppHeader> createState() => _WorkerAppHeaderState();
+}
+
+class _WorkerAppHeaderState extends State<WorkerAppHeader> {
+  @override
+  void initState() {
+    super.initState();
+    refreshWorkerAnnouncementBadge();
+  }
+
+  Future<void> _openAnnouncements() async {
+    if (widget.onNotificationsPressed != null) {
+      await widget.onNotificationsPressed!();
+    } else {
+      await showWorkerAnnouncements(context);
+    }
+    await refreshWorkerAnnouncementBadge();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return AppBar(
-      automaticallyImplyLeading: automaticallyImplyLeading,
-      leading: leading,
+      automaticallyImplyLeading: widget.automaticallyImplyLeading,
+      leading: widget.leading,
       backgroundColor: Colors.white,
       surfaceTintColor: Colors.transparent,
       elevation: 0,
@@ -37,7 +82,7 @@ class WorkerAppHeader extends StatelessWidget implements PreferredSizeWidget {
       title: Image.asset('assets/logo.png', height: 28),
       centerTitle: true,
       actions: [
-        ...actions,
+        ...widget.actions,
         Stack(
           alignment: Alignment.center,
           children: [
@@ -48,29 +93,32 @@ class WorkerAppHeader extends StatelessWidget implements PreferredSizeWidget {
                 size: 22,
               ),
               tooltip: 'Announcements',
-              onPressed:
-                  onNotificationsPressed ??
-                  () => showWorkerAnnouncements(context),
+              onPressed: _openAnnouncements,
               padding: EdgeInsets.zero,
               constraints: const BoxConstraints(minWidth: 42),
             ),
-            Positioned(
-              top: 10,
-              right: 12,
-              child: Container(
-                width: 6,
-                height: 6,
-                decoration: const BoxDecoration(
-                  color: _brandColor,
-                  shape: BoxShape.circle,
-                ),
-              ),
+            ValueListenableBuilder<bool>(
+              valueListenable: workerHasUnreadAnnouncements,
+              builder: (context, hasUnread, child) => hasUnread
+                  ? Positioned(
+                      top: 10,
+                      right: 12,
+                      child: Container(
+                        width: 6,
+                        height: 6,
+                        decoration: const BoxDecoration(
+                          color: WorkerAppHeader._brandColor,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                    )
+                  : const SizedBox.shrink(),
             ),
           ],
         ),
         const SizedBox(width: 8),
       ],
-      bottom: bottom,
+      bottom: widget.bottom,
     );
   }
 }
@@ -88,6 +136,7 @@ Future<void> showWorkerAnnouncements(BuildContext context) async {
               (item['type'] ?? '').toString().toLowerCase() == 'announcement',
         )
         .toList();
+    updateWorkerAnnouncementBadge(announcements);
 
     await showDialog<void>(
       context: context,
@@ -238,6 +287,9 @@ Future<void> showWorkerAnnouncements(BuildContext context) async {
                                                     id,
                                                   );
                                                   announcement['read'] = true;
+                                                  updateWorkerAnnouncementBadge(
+                                                    announcements,
+                                                  );
                                                   setDialogState(() {});
                                                 } catch (error) {
                                                   if (pageContext.mounted) {

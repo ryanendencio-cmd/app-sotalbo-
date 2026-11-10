@@ -3,9 +3,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../widgets/worker_app_header.dart';
+import '../widgets/public_email_input.dart';
 import '../services/api_service.dart';
 import '../services/psgc_service.dart';
 import '../services/semaphore_service.dart';
+import '../widgets/worker_photo_picker.dart';
 
 class WorkerEditProfileScreen extends StatefulWidget {
   final Map<String, dynamic> workerData;
@@ -24,6 +26,11 @@ class _WorkerEditProfileScreenState extends State<WorkerEditProfileScreen> {
   bool _obscureConfirmPassword = true;
   String? _verifiedOtpPhone;
   String _originalPhone = '';
+  String _originalEmail = '';
+  String _emailDomain = 'gmail.com';
+  bool _emailChanged = false;
+  String? _profilePhoto;
+  bool _profilePhotoChanged = false;
 
   final TextEditingController _firstNameController = TextEditingController();
   final TextEditingController _middleNameController = TextEditingController();
@@ -33,6 +40,7 @@ class _WorkerEditProfileScreenState extends State<WorkerEditProfileScreen> {
   final TextEditingController _ageController = TextEditingController();
   final TextEditingController _addressController = TextEditingController();
   final TextEditingController _phoneController = TextEditingController();
+  final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
   final TextEditingController _confirmPasswordController =
       TextEditingController();
@@ -72,6 +80,19 @@ class _WorkerEditProfileScreenState extends State<WorkerEditProfileScreen> {
     _addressController.text = (user['address'] ?? '').toString();
     _originalPhone = (user['phone'] ?? user['contact_number'] ?? '').toString();
     _phoneController.text = _normalizePhoneForField(_originalPhone);
+    _originalEmail = (user['email'] ?? '').toString().trim();
+    final emailParts = _originalEmail.split('@');
+    if (emailParts.length == 2) {
+      _emailController.text = emailParts.first;
+      final storedDomain = emailParts.last.toLowerCase();
+      if (publicEmailDomains.values.contains(storedDomain)) {
+        _emailDomain = storedDomain;
+      }
+    } else {
+      _emailController.text = _originalEmail;
+    }
+    _profilePhoto = (user['profile_photo'] ?? '').toString().trim();
+    if (_profilePhoto!.isEmpty) _profilePhoto = null;
 
     final birthday = _firstValue(user, ['birthday', 'date_of_birth']) ?? '';
     if (birthday.isNotEmpty) {
@@ -98,6 +119,7 @@ class _WorkerEditProfileScreenState extends State<WorkerEditProfileScreen> {
     _ageController.dispose();
     _addressController.dispose();
     _phoneController.dispose();
+    _emailController.dispose();
     _passwordController.dispose();
     _confirmPasswordController.dispose();
     for (final controller in _otpControllers) {
@@ -714,6 +736,8 @@ class _WorkerEditProfileScreenState extends State<WorkerEditProfileScreen> {
     final address = _addressController.text.trim();
     final birthday = _formatBirthdayForApi(_bdayController.text);
     final age = int.tryParse(_ageController.text) ?? 0;
+    final emailUsername = _emailController.text.trim();
+    final email = emailUsername.isEmpty ? '' : '$emailUsername@$_emailDomain';
     final password = _passwordController.text.trim();
     final role =
         (widget.workerData['role'] ?? widget.workerData['position'] ?? 'Worker')
@@ -733,6 +757,8 @@ class _WorkerEditProfileScreenState extends State<WorkerEditProfileScreen> {
         'birthday': birthday,
         'age': age,
         'phone': normalizedPhone,
+        if (_emailChanged) 'email': email.isEmpty ? null : email,
+        if (_profilePhotoChanged) 'profile_photo': _profilePhoto,
         'address': address,
         'role': role,
         'position': position,
@@ -765,6 +791,8 @@ class _WorkerEditProfileScreenState extends State<WorkerEditProfileScreen> {
       updated['age'] = age;
       updated['phone'] = normalizedPhone;
       updated['contact_number'] = normalizedPhone;
+      updated['email'] = _emailChanged ? email : _originalEmail;
+      updated['profile_photo'] = _profilePhoto;
       updated['address'] = address;
       updated['role'] = role;
       updated['position'] = position;
@@ -804,6 +832,20 @@ class _WorkerEditProfileScreenState extends State<WorkerEditProfileScreen> {
     }
   }
 
+  Widget _buildSectionTitle(String title) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 8, bottom: 8),
+      child: Text(
+        title,
+        style: GoogleFonts.inter(
+          fontSize: 14,
+          fontWeight: FontWeight.bold,
+          color: Colors.grey.shade800,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final initials = _getInitials(
@@ -836,37 +878,24 @@ class _WorkerEditProfileScreenState extends State<WorkerEditProfileScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Center(
-                child: Stack(
+                child: Column(
                   children: [
-                    CircleAvatar(
-                      radius: 44,
-                      backgroundColor: const Color(
-                        0xFFA63228,
-                      ).withValues(alpha: 0.12),
-                      child: Text(
-                        initials,
-                        style: GoogleFonts.inter(
-                          fontSize: 28,
-                          fontWeight: FontWeight.bold,
-                          color: const Color(0xFFA63228),
-                        ),
-                      ),
+                    WorkerPhotoPicker(
+                      photoData: _profilePhoto,
+                      initials: initials,
+                      onChanged: (photo) {
+                        setState(() {
+                          _profilePhoto = photo;
+                          _profilePhotoChanged = true;
+                        });
+                      },
                     ),
-                    Positioned(
-                      bottom: 0,
-                      right: 0,
-                      child: Container(
-                        padding: const EdgeInsets.all(6),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFA63228),
-                          shape: BoxShape.circle,
-                          border: Border.all(color: Colors.white, width: 2),
-                        ),
-                        child: const Icon(
-                          Icons.camera_alt,
-                          size: 14,
-                          color: Colors.white,
-                        ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'Profile Photo (Optional)',
+                      style: GoogleFonts.inter(
+                        fontSize: 11,
+                        color: Colors.grey.shade600,
                       ),
                     ),
                   ],
@@ -874,15 +903,8 @@ class _WorkerEditProfileScreenState extends State<WorkerEditProfileScreen> {
               ),
               const SizedBox(height: 24),
 
-              Text(
-                'Personal Information',
-                style: GoogleFonts.inter(
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.grey.shade800,
-                ),
-              ),
-              const SizedBox(height: 12),
+              _buildSectionTitle('Worker Information'),
+              const SizedBox(height: 4),
               _buildInput(
                 label: 'First Name',
                 controller: _firstNameController,
@@ -910,7 +932,7 @@ class _WorkerEditProfileScreenState extends State<WorkerEditProfileScreen> {
                   return null;
                 },
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 16),
               _buildInput(
                 label: 'Middle Name (Optional)',
                 controller: _middleNameController,
@@ -1001,6 +1023,8 @@ class _WorkerEditProfileScreenState extends State<WorkerEditProfileScreen> {
                 ],
               ),
               const SizedBox(height: 12),
+              _buildSectionTitle('Worker Contacts'),
+              const SizedBox(height: 4),
               _buildInput(
                 label: 'Phone Number',
                 controller: _phoneController,
@@ -1077,6 +1101,18 @@ class _WorkerEditProfileScreenState extends State<WorkerEditProfileScreen> {
                 },
               ),
               const SizedBox(height: 12),
+              PublicEmailInput(
+                controller: _emailController,
+                domain: _emailDomain,
+                onChanged: (_) => _emailChanged = true,
+                onDomainChanged: (domain) {
+                  setState(() {
+                    _emailDomain = domain;
+                    _emailChanged = true;
+                  });
+                },
+              ),
+              const SizedBox(height: 12),
               _buildInput(
                 label: 'Select Address (Region, Province, City, Brgy)',
                 controller: _addressController,
@@ -1086,7 +1122,9 @@ class _WorkerEditProfileScreenState extends State<WorkerEditProfileScreen> {
                 validator: (value) =>
                     (value == null || value.trim().isEmpty) ? 'Required' : null,
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 16),
+              _buildSectionTitle('Account Information'),
+              const SizedBox(height: 4),
               _buildInput(
                 label: 'Username (cannot be changed)',
                 controller: _usernameController,

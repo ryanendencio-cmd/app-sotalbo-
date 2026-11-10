@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../services/api_service.dart';
 import '../widgets/worker_app_header.dart';
+import '../widgets/paginated_list_view.dart';
 
 class WorkerAttendanceScreen extends StatefulWidget {
   const WorkerAttendanceScreen({super.key});
@@ -1259,10 +1260,11 @@ class _WorkerAttendanceScreenState extends State<WorkerAttendanceScreen>
                         RefreshIndicator(
                           color: const Color(0xFFA63228),
                           onRefresh: _loadAttendance,
-                          child: ListView.separated(
+                          child: PaginatedListView.separated(
                             physics: const AlwaysScrollableScrollPhysics(
                               parent: BouncingScrollPhysics(),
                             ),
+                            leadingItemCount: 2,
                             padding: EdgeInsets.fromLTRB(
                               hp,
                               14,
@@ -1329,14 +1331,6 @@ class _WorkerAttendanceScreenState extends State<WorkerAttendanceScreen>
                                                 ? 'Your attendance logs will appear here once recorded by the timekeeper.'
                                                 : 'Try another date range or status filter.'),
                                       ),
-                                      if (_loadError != null) ...[
-                                        const SizedBox(height: 12),
-                                        OutlinedButton.icon(
-                                          onPressed: _loadAttendance,
-                                          icon: const Icon(Icons.refresh),
-                                          label: const Text('Try again'),
-                                        ),
-                                      ],
                                     ],
                                   ),
                                 );
@@ -1461,7 +1455,7 @@ class _WorkerAttendanceScreenState extends State<WorkerAttendanceScreen>
     return RefreshIndicator(
       color: const Color(0xFFA63228),
       onRefresh: _loadEarlyOutRequests,
-      child: ListView.separated(
+      child: PaginatedListView.separated(
         physics: const AlwaysScrollableScrollPhysics(
           parent: BouncingScrollPhysics(),
         ),
@@ -1469,6 +1463,7 @@ class _WorkerAttendanceScreenState extends State<WorkerAttendanceScreen>
           horizontal: horizontalPadding,
           vertical: 10,
         ),
+        leadingItemCount: 1,
         itemCount: _filteredEarlyOutRequests.isEmpty
             ? 2
             : _filteredEarlyOutRequests.length + 1,
@@ -1514,12 +1509,6 @@ class _WorkerAttendanceScreenState extends State<WorkerAttendanceScreen>
                             ? 'Your early-out requests will appear here once submitted.'
                             : 'Try another date range or status filter.'),
                   ),
-                  if (_requestError != null)
-                    TextButton.icon(
-                      onPressed: _loadEarlyOutRequests,
-                      icon: const Icon(Icons.refresh),
-                      label: const Text('Try again'),
-                    ),
                 ],
               ),
             );

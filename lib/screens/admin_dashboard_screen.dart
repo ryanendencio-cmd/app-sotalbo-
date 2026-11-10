@@ -10,6 +10,7 @@ import 'package:share_plus/share_plus.dart';
 import '../services/admin_service.dart';
 import '../services/api_service.dart';
 import '../widgets/admin_mobile_chrome.dart';
+import '../widgets/paginated_list_view.dart';
 import 'tools_monitoring_screen.dart';
 
 class AdminDashboardScreen extends StatefulWidget {
@@ -1928,11 +1929,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             });
           }
 
-          Future<void> refresh() async {
-            await _loadNotifications();
-            if (context.mounted) setSheetState(() {});
-          }
-
           Future<void> markRead(Map<String, dynamic> notification) async {
             final id = notification['id'];
             if (id == null) return;
@@ -1959,7 +1955,12 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
           Future<void> markAllRead() async {
             try {
-              await ApiService.markAllNotificationsRead();
+              await ApiService.markAllNotificationsRead(
+                notificationIds: _notifications
+                    .where((notification) => notification['id'] != null)
+                    .map((notification) => notification['id'].toString())
+                    .toList(),
+              );
               if (!mounted) return;
               setState(() {
                 for (final notification in _notifications) {
@@ -2007,11 +2008,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                               child: const Text('Mark all read'),
                             ),
                           IconButton(
-                            tooltip: 'Refresh notifications',
-                            onPressed: refresh,
-                            icon: const Icon(Icons.refresh_rounded),
-                          ),
-                          IconButton(
                             tooltip: 'Close notifications',
                             onPressed: () => Navigator.pop(sheetContext),
                             icon: const Icon(Icons.close_rounded),
@@ -2034,11 +2030,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                                       _notificationsError!,
                                       textAlign: TextAlign.center,
                                     ),
-                                    const SizedBox(height: 12),
-                                    OutlinedButton(
-                                      onPressed: refresh,
-                                      child: const Text('Try again'),
-                                    ),
                                   ],
                                 ),
                               ),
@@ -2052,7 +2043,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                                 ),
                               ),
                             )
-                          : ListView.separated(
+                          : PaginatedListView.separated(
                               padding: const EdgeInsets.all(12),
                               itemCount: _notifications.length,
                               separatorBuilder: (_, _) =>
@@ -3535,12 +3526,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                         ),
                       ),
                     ),
-                    TextButton(
-                      onPressed: _isLoadingAttendanceSummary
-                          ? null
-                          : _loadAttendanceSummary,
-                      child: const Text('Retry'),
-                    ),
                   ],
                 ),
               )
@@ -3676,23 +3661,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                       color: Colors.grey.shade600,
                     ),
                   ),
-                  const SizedBox(height: 12),
-                  TextButton.icon(
-                    onPressed: _loadPendingRegistrations,
-                    icon: const Icon(
-                      Icons.refresh,
-                      size: 16,
-                      color: Color(0xFFA63228),
-                    ),
-                    label: Text(
-                      'Refresh',
-                      style: GoogleFonts.inter(
-                        fontSize: 12,
-                        color: const Color(0xFFA63228),
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
                 ],
               ),
             ),
@@ -3704,7 +3672,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     return RefreshIndicator(
       onRefresh: _loadPendingRegistrations,
       color: const Color(0xFFA63228),
-      child: ListView.builder(
+      child: PaginatedListView.builder(
         padding: const EdgeInsets.all(10),
         itemCount: _pendingRegistrations.length,
         itemBuilder: (context, index) => _buildApplicantCard(index),
@@ -4155,7 +4123,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                       ),
                     ],
                   )
-                : ListView.builder(
+                : PaginatedListView.builder(
                     physics: const AlwaysScrollableScrollPhysics(),
                     padding: const EdgeInsets.all(10),
                     itemCount: list.length,
@@ -4705,7 +4673,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                       ),
                     ],
                   )
-                : ListView.builder(
+                : PaginatedListView.builder(
                     physics: const AlwaysScrollableScrollPhysics(),
                     padding: const EdgeInsets.all(10),
                     itemCount: filteredHistory.length,
@@ -5379,25 +5347,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                                 color: Colors.grey.shade500,
                               ),
                             ),
-                            if (query.isEmpty) ...[
-                              const SizedBox(height: 12),
-                              TextButton.icon(
-                                onPressed: _loadWorkers,
-                                icon: const Icon(
-                                  Icons.refresh,
-                                  size: 16,
-                                  color: Color(0xFFA63228),
-                                ),
-                                label: Text(
-                                  'Refresh',
-                                  style: GoogleFonts.inter(
-                                    fontSize: 12,
-                                    color: const Color(0xFFA63228),
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ),
-                            ],
+                            if (query.isEmpty) ...[],
                           ],
                         ),
                       ),
@@ -5407,7 +5357,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               : RefreshIndicator(
                   onRefresh: _loadWorkers,
                   color: const Color(0xFFA63228),
-                  child: ListView.separated(
+                  child: PaginatedListView.separated(
                     padding: const EdgeInsets.all(10),
                     itemCount: filteredWorkers.length,
                     separatorBuilder: (_, __) => const SizedBox(height: 6),

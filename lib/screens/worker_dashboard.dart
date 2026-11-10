@@ -36,6 +36,7 @@ class _WorkerDashboardState extends State<WorkerDashboard> {
   bool _toolsLoading = true;
   String? _toolsError;
   List<Map<String, dynamic>> _announcements = [];
+  List<Map<String, dynamic>> _allAnnouncements = [];
   List<Map<String, dynamic>> _correctionRequests = [];
 
   @override
@@ -143,14 +144,13 @@ class _WorkerDashboardState extends State<WorkerDashboard> {
 
       final List<Map<String, dynamic>> weekly = days.map((d) {
         final hrs = dayHours[d] ?? 0.0;
+        final totalMinutes = (hrs * 60).round();
         final earn = (hrs / 8.0) * dailyRate;
         return {
           'day': d,
           'hours': hrs,
           'earnings': earn,
-          'labelHours': hrs == 0
-              ? '0h'
-              : '${hrs == hrs.roundToDouble() ? hrs.toStringAsFixed(0) : hrs.toStringAsFixed(1)}h',
+          'labelHours': '${totalMinutes ~/ 60}h,${totalMinutes % 60}m',
           'labelEarnings': earn > 0 ? '₱${earn.toStringAsFixed(0)}' : '₱0',
         };
       }).toList();
@@ -448,8 +448,10 @@ class _WorkerDashboardState extends State<WorkerDashboard> {
                 (item['type'] ?? '').toString().toLowerCase() == 'announcement',
           )
           .toList();
+      updateWorkerAnnouncementBadge(announcements);
       if (mounted) {
         setState(() {
+          _allAnnouncements = announcements;
           _announcements = announcements.take(3).toList();
           _announcementError = null;
           _announcementsLoading = false;
@@ -903,7 +905,7 @@ class _WorkerDashboardState extends State<WorkerDashboard> {
     await _loadAnnouncements();
     if (!mounted) return;
     final markingIds = <String>{};
-    showDialog(
+    await showDialog<void>(
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (dialogContext, setDialogState) => Dialog(
@@ -1096,6 +1098,9 @@ class _WorkerDashboardState extends State<WorkerDashboard> {
                                               id,
                                             );
                                             notif['read'] = true;
+                                            updateWorkerAnnouncementBadge(
+                                              _allAnnouncements,
+                                            );
                                             if (mounted) {
                                               setState(() {
                                                 final matching = _announcements

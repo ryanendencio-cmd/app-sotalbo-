@@ -2,11 +2,17 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 
 class ApiService {
+  static const _readNotificationIdsKey = 'readNotificationIds';
+
+  // For physical device via wireless debugging, use your PC's local IP address.
+  // For emulator, use '10.0.2.2'.
+  // Run `ipconfig` in cmd to find your PC's IPv4 address.
   static String androidHost = const String.fromEnvironment(
     'API_HOST',
-    defaultValue: '10.0.2.2',
+    defaultValue: '10.162.118.195',
   );
   static String get baseUrl {
     if (!kIsWeb && Platform.isAndroid) return 'http://$androidHost:5000/api';
@@ -366,12 +372,45 @@ class ApiService {
   ).then((v) => Map<String, dynamic>.from(v as Map));
 
   // Notifications
-  static Future<List<dynamic>> getNotifications() =>
-      _get('/notifications').then((v) => v as List);
-  static Future<void> markNotificationRead(dynamic id) =>
-      _put('/notifications/$id/read', {});
-  static Future<void> markAllNotificationsRead() =>
-      _put('/notifications/mark-all-read', {});
+  static Future<List<dynamic>> getNotifications() async {
+    final result = await _get('/notifications') as List;
+    final preferences = await SharedPreferences.getInstance();
+    final readIds = preferences.getStringList(_readNotificationIdsKey) ?? [];
+    final readIdSet = readIds.toSet();
+
+    return result.map((item) {
+      final notification = Map<String, dynamic>.from(item as Map);
+      if (notification['read'] == true ||
+          readIdSet.contains(notification['id']?.toString())) {
+        notification['read'] = true;
+      }
+      return notification;
+    }).toList();
+  }
+
+  static Future<void> markNotificationRead(dynamic id) async {
+    final notificationId = id.toString();
+    await _put('/notifications/$notificationId/read', {});
+    await _saveReadNotificationIds([notificationId]);
+  }
+
+  static Future<void> markAllNotificationsRead({
+    required List<String> notificationIds,
+  }) async {
+    final uniqueIds = notificationIds.toSet().toList();
+    await _put('/notifications/mark-all-read', {'notificationIds': uniqueIds});
+    await _saveReadNotificationIds(uniqueIds);
+  }
+
+  static Future<void> _saveReadNotificationIds(Iterable<String> ids) async {
+    final preferences = await SharedPreferences.getInstance();
+    final readIds = preferences.getStringList(_readNotificationIdsKey) ?? [];
+    await preferences.setStringList(
+      _readNotificationIdsKey,
+      {...readIds, ...ids}.toList(),
+    );
+  }
+
   static Future<dynamic> logAdminNotification({
     required String title,
     required String message,
@@ -396,6 +435,40 @@ class ApiService {
   ) async {
     final result = await _post('/register', data);
     return result as Map<String, dynamic>;
+  }
+
+  static Future<Map<String, dynamic>> sendEmailOtp({
+    required String email,
+    required String purpose,
+  }) async {
+    final result = await _post('/email-otp/send', {
+      'email': email,
+      'purpose': purpose,
+    });
+    return Map<String, dynamic>.from(result as Map);
+  }
+
+  static Future<String> verifyEmailOtp({
+    required String email,
+    required String purpose,
+    required String code,
+  }) async {
+    final result = await _post('/email-otp/verify', {
+      'email': email,
+      'purpose': purpose,
+      'code': code,
+    });
+    return (result as Map)['verificationToken'].toString();
+  }
+
+  static Future<void> resetPasswordWithEmailOtp({
+    required String verificationToken,
+    required String newPassword,
+  }) async {
+    await _post('/password/reset/email', {
+      'verificationToken': verificationToken,
+      'newPassword': newPassword,
+    });
   }
 
   static String normalizePhone(String input) {

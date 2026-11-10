@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../services/api_service.dart';
 import '../widgets/worker_app_header.dart';
 import '../widgets/currency_text_field.dart';
+import '../widgets/paginated_list_view.dart';
 
 class WorkerSalaryScreen extends StatefulWidget {
   const WorkerSalaryScreen({super.key});
@@ -185,7 +186,10 @@ class _WorkerSalaryScreenState extends State<WorkerSalaryScreen>
           }
         } catch (error) {
           if (mounted) {
-            setState(() => _salarySummaryError = 'Unable to load salary summary: $error');
+            setState(
+              () =>
+                  _salarySummaryError = 'Unable to load salary summary: $error',
+            );
           }
         }
       }
@@ -553,10 +557,11 @@ class _WorkerSalaryScreenState extends State<WorkerSalaryScreen>
                         RefreshIndicator(
                           color: const Color(0xFFA63228),
                           onRefresh: _loadData,
-                          child: ListView.separated(
+                          child: PaginatedListView.separated(
                             physics: const AlwaysScrollableScrollPhysics(
                               parent: BouncingScrollPhysics(),
                             ),
+                            leadingItemCount: 2,
                             padding: EdgeInsets.symmetric(
                               horizontal: hp,
                               vertical: 10,
@@ -610,10 +615,11 @@ class _WorkerSalaryScreenState extends State<WorkerSalaryScreen>
                         RefreshIndicator(
                           color: const Color(0xFFA63228),
                           onRefresh: _loadData,
-                          child: ListView.separated(
+                          child: PaginatedListView.separated(
                             physics: const AlwaysScrollableScrollPhysics(
                               parent: BouncingScrollPhysics(),
                             ),
+                            leadingItemCount: 1,
                             padding: EdgeInsets.symmetric(
                               horizontal: hp,
                               vertical: 10,
@@ -1027,7 +1033,9 @@ class _WorkerSalaryScreenState extends State<WorkerSalaryScreen>
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFA63228).withValues(alpha: 0.18)),
+        border: Border.all(
+          color: const Color(0xFFA63228).withValues(alpha: 0.18),
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1347,7 +1355,7 @@ class _WorkerSalaryScreenState extends State<WorkerSalaryScreen>
             ),
           ],
           const SizedBox(height: 8),
-          const Divider(height: 1, color: Color(0xFFEEEEEE)          ),
+          const Divider(height: 1, color: Color(0xFFEEEEEE)),
           if (dailyLogs.isNotEmpty)
             ExpansionTile(
               tilePadding: EdgeInsets.zero,

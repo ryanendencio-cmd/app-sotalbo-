@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../services/api_service.dart';
-import '../services/semaphore_service.dart';
+import '../widgets/public_email_input.dart';
 
 class ForgotPasswordScreen extends StatefulWidget {
   const ForgotPasswordScreen({super.key});
@@ -17,7 +17,8 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
   int _currentStep = 0;
   bool _isLoading = false;
 
-  final TextEditingController _phoneController = TextEditingController();
+  final TextEditingController _emailUsernameController =
+      TextEditingController();
   final TextEditingController _newPasswordController = TextEditingController();
   final TextEditingController _confirmPasswordController =
       TextEditingController();
@@ -30,10 +31,14 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
 
   bool _obscureNewPass = true;
   bool _obscureConfirmPass = true;
+  String _emailDomain = 'gmail.com';
+  String? _emailVerificationToken;
+
+  String get _email => '${_emailUsernameController.text.trim()}@$_emailDomain';
 
   @override
   void dispose() {
-    _phoneController.dispose();
+    _emailUsernameController.dispose();
     _newPasswordController.dispose();
     _confirmPasswordController.dispose();
     for (var c in _otpControllers) {
@@ -45,14 +50,16 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
     super.dispose();
   }
 
-  void _handleSendOtp() async {
-    final phone = _phoneController.text.trim();
-    if (phone.length < 10) {
+  Future<void> _handleSendOtp() async {
+    final username = _emailUsernameController.text.trim();
+    if (username.isEmpty ||
+        !RegExp(r'^[A-Za-z0-9._+-]+$').hasMatch(username) ||
+        username.startsWith('.') ||
+        username.endsWith('.') ||
+        username.contains('..')) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text(
-            'Please enter a valid 10-digit phone number (e.g. 9XXXXXXXXX)',
-          ),
+          content: Text('Enter a valid email username to receive a code.'),
         ),
       );
       return;
@@ -60,44 +67,18 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
 
     setState(() => _isLoading = true);
     try {
-      final exists = await ApiService.checkPhoneExists(phone);
+      await ApiService.sendEmailOtp(email: _email, purpose: 'password_reset');
       if (!mounted) return;
-
-      if (!exists) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Phone Number not existing'),
-            backgroundColor: Colors.red,
+      setState(() => _currentStep = 1);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'If an account uses that email, a verification code will be sent.',
           ),
-        );
-        return;
-      }
-
-      final result = await SemaphoreService.sendOtp(phone);
-      if (!mounted) return;
-
-      if (result['success'] == true || result['otp'] != null) {
-        setState(() => _currentStep = 1);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              (result['message'] ?? 'OTP sent successfully').toString(),
-            ),
-            backgroundColor: Colors.green.shade700,
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              (result['message'] ?? 'Unable to send OTP').toString(),
-            ),
-            backgroundColor: Colors.orange.shade700,
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      }
+          backgroundColor: Color(0xFFA63228),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -112,7 +93,6 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
   }
 
   Future<void> _handleVerifyOtp() async {
-    final phone = _phoneController.text.trim();
     final enteredOtp = _otpControllers.map((c) => c.text).join();
 
     if (enteredOtp.length < 6) {
@@ -122,25 +102,49 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
       return;
     }
 
-    final isValid = await SemaphoreService.verifyOtp(phone, enteredOtp);
-    if (!mounted) return;
-
-    if (!isValid) {
+    setState(() => _isLoading = true);
+    try {
+      final token = await ApiService.verifyEmailOtp(
+        email: _email,
+        purpose: 'password_reset',
+        code: enteredOtp,
+      );
+      if (!mounted) return;
+      setState(() {
+        _emailVerificationToken = token;
+        _currentStep = 2;
+      });
+    } catch (error) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Invalid OTP code. Please try again.'),
-          backgroundColor: Color(0xFFA63228),
+        SnackBar(
+          content: Text('Unable to verify OTP: $error'),
+          backgroundColor: const Color(0xFFA63228),
         ),
+      );
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _handleResetPassword() async {
+    if (!_formKey.currentState!.validate()) return;
+    final token = _emailVerificationToken;
+    if (token == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Verify your email address first.')),
       );
       return;
     }
 
-    setState(() => _currentStep = 2);
-  }
-
-  void _handleResetPassword() {
-    if (_formKey.currentState!.validate()) {
-      showDialog(
+    setState(() => _isLoading = true);
+    try {
+      await ApiService.resetPasswordWithEmailOtp(
+        verificationToken: token,
+        newPassword: _newPasswordController.text,
+      );
+      if (!mounted) return;
+      await showDialog<void>(
         context: context,
         barrierDismissible: false,
         builder: (context) => AlertDialog(
@@ -214,6 +218,16 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
           ),
         ),
       );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Unable to reset password: $error'),
+          backgroundColor: const Color(0xFFA63228),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -313,7 +327,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                     _buildStepIndicator(screenWidth),
                     SizedBox(height: screenHeight * 0.025),
 
-                    // STEP 1: PHONE NUMBER
+                    // STEP 1: EMAIL ADDRESS
                     if (_currentStep == 0) ...[
                       Text(
                         'Forgot Password?',
@@ -325,7 +339,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        'Enter your registered phone number to receive a verification OTP code.',
+                        'Enter your registered email address to receive a verification code.',
                         style: GoogleFonts.inter(
                           fontSize: screenWidth < 360 ? 12 : 13,
                           color: Colors.grey.shade600,
@@ -334,51 +348,17 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                       ),
                       SizedBox(height: screenHeight * 0.025),
 
-                      TextFormField(
-                        controller: _phoneController,
-                        keyboardType: TextInputType.number,
-                        style: GoogleFonts.inter(
-                          fontSize: screenWidth < 360 ? 13 : 14,
-                          color: Colors.black87,
-                        ),
-                        inputFormatters: [PhilippinePhoneFormatter()],
-                        decoration: InputDecoration(
-                          isDense: true,
-                          hintText: '9XXXXXXXXX',
-                          hintStyle: GoogleFonts.inter(
-                            color: Colors.grey.shade400,
-                            fontSize: screenWidth < 360 ? 12 : 13,
-                          ),
-                          prefixText: '+63 ',
-                          prefixStyle: GoogleFonts.inter(
-                            color: Colors.black87,
-                            fontWeight: FontWeight.bold,
-                            fontSize: screenWidth < 360 ? 13 : 14,
-                          ),
-                          prefixIcon: Icon(
-                            Icons.phone_outlined,
-                            color: Colors.grey,
-                            size: screenWidth < 360 ? 18 : 20,
-                          ),
-                          contentPadding: EdgeInsets.symmetric(
-                            vertical: screenHeight * 0.015,
-                            horizontal: 14,
-                          ),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                          enabledBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(16),
-                            borderSide: BorderSide(color: Colors.grey.shade300),
-                          ),
-                          focusedBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(16),
-                            borderSide: const BorderSide(
-                              color: Color(0xFFA63228),
-                              width: 1.5,
-                            ),
-                          ),
-                        ),
+                      PublicEmailInput(
+                        controller: _emailUsernameController,
+                        domain: _emailDomain,
+                        requiredField: true,
+                        onChanged: (_) => _emailVerificationToken = null,
+                        onDomainChanged: (domain) {
+                          setState(() {
+                            _emailDomain = domain;
+                            _emailVerificationToken = null;
+                          });
+                        },
                       ),
                       SizedBox(height: screenHeight * 0.025),
 
@@ -415,7 +395,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                       ),
                     ],
 
-                    // STEP 2: OTP VERIFICATION
+                    // STEP 2: EMAIL OTP VERIFICATION
                     if (_currentStep == 1) ...[
                       Text(
                         'Verification Code',
@@ -427,7 +407,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        'Enter the 6-digit code sent to ${_phoneController.text}',
+                        'Enter the 6-digit code sent to $_email',
                         style: GoogleFonts.inter(
                           fontSize: screenWidth < 360 ? 12 : 13,
                           color: Colors.grey.shade600,
@@ -496,7 +476,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                         width: double.infinity,
                         height: screenHeight * (isSmall ? 0.055 : 0.058),
                         child: ElevatedButton(
-                          onPressed: _handleVerifyOtp,
+                          onPressed: _isLoading ? null : _handleVerifyOtp,
                           style: ElevatedButton.styleFrom(
                             backgroundColor: const Color(0xFFA63228),
                             shape: RoundedRectangleBorder(
@@ -518,40 +498,31 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                       Center(
                         child: TextButton(
                           onPressed: () async {
-                            final phone = _phoneController.text.trim();
-                            final messenger = ScaffoldMessenger.maybeOf(
-                              context,
-                            );
-
-                            if (phone.length < 10) {
-                              messenger?.showSnackBar(
+                            try {
+                              await ApiService.sendEmailOtp(
+                                email: _email,
+                                purpose: 'password_reset',
+                              );
+                              if (!context.mounted) return;
+                              for (final controller in _otpControllers) {
+                                controller.clear();
+                              }
+                              ScaffoldMessenger.of(context).showSnackBar(
                                 const SnackBar(
-                                  content: Text(
-                                    'Please enter a valid phone number first',
-                                  ),
+                                  content: Text('A new code was requested.'),
+                                  behavior: SnackBarBehavior.floating,
                                 ),
                               );
-                              return;
-                            }
-
-                            final result = await SemaphoreService.sendOtp(
-                              phone,
-                            );
-                            if (mounted && messenger != null) {
-                              messenger.showSnackBar(
+                            } catch (error) {
+                              if (!context.mounted) return;
+                              ScaffoldMessenger.of(context).showSnackBar(
                                 SnackBar(
                                   content: Text(
-                                    (result['message'] ??
-                                            'OTP code resent to your number')
-                                        .toString(),
+                                    'Unable to resend code: $error',
                                   ),
                                   behavior: SnackBarBehavior.floating,
                                 ),
                               );
-                            }
-
-                            for (final controller in _otpControllers) {
-                              controller.clear();
                             }
                           },
                           child: Text(
@@ -726,7 +697,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                         width: double.infinity,
                         height: screenHeight * (isSmall ? 0.055 : 0.058),
                         child: ElevatedButton(
-                          onPressed: _handleResetPassword,
+                          onPressed: _isLoading ? null : _handleResetPassword,
                           style: ElevatedButton.styleFrom(
                             backgroundColor: const Color(0xFFA63228),
                             shape: RoundedRectangleBorder(
@@ -734,14 +705,19 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                             ),
                             elevation: 0,
                           ),
-                          child: Text(
-                            'Update Password',
-                            style: GoogleFonts.inter(
-                              fontSize: screenWidth < 360 ? 14 : 15,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.white,
-                            ),
-                          ),
+                          child: _isLoading
+                              ? const CircularProgressIndicator(
+                                  color: Colors.white,
+                                  strokeWidth: 2,
+                                )
+                              : Text(
+                                  'Update Password',
+                                  style: GoogleFonts.inter(
+                                    fontSize: screenWidth < 360 ? 14 : 15,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.white,
+                                  ),
+                                ),
                         ),
                       ),
                     ],
@@ -752,38 +728,6 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
           ),
         ),
       ),
-    );
-  }
-}
-
-class PhilippinePhoneFormatter extends TextInputFormatter {
-  @override
-  TextEditingValue formatEditUpdate(
-    TextEditingValue oldValue,
-    TextEditingValue newValue,
-  ) {
-    String text = newValue.text;
-    if (text.isEmpty) return newValue;
-
-    // Remove any non-digits
-    text = text.replaceAll(RegExp(r'\D'), '');
-
-    // Strip country code 63 if present
-    if (text.startsWith('63')) {
-      text = text.substring(2);
-    }
-    // Strip leading 0
-    if (text.startsWith('0')) {
-      text = text.substring(1);
-    }
-
-    if (text.length > 10) {
-      text = text.substring(0, 10);
-    }
-
-    return TextEditingValue(
-      text: text,
-      selection: TextSelection.collapsed(offset: text.length),
     );
   }
 }

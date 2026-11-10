@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import '../services/api_service.dart';
 import '../widgets/admin_mobile_chrome.dart';
 import '../widgets/app_sidebar.dart';
+import '../widgets/paginated_list_view.dart';
 
 class CashAdvanceScreen extends StatefulWidget {
   const CashAdvanceScreen({super.key});
@@ -54,17 +55,7 @@ class _CashAdvanceScreenState extends State<CashAdvanceScreen> {
       backgroundColor: const Color(0xFFF3EFEA),
       drawer: isAdmin ? null : const AppSidebar(),
       appBar: isAdmin
-          ? AdminMobileAppBar(
-              actions: [
-                IconButton(
-                  tooltip: 'Refresh',
-                  onPressed: () => setState(
-                    () => _future = ApiService.getPendingCashAdvances(),
-                  ),
-                  icon: const Icon(Icons.refresh, color: Colors.black87),
-                ),
-              ],
-            )
+          ? const AdminMobileAppBar()
           : AppBar(
               backgroundColor: Colors.white,
               elevation: 0,
@@ -116,24 +107,6 @@ class _CashAdvanceScreenState extends State<CashAdvanceScreen> {
                       ),
                       textAlign: TextAlign.center,
                     ),
-                    const SizedBox(height: 12),
-                    ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFFA63228),
-                        elevation: 0,
-                      ),
-                      onPressed: () => setState(
-                        () => _future = ApiService.getPendingCashAdvances(),
-                      ),
-                      child: Text(
-                        'Retry',
-                        style: GoogleFonts.inter(
-                          fontSize: 12,
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
                   ],
                 ),
               ),
@@ -176,7 +149,7 @@ class _CashAdvanceScreenState extends State<CashAdvanceScreen> {
             color: const Color(0xFFA63228),
             onRefresh: () async =>
                 setState(() => _future = ApiService.getPendingCashAdvances()),
-            child: ListView.separated(
+            child: PaginatedListView.separated(
               padding: const EdgeInsets.all(12),
               itemCount: advances.length,
               separatorBuilder: (_, __) => const SizedBox(height: 10),

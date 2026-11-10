@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import '../services/api_service.dart';
 import '../widgets/app_sidebar.dart';
+import '../widgets/paginated_list_view.dart';
 
 class SchedulesScreen extends StatefulWidget {
   final int projectId;
@@ -138,7 +139,7 @@ class _SchedulesScreenState extends State<SchedulesScreen> {
               )
             else
               Expanded(
-                child: ListView.separated(
+                child: PaginatedListView.separated(
                   itemCount: schedules.length,
                   separatorBuilder: (_, __) => const SizedBox(height: 8),
                   itemBuilder: (context, i) {
@@ -279,23 +280,6 @@ class _SchedulesScreenState extends State<SchedulesScreen> {
                         color: Colors.grey.shade600,
                       ),
                       textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 12),
-                    ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFFA63228),
-                        elevation: 0,
-                      ),
-                      onPressed: () =>
-                          setState(() => _future = ApiService.getSchedules()),
-                      child: Text(
-                        'Retry',
-                        style: GoogleFonts.inter(
-                          fontSize: 12,
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
                     ),
                   ],
                 ),

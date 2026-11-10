@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../services/api_service.dart';
 import '../widgets/app_sidebar.dart';
+import '../widgets/paginated_list_view.dart';
 
 class WorkersScreen extends StatefulWidget {
   const WorkersScreen({super.key});
@@ -81,12 +82,6 @@ class _WorkersScreenState extends State<WorkersScreen>
             color: Colors.black87,
           ),
         ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh, color: Colors.black87),
-            onPressed: _refreshData,
-          ),
-        ],
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(42),
           child: Center(
@@ -218,7 +213,7 @@ class _WorkersScreenState extends State<WorkersScreen>
         return RefreshIndicator(
           color: const Color(0xFFA63228),
           onRefresh: () async => _refreshData(),
-          child: ListView.separated(
+          child: PaginatedListView.separated(
             padding: const EdgeInsets.all(12),
             itemCount: filtered.length,
             separatorBuilder: (_, __) => const SizedBox(height: 10),
@@ -418,7 +413,7 @@ class _WorkersScreenState extends State<WorkersScreen>
         return RefreshIndicator(
           color: const Color(0xFFA63228),
           onRefresh: () async => _refreshData(),
-          child: ListView.separated(
+          child: PaginatedListView.separated(
             padding: const EdgeInsets.all(12),
             itemCount: filtered.length,
             separatorBuilder: (_, __) => const SizedBox(height: 10),

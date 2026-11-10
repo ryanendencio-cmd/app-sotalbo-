@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../services/api_service.dart';
 import '../widgets/admin_mobile_chrome.dart';
+import '../widgets/paginated_list_view.dart';
 import 'schedules_screen.dart';
 import '../widgets/app_sidebar.dart';
 
@@ -402,16 +403,7 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
       backgroundColor: const Color(0xFFF3EFEA),
       drawer: isAdmin ? null : const AppSidebar(),
       appBar: isAdmin
-          ? AdminMobileAppBar(
-              actions: [
-                IconButton(
-                  tooltip: 'Refresh',
-                  onPressed: () =>
-                      setState(() => _future = ApiService.getProjects()),
-                  icon: const Icon(Icons.refresh, color: Colors.black87),
-                ),
-              ],
-            )
+          ? const AdminMobileAppBar()
           : AppBar(
               backgroundColor: Colors.white,
               elevation: 0,
@@ -474,22 +466,6 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
                             'Failed to load projects: ${snapshot.error}',
                             style: GoogleFonts.inter(fontSize: 12),
                             textAlign: TextAlign.center,
-                          ),
-                          const SizedBox(height: 12),
-                          ElevatedButton(
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFFA63228),
-                            ),
-                            onPressed: () => setState(
-                              () => _future = ApiService.getProjects(),
-                            ),
-                            child: Text(
-                              'Retry',
-                              style: GoogleFonts.inter(
-                                color: Colors.white,
-                                fontSize: 12,
-                              ),
-                            ),
                           ),
                         ],
                       ),
@@ -597,7 +573,7 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
                                   ),
                                 ),
                               )
-                            : ListView.builder(
+                            : PaginatedListView.builder(
                                 padding: const EdgeInsets.all(12),
                                 itemCount: filteredProjects.length,
                                 itemBuilder: (context, i) {

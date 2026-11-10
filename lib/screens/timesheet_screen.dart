@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../widgets/shift_schedule_dialog.dart';
 import '../services/api_service.dart';
+import '../widgets/paginated_list_view.dart';
 
 class TimesheetScreen extends StatefulWidget {
   const TimesheetScreen({super.key});
@@ -33,7 +34,9 @@ class _TimesheetScreenState extends State<TimesheetScreen> {
 
       try {
         final override = await ApiService.getScheduleOverrideForDate(dateStr);
-        _activeShiftOverride = override != null ? Map<String, dynamic>.from(override as Map) : null;
+        _activeShiftOverride = override != null
+            ? Map<String, dynamic>.from(override as Map)
+            : null;
       } catch (_) {
         _activeShiftOverride = null;
       }
@@ -42,9 +45,14 @@ class _TimesheetScreenState extends State<TimesheetScreen> {
       for (final r in records) {
         if ((r['date'] ?? '').toString() == dateStr) {
           final wId = (r['worker_id'] ?? '').toString();
-          final wName = (r['worker_name'] ?? r['name'] ?? '').toString().trim().toLowerCase();
-          if (wId.isNotEmpty) attendanceMap[wId] = Map<String, dynamic>.from(r as Map);
-          if (wName.isNotEmpty) attendanceMap[wName] = Map<String, dynamic>.from(r as Map);
+          final wName = (r['worker_name'] ?? r['name'] ?? '')
+              .toString()
+              .trim()
+              .toLowerCase();
+          if (wId.isNotEmpty)
+            attendanceMap[wId] = Map<String, dynamic>.from(r as Map);
+          if (wName.isNotEmpty)
+            attendanceMap[wName] = Map<String, dynamic>.from(r as Map);
         }
       }
 
@@ -54,19 +62,44 @@ class _TimesheetScreenState extends State<TimesheetScreen> {
         final wId = (wMap['id'] ?? '').toString();
         final firstName = (wMap['first_name'] ?? '').toString();
         final lastName = (wMap['last_name'] ?? '').toString();
-        final fullName = (wMap['full_name'] ?? '$firstName $lastName').toString().trim();
+        final fullName = (wMap['full_name'] ?? '$firstName $lastName')
+            .toString()
+            .trim();
         final role = (wMap['role'] ?? wMap['position'] ?? 'Laborer').toString();
-        final dailyRate = (wMap['daily_rate'] is num) ? (wMap['daily_rate'] as num).toDouble() : 600.0;
+        final dailyRate = (wMap['daily_rate'] is num)
+            ? (wMap['daily_rate'] as num).toDouble()
+            : 600.0;
 
         final att = attendanceMap[wId] ?? attendanceMap[fullName.toLowerCase()];
 
-        final morningIn = att?['morningIn'] ?? att?['morning_in'] ?? att?['timeIn'] ?? att?['time_in'] ?? '—';
+        final morningIn =
+            att?['morningIn'] ??
+            att?['morning_in'] ??
+            att?['timeIn'] ??
+            att?['time_in'] ??
+            '—';
         final morningOut = att?['morningOut'] ?? att?['morning_out'] ?? '—';
         final afternoonIn = att?['afternoonIn'] ?? att?['afternoon_in'] ?? '—';
-        final afternoonOut = att?['afternoonOut'] ?? att?['afternoon_out'] ?? att?['timeOut'] ?? att?['time_out'] ?? '—';
-        final timeIn = att?['timeIn'] ?? att?['time_in'] ?? (morningIn != '—' ? morningIn : (afternoonIn != '—' ? afternoonIn : '—'));
-        final timeOut = att?['timeOut'] ?? att?['time_out'] ?? (afternoonOut != '—' ? afternoonOut : (morningOut != '—' ? morningOut : '—'));
-        final status = att?['status'] ?? (att != null ? 'Present' : 'Not Recorded');
+        final afternoonOut =
+            att?['afternoonOut'] ??
+            att?['afternoon_out'] ??
+            att?['timeOut'] ??
+            att?['time_out'] ??
+            '—';
+        final timeIn =
+            att?['timeIn'] ??
+            att?['time_in'] ??
+            (morningIn != '—'
+                ? morningIn
+                : (afternoonIn != '—' ? afternoonIn : '—'));
+        final timeOut =
+            att?['timeOut'] ??
+            att?['time_out'] ??
+            (afternoonOut != '—'
+                ? afternoonOut
+                : (morningOut != '—' ? morningOut : '—'));
+        final status =
+            att?['status'] ?? (att != null ? 'Present' : 'Not Recorded');
 
         timesheet.add({
           'id': wId,
@@ -80,7 +113,9 @@ class _TimesheetScreenState extends State<TimesheetScreen> {
           'afternoonOut': afternoonOut,
           'timeIn': timeIn,
           'timeOut': timeOut,
-          'regHours': (status == 'Present') ? '8.0h' : (status == 'Halfday' ? '4.0h' : '0.0h'),
+          'regHours': (status == 'Present')
+              ? '8.0h'
+              : (status == 'Halfday' ? '4.0h' : '0.0h'),
           'otHours': '${att?['ot'] ?? att?['overtime_hours'] ?? 0}h',
           'status': status,
           'overtimeHrs': att?['ot'] ?? att?['overtime_hours'] ?? 0,
@@ -166,7 +201,10 @@ class _TimesheetScreenState extends State<TimesheetScreen> {
 
   Future<String?> _selectTime(BuildContext context, String current) async {
     TimeOfDay initial = const TimeOfDay(hour: 8, minute: 0);
-    final match = RegExp(r'^(\d{1,2}):(\d{2})(?:\s*([AP]M))?$', caseSensitive: false).firstMatch(current.trim());
+    final match = RegExp(
+      r'^(\d{1,2}):(\d{2})(?:\s*([AP]M))?$',
+      caseSensitive: false,
+    ).firstMatch(current.trim());
     if (match != null) {
       int h = int.tryParse(match.group(1) ?? '8') ?? 8;
       final m = int.tryParse(match.group(2) ?? '0') ?? 0;
@@ -223,12 +261,14 @@ class _TimesheetScreenState extends State<TimesheetScreen> {
       selectedStatus = 'Present';
     }
 
-    String timeInValue = (initialWorker?['timeIn'] != null &&
+    String timeInValue =
+        (initialWorker?['timeIn'] != null &&
             initialWorker?['timeIn'] != '—' &&
             initialWorker?['timeIn'] != '--:--')
         ? initialWorker!['timeIn'].toString()
         : '08:00 AM';
-    String timeOutValue = (initialWorker?['timeOut'] != null &&
+    String timeOutValue =
+        (initialWorker?['timeOut'] != null &&
             initialWorker?['timeOut'] != '—' &&
             initialWorker?['timeOut'] != '--:--')
         ? initialWorker!['timeOut'].toString()
@@ -300,7 +340,11 @@ class _TimesheetScreenState extends State<TimesheetScreen> {
                             ],
                           ),
                           IconButton(
-                            icon: const Icon(Icons.close, size: 20, color: Colors.grey),
+                            icon: const Icon(
+                              Icons.close,
+                              size: 20,
+                              color: Colors.grey,
+                            ),
                             onPressed: () => Navigator.pop(context),
                           ),
                         ],
@@ -309,7 +353,10 @@ class _TimesheetScreenState extends State<TimesheetScreen> {
 
                       // DATE BADGE & PICKER
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
                         decoration: BoxDecoration(
                           color: const Color(0xFFFAF8F5),
                           borderRadius: BorderRadius.circular(10),
@@ -320,7 +367,11 @@ class _TimesheetScreenState extends State<TimesheetScreen> {
                           children: [
                             Row(
                               children: [
-                                const Icon(Icons.calendar_today_rounded, size: 15, color: Color(0xFFA63228)),
+                                const Icon(
+                                  Icons.calendar_today_rounded,
+                                  size: 15,
+                                  color: Color(0xFFA63228),
+                                ),
                                 const SizedBox(width: 8),
                                 Text(
                                   'Date: ${_getFormattedDate(recordDate)}',
@@ -363,9 +414,15 @@ class _TimesheetScreenState extends State<TimesheetScreen> {
                         Container(
                           padding: const EdgeInsets.all(12),
                           decoration: BoxDecoration(
-                            color: const Color(0xFFA63228).withValues(alpha: 0.05),
+                            color: const Color(
+                              0xFFA63228,
+                            ).withValues(alpha: 0.05),
                             borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: const Color(0xFFA63228).withValues(alpha: 0.2)),
+                            border: Border.all(
+                              color: const Color(
+                                0xFFA63228,
+                              ).withValues(alpha: 0.2),
+                            ),
                           ),
                           child: Row(
                             children: [
@@ -411,23 +468,32 @@ class _TimesheetScreenState extends State<TimesheetScreen> {
                         Autocomplete<Map<String, dynamic>>(
                           optionsBuilder: (TextEditingValue textEditingValue) {
                             if (textEditingValue.text.isEmpty) {
-                              return const Iterable<Map<String, dynamic>>.empty();
+                              return const Iterable<
+                                Map<String, dynamic>
+                              >.empty();
                             }
                             return _allWorkers.where((worker) {
                               final name =
-                                  '${worker['first_name'] ?? ''} ${worker['last_name'] ?? ''}'.trim();
-                              return name.toLowerCase().contains(textEditingValue.text.toLowerCase());
+                                  '${worker['first_name'] ?? ''} ${worker['last_name'] ?? ''}'
+                                      .trim();
+                              return name.toLowerCase().contains(
+                                textEditingValue.text.toLowerCase(),
+                              );
                             });
                           },
                           displayStringForOption: (Map<String, dynamic> option) {
-                            return '${option['first_name'] ?? ''} ${option['last_name'] ?? ''}'.trim();
+                            return '${option['first_name'] ?? ''} ${option['last_name'] ?? ''}'
+                                .trim();
                           },
                           onSelected: (Map<String, dynamic> selection) {
-                            final wName = '${selection['first_name'] ?? ''} ${selection['last_name'] ?? ''}'.trim();
+                            final wName =
+                                '${selection['first_name'] ?? ''} ${selection['last_name'] ?? ''}'
+                                    .trim();
                             workerName = wName;
                             workerId = (selection['id'] ?? '').toString();
                             idController.text = 'SCON-$workerId';
-                            String roleStr = selection['role']?.toString() ?? 'Mason';
+                            String roleStr =
+                                selection['role']?.toString() ?? 'Mason';
                             dailyRate = (selection['daily_rate'] is num)
                                 ? (selection['daily_rate'] as num).toDouble()
                                 : 600.0;
@@ -435,22 +501,32 @@ class _TimesheetScreenState extends State<TimesheetScreen> {
                               selectedRole = roleStr;
                             });
                           },
-                          fieldViewBuilder: (context, controller, focusNode, onFieldSubmitted) {
-                            autocompleteNameController = controller;
-                            return TextField(
-                              controller: controller,
-                              focusNode: focusNode,
-                              style: GoogleFonts.inter(fontSize: 12.5),
-                              decoration: InputDecoration(
-                                labelText: 'Worker Full Name',
-                                labelStyle: GoogleFonts.inter(fontSize: 11.5),
-                                isDense: true,
-                                filled: true,
-                                fillColor: const Color(0xFFFAF8F5),
-                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                              ),
-                            );
-                          },
+                          fieldViewBuilder:
+                              (
+                                context,
+                                controller,
+                                focusNode,
+                                onFieldSubmitted,
+                              ) {
+                                autocompleteNameController = controller;
+                                return TextField(
+                                  controller: controller,
+                                  focusNode: focusNode,
+                                  style: GoogleFonts.inter(fontSize: 12.5),
+                                  decoration: InputDecoration(
+                                    labelText: 'Worker Full Name',
+                                    labelStyle: GoogleFonts.inter(
+                                      fontSize: 11.5,
+                                    ),
+                                    isDense: true,
+                                    filled: true,
+                                    fillColor: const Color(0xFFFAF8F5),
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                  ),
+                                );
+                              },
                         ),
                         const SizedBox(height: 10),
                       ],
@@ -472,8 +548,18 @@ class _TimesheetScreenState extends State<TimesheetScreen> {
                         runSpacing: 6,
                         children: [
                           ActionChip(
-                            avatar: const Icon(Icons.wb_sunny_rounded, size: 14, color: Color(0xFFA63228)),
-                            label: Text('Full Day (8AM - 5PM)', style: GoogleFonts.inter(fontSize: 10.5, fontWeight: FontWeight.w600)),
+                            avatar: const Icon(
+                              Icons.wb_sunny_rounded,
+                              size: 14,
+                              color: Color(0xFFA63228),
+                            ),
+                            label: Text(
+                              'Full Day (8AM - 5PM)',
+                              style: GoogleFonts.inter(
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
                             backgroundColor: const Color(0xFFF9F8F6),
                             onPressed: () {
                               setModalState(() {
@@ -484,8 +570,18 @@ class _TimesheetScreenState extends State<TimesheetScreen> {
                             },
                           ),
                           ActionChip(
-                            avatar: const Icon(Icons.wb_twilight_rounded, size: 14, color: Colors.blue),
-                            label: Text('Morning (8AM - 12PM)', style: GoogleFonts.inter(fontSize: 10.5, fontWeight: FontWeight.w600)),
+                            avatar: const Icon(
+                              Icons.wb_twilight_rounded,
+                              size: 14,
+                              color: Colors.blue,
+                            ),
+                            label: Text(
+                              'Morning (8AM - 12PM)',
+                              style: GoogleFonts.inter(
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
                             backgroundColor: const Color(0xFFF9F8F6),
                             onPressed: () {
                               setModalState(() {
@@ -496,8 +592,18 @@ class _TimesheetScreenState extends State<TimesheetScreen> {
                             },
                           ),
                           ActionChip(
-                            avatar: const Icon(Icons.nights_stay_rounded, size: 14, color: Colors.orange),
-                            label: Text('Afternoon (1PM - 5PM)', style: GoogleFonts.inter(fontSize: 10.5, fontWeight: FontWeight.w600)),
+                            avatar: const Icon(
+                              Icons.nights_stay_rounded,
+                              size: 14,
+                              color: Colors.orange,
+                            ),
+                            label: Text(
+                              'Afternoon (1PM - 5PM)',
+                              style: GoogleFonts.inter(
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
                             backgroundColor: const Color(0xFFF9F8F6),
                             onPressed: () {
                               setModalState(() {
@@ -508,8 +614,18 @@ class _TimesheetScreenState extends State<TimesheetScreen> {
                             },
                           ),
                           ActionChip(
-                            avatar: const Icon(Icons.cancel_rounded, size: 14, color: Colors.red),
-                            label: Text('Absent', style: GoogleFonts.inter(fontSize: 10.5, fontWeight: FontWeight.w600)),
+                            avatar: const Icon(
+                              Icons.cancel_rounded,
+                              size: 14,
+                              color: Colors.red,
+                            ),
+                            label: Text(
+                              'Absent',
+                              style: GoogleFonts.inter(
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
                             backgroundColor: const Color(0xFFF9F8F6),
                             onPressed: () {
                               setModalState(() {
@@ -549,7 +665,8 @@ class _TimesheetScreenState extends State<TimesheetScreen> {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Row(
-                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.spaceBetween,
                                     children: [
                                       Text(
                                         'TIME IN',
@@ -561,8 +678,14 @@ class _TimesheetScreenState extends State<TimesheetScreen> {
                                       ),
                                       if (timeInValue != '--:--')
                                         GestureDetector(
-                                          onTap: () => setModalState(() => timeInValue = '--:--'),
-                                          child: const Icon(Icons.close, size: 14, color: Colors.grey),
+                                          onTap: () => setModalState(
+                                            () => timeInValue = '--:--',
+                                          ),
+                                          child: const Icon(
+                                            Icons.close,
+                                            size: 14,
+                                            color: Colors.grey,
+                                          ),
                                         ),
                                     ],
                                   ),
@@ -572,7 +695,9 @@ class _TimesheetScreenState extends State<TimesheetScreen> {
                                     style: GoogleFonts.inter(
                                       fontSize: 16,
                                       fontWeight: FontWeight.w900,
-                                      color: timeInValue == '--:--' ? Colors.grey : const Color(0xFFA63228),
+                                      color: timeInValue == '--:--'
+                                          ? Colors.grey
+                                          : const Color(0xFFA63228),
                                     ),
                                   ),
                                   const SizedBox(height: 8),
@@ -582,15 +707,37 @@ class _TimesheetScreenState extends State<TimesheetScreen> {
                                     child: OutlinedButton.icon(
                                       style: OutlinedButton.styleFrom(
                                         padding: EdgeInsets.zero,
-                                        side: const BorderSide(color: Color(0xFFA63228)),
-                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                        side: const BorderSide(
+                                          color: Color(0xFFA63228),
+                                        ),
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(
+                                            8,
+                                          ),
+                                        ),
                                       ),
-                                      icon: const Icon(Icons.access_time_rounded, size: 14, color: Color(0xFFA63228)),
-                                      label: Text('Set In', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.bold, color: const Color(0xFFA63228))),
+                                      icon: const Icon(
+                                        Icons.access_time_rounded,
+                                        size: 14,
+                                        color: Color(0xFFA63228),
+                                      ),
+                                      label: Text(
+                                        'Set In',
+                                        style: GoogleFonts.inter(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.bold,
+                                          color: const Color(0xFFA63228),
+                                        ),
+                                      ),
                                       onPressed: () async {
-                                        final res = await _selectTime(context, timeInValue);
+                                        final res = await _selectTime(
+                                          context,
+                                          timeInValue,
+                                        );
                                         if (res != null) {
-                                          setModalState(() => timeInValue = res);
+                                          setModalState(
+                                            () => timeInValue = res,
+                                          );
                                         }
                                       },
                                     ),
@@ -614,7 +761,8 @@ class _TimesheetScreenState extends State<TimesheetScreen> {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Row(
-                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.spaceBetween,
                                     children: [
                                       Text(
                                         'TIME OUT',
@@ -626,8 +774,14 @@ class _TimesheetScreenState extends State<TimesheetScreen> {
                                       ),
                                       if (timeOutValue != '--:--')
                                         GestureDetector(
-                                          onTap: () => setModalState(() => timeOutValue = '--:--'),
-                                          child: const Icon(Icons.close, size: 14, color: Colors.grey),
+                                          onTap: () => setModalState(
+                                            () => timeOutValue = '--:--',
+                                          ),
+                                          child: const Icon(
+                                            Icons.close,
+                                            size: 14,
+                                            color: Colors.grey,
+                                          ),
                                         ),
                                     ],
                                   ),
@@ -637,7 +791,9 @@ class _TimesheetScreenState extends State<TimesheetScreen> {
                                     style: GoogleFonts.inter(
                                       fontSize: 16,
                                       fontWeight: FontWeight.w900,
-                                      color: timeOutValue == '--:--' ? Colors.grey : Colors.black87,
+                                      color: timeOutValue == '--:--'
+                                          ? Colors.grey
+                                          : Colors.black87,
                                     ),
                                   ),
                                   const SizedBox(height: 8),
@@ -647,15 +803,37 @@ class _TimesheetScreenState extends State<TimesheetScreen> {
                                     child: OutlinedButton.icon(
                                       style: OutlinedButton.styleFrom(
                                         padding: EdgeInsets.zero,
-                                        side: BorderSide(color: Colors.grey.shade500),
-                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                        side: BorderSide(
+                                          color: Colors.grey.shade500,
+                                        ),
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(
+                                            8,
+                                          ),
+                                        ),
                                       ),
-                                      icon: const Icon(Icons.logout_rounded, size: 14, color: Colors.black87),
-                                      label: Text('Set Out', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.black87)),
+                                      icon: const Icon(
+                                        Icons.logout_rounded,
+                                        size: 14,
+                                        color: Colors.black87,
+                                      ),
+                                      label: Text(
+                                        'Set Out',
+                                        style: GoogleFonts.inter(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.black87,
+                                        ),
+                                      ),
                                       onPressed: () async {
-                                        final res = await _selectTime(context, timeOutValue);
+                                        final res = await _selectTime(
+                                          context,
+                                          timeOutValue,
+                                        );
                                         if (res != null) {
-                                          setModalState(() => timeOutValue = res);
+                                          setModalState(
+                                            () => timeOutValue = res,
+                                          );
                                         }
                                       },
                                     ),
@@ -677,15 +855,26 @@ class _TimesheetScreenState extends State<TimesheetScreen> {
                           labelStyle: GoogleFonts.inter(fontSize: 11.5),
                           filled: true,
                           fillColor: const Color(0xFFFAF8F5),
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
                         ),
-                        items: ['Present', 'Late', 'Halfday', 'Absent'].map((st) {
+                        items: ['Present', 'Late', 'Halfday', 'Absent'].map((
+                          st,
+                        ) {
                           return DropdownMenuItem(
                             value: st,
-                            child: Text(st, style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600)),
+                            child: Text(
+                              st,
+                              style: GoogleFonts.inter(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
                           );
                         }).toList(),
-                        onChanged: (val) => setModalState(() => selectedStatus = val!),
+                        onChanged: (val) =>
+                            setModalState(() => selectedStatus = val!),
                       ),
                       const SizedBox(height: 18),
 
@@ -695,8 +884,12 @@ class _TimesheetScreenState extends State<TimesheetScreen> {
                           Expanded(
                             child: OutlinedButton(
                               style: OutlinedButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(vertical: 12),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 12,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
                                 side: BorderSide(color: Colors.grey.shade300),
                               ),
                               onPressed: () => Navigator.pop(context),
@@ -716,67 +909,105 @@ class _TimesheetScreenState extends State<TimesheetScreen> {
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: const Color(0xFFA63228),
                                 elevation: 0,
-                                padding: const EdgeInsets.symmetric(vertical: 12),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 12,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
                               ),
-                              onPressed: isSaving ? null : () async {
-                                final finalWorkerName = workerName.isNotEmpty
-                                    ? workerName
-                                    : (autocompleteNameController?.text.trim() ?? '');
-                                if (finalWorkerName.isEmpty) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(content: Text('Please select or enter worker name')),
-                                  );
-                                  return;
-                                }
+                              onPressed: isSaving
+                                  ? null
+                                  : () async {
+                                      final finalWorkerName =
+                                          workerName.isNotEmpty
+                                          ? workerName
+                                          : (autocompleteNameController?.text
+                                                    .trim() ??
+                                                '');
+                                      if (finalWorkerName.isEmpty) {
+                                        ScaffoldMessenger.of(
+                                          context,
+                                        ).showSnackBar(
+                                          const SnackBar(
+                                            content: Text(
+                                              'Please select or enter worker name',
+                                            ),
+                                          ),
+                                        );
+                                        return;
+                                      }
 
-                                setModalState(() => isSaving = true);
-                                final dateStr = recordDate.toIso8601String().split('T')[0];
+                                      setModalState(() => isSaving = true);
+                                      final dateStr = recordDate
+                                          .toIso8601String()
+                                          .split('T')[0];
 
-                                final effectiveTimeIn = timeInValue == '--:--' ? '—' : timeInValue;
-                                final effectiveTimeOut = timeOutValue == '--:--' ? '—' : timeOutValue;
+                                      final effectiveTimeIn =
+                                          timeInValue == '--:--'
+                                          ? '—'
+                                          : timeInValue;
+                                      final effectiveTimeOut =
+                                          timeOutValue == '--:--'
+                                          ? '—'
+                                          : timeOutValue;
 
-                                try {
-                                  await ApiService.saveAttendance({
-                                    'project_id': '1',
-                                    'worker_id': workerId.isNotEmpty ? workerId : null,
-                                    'worker_name': finalWorkerName,
-                                    'name': finalWorkerName,
-                                    'role': selectedRole,
-                                    'date': dateStr,
-                                    'timeIn': effectiveTimeIn,
-                                    'timeOut': effectiveTimeOut,
-                                    'rate': dailyRate,
-                                    'status': selectedStatus,
-                                  });
+                                      try {
+                                        await ApiService.saveAttendance({
+                                          'project_id': '1',
+                                          'worker_id': workerId.isNotEmpty
+                                              ? workerId
+                                              : null,
+                                          'worker_name': finalWorkerName,
+                                          'name': finalWorkerName,
+                                          'role': selectedRole,
+                                          'date': dateStr,
+                                          'timeIn': effectiveTimeIn,
+                                          'timeOut': effectiveTimeOut,
+                                          'rate': dailyRate,
+                                          'status': selectedStatus,
+                                        });
 
-                                  if (context.mounted) {
-                                    Navigator.pop(context);
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
-                                        content: Text(
-                                          'Attendance saved: $finalWorkerName (In: $effectiveTimeIn, Out: $effectiveTimeOut)',
-                                          style: GoogleFonts.inter(),
-                                        ),
-                                        backgroundColor: const Color(0xFFA63228),
-                                      ),
-                                    );
-                                  }
-                                  await _loadWorkers();
-                                } catch (e) {
-                                  if (context.mounted) {
-                                    setModalState(() => isSaving = false);
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(content: Text('Error saving attendance: $e')),
-                                    );
-                                  }
-                                }
-                              },
+                                        if (context.mounted) {
+                                          Navigator.pop(context);
+                                          ScaffoldMessenger.of(
+                                            context,
+                                          ).showSnackBar(
+                                            SnackBar(
+                                              content: Text(
+                                                'Attendance saved: $finalWorkerName (In: $effectiveTimeIn, Out: $effectiveTimeOut)',
+                                                style: GoogleFonts.inter(),
+                                              ),
+                                              backgroundColor: const Color(
+                                                0xFFA63228,
+                                              ),
+                                            ),
+                                          );
+                                        }
+                                        await _loadWorkers();
+                                      } catch (e) {
+                                        if (context.mounted) {
+                                          setModalState(() => isSaving = false);
+                                          ScaffoldMessenger.of(
+                                            context,
+                                          ).showSnackBar(
+                                            SnackBar(
+                                              content: Text(
+                                                'Error saving attendance: $e',
+                                              ),
+                                            ),
+                                          );
+                                        }
+                                      }
+                                    },
                               child: isSaving
                                   ? const SizedBox(
                                       height: 16,
                                       width: 16,
-                                      child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                                      child: CircularProgressIndicator(
+                                        color: Colors.white,
+                                        strokeWidth: 2,
+                                      ),
                                     )
                                   : Text(
                                       'Save Attendance',
@@ -831,7 +1062,9 @@ class _TimesheetScreenState extends State<TimesheetScreen> {
           IconButton(
             icon: Icon(
               Icons.alarm_on_rounded,
-              color: _activeShiftOverride != null ? const Color(0xFFA63228) : Colors.black87,
+              color: _activeShiftOverride != null
+                  ? const Color(0xFFA63228)
+                  : Colors.black87,
               size: 20,
             ),
             tooltip: 'Set Shift Schedule',
@@ -947,23 +1180,40 @@ class _TimesheetScreenState extends State<TimesheetScreen> {
                             },
                             borderRadius: BorderRadius.circular(10),
                             child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 6,
+                              ),
                               decoration: BoxDecoration(
                                 color: const Color(0xFFFEF3F2),
                                 borderRadius: BorderRadius.circular(10),
-                                border: Border.all(color: const Color(0xFFFECDCA)),
+                                border: Border.all(
+                                  color: const Color(0xFFFECDCA),
+                                ),
                               ),
                               child: Row(
                                 children: [
-                                  const Icon(Icons.alarm_on_rounded, size: 15, color: Color(0xFFA63228)),
+                                  const Icon(
+                                    Icons.alarm_on_rounded,
+                                    size: 15,
+                                    color: Color(0xFFA63228),
+                                  ),
                                   const SizedBox(width: 6),
                                   Expanded(
                                     child: Text(
                                       'Shift for ${_selectedDate.year}-${_selectedDate.month.toString().padLeft(2, '0')}-${_selectedDate.day.toString().padLeft(2, '0')}: ${_activeShiftOverride!['start_time']} - ${_activeShiftOverride!['grace_period_end']} (On-time window)',
-                                      style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.bold, color: const Color(0xFFA63228)),
+                                      style: GoogleFonts.inter(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.bold,
+                                        color: const Color(0xFFA63228),
+                                      ),
                                     ),
                                   ),
-                                  const Icon(Icons.edit_outlined, size: 14, color: Color(0xFFA63228)),
+                                  const Icon(
+                                    Icons.edit_outlined,
+                                    size: 14,
+                                    color: Color(0xFFA63228),
+                                  ),
                                 ],
                               ),
                             ),
@@ -1099,7 +1349,7 @@ class _TimesheetScreenState extends State<TimesheetScreen> {
                               );
                             },
                           )
-                        : ListView.separated(
+                        : PaginatedListView.separated(
                             physics: const BouncingScrollPhysics(),
                             padding: EdgeInsets.symmetric(
                               horizontal: horizontalPadding,
@@ -1191,16 +1441,25 @@ class _TimesheetScreenState extends State<TimesheetScreen> {
                 onTap: () => _showSetAttendanceDialog(initialWorker: item),
                 borderRadius: BorderRadius.circular(8),
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3.5),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 7,
+                    vertical: 3.5,
+                  ),
                   decoration: BoxDecoration(
                     color: const Color(0xFFA63228).withValues(alpha: 0.08),
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: const Color(0xFFA63228).withValues(alpha: 0.25)),
+                    border: Border.all(
+                      color: const Color(0xFFA63228).withValues(alpha: 0.25),
+                    ),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Icon(Icons.edit_calendar_rounded, size: 12, color: Color(0xFFA63228)),
+                      const Icon(
+                        Icons.edit_calendar_rounded,
+                        size: 12,
+                        color: Color(0xFFA63228),
+                      ),
                       const SizedBox(width: 3),
                       Text(
                         'Set Time',
@@ -1268,13 +1527,33 @@ class _TimesheetScreenState extends State<TimesheetScreen> {
             ),
             child: Row(
               children: [
-                Expanded(child: _buildMetricTile('IN', item['timeIn']?.toString() ?? '—')),
+                Expanded(
+                  child: _buildMetricTile(
+                    'IN',
+                    item['timeIn']?.toString() ?? '—',
+                  ),
+                ),
                 _buildDivider(),
-                Expanded(child: _buildMetricTile('OUT', item['timeOut']?.toString() ?? '—')),
+                Expanded(
+                  child: _buildMetricTile(
+                    'OUT',
+                    item['timeOut']?.toString() ?? '—',
+                  ),
+                ),
                 _buildDivider(),
-                Expanded(child: _buildMetricTile('REG', item['regHours']?.toString() ?? '—')),
+                Expanded(
+                  child: _buildMetricTile(
+                    'REG',
+                    item['regHours']?.toString() ?? '—',
+                  ),
+                ),
                 _buildDivider(),
-                Expanded(child: _buildMetricTile('OT', item['otHours']?.toString() ?? '0h')),
+                Expanded(
+                  child: _buildMetricTile(
+                    'OT',
+                    item['otHours']?.toString() ?? '0h',
+                  ),
+                ),
               ],
             ),
           ),

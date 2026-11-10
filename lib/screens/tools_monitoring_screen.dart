@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../services/api_service.dart';
 import '../widgets/admin_mobile_chrome.dart';
+import '../widgets/paginated_list_view.dart';
 
 class ToolsMonitoringScreen extends StatefulWidget {
   final Map<String, String>? initialUserData;
@@ -63,8 +64,6 @@ class _ToolsMonitoringScreenState extends State<ToolsMonitoringScreen> {
 
   // ── Firestore (via backend API) integration ──
 
-  static const Duration _overdueAfter = Duration(hours: 24);
-
   String _uiStatus(String? backendStatus, String? condition) {
     if (backendStatus == 'In Use' ||
         backendStatus == 'Checked Out' ||
@@ -98,6 +97,16 @@ class _ToolsMonitoringScreenState extends State<ToolsMonitoringScreen> {
     return null;
   }
 
+  TimeOfDay? _parseTimeOfDay(dynamic value) {
+    if (value is! String) return null;
+    final match = RegExp(r'^([01]\d|2[0-3]):([0-5]\d)$').firstMatch(value);
+    if (match == null) return null;
+    return TimeOfDay(
+      hour: int.parse(match.group(1)!),
+      minute: int.parse(match.group(2)!),
+    );
+  }
+
   String _formatTime(DateTime? dt) {
     if (dt == null) return '—';
     final now = DateTime.now();
@@ -112,6 +121,30 @@ class _ToolsMonitoringScreenState extends State<ToolsMonitoringScreen> {
     if (diff == 1) return 'Yesterday $time';
     return '${dt.month}/${dt.day}/${dt.year} $time';
   }
+
+  bool _isOverdue(DateTime? dueDate, TimeOfDay? dueTime) {
+    if (dueDate == null) return false;
+    final now = DateTime.now();
+    if (dueTime != null) {
+      return now.isAfter(
+        DateTime(
+          dueDate.year,
+          dueDate.month,
+          dueDate.day,
+          dueTime.hour,
+          dueTime.minute,
+        ),
+      );
+    }
+    final today = DateTime(now.year, now.month, now.day);
+    final dueDay = DateTime(dueDate.year, dueDate.month, dueDate.day);
+    return today.isAfter(dueDay);
+  }
+
+  String _dateOnly(DateTime date) =>
+      '${date.year.toString().padLeft(4, '0')}-'
+      '${date.month.toString().padLeft(2, '0')}-'
+      '${date.day.toString().padLeft(2, '0')}';
 
   Future<void> _fetchTools() async {
     setState(() {
@@ -146,6 +179,10 @@ class _ToolsMonitoringScreenState extends State<ToolsMonitoringScreen> {
         final rawStatus = asset['status']?.toString();
         final status = _uiStatus(rawStatus, condition);
         final borrowAt = _parseDate(asset['borrow_at']);
+        final expectedReturnDate = _parseDate(asset['expected_return_date']);
+        final expectedReturnTime = _parseTimeOfDay(
+          asset['expected_return_time'],
+        );
         final borrower = asset['assigned_to']?.toString();
         final isOut = status == 'Borrowed' || status == 'Checked Out';
         final dynamic rawQty = asset['quantity'] ?? asset['qty'];
@@ -166,10 +203,10 @@ class _ToolsMonitoringScreenState extends State<ToolsMonitoringScreen> {
               : null,
           'checkoutTime': isOut ? _formatTime(borrowAt) : null,
           'borrowTime': isOut ? _formatTime(borrowAt) : null,
+          'expectedReturnDate': expectedReturnDate,
+          'expectedReturnTime': expectedReturnTime,
           'isOverdue':
-              isOut &&
-              borrowAt != null &&
-              DateTime.now().difference(borrowAt) > _overdueAfter,
+              isOut && _isOverdue(expectedReturnDate, expectedReturnTime),
         });
       }
 
@@ -236,6 +273,8 @@ class _ToolsMonitoringScreenState extends State<ToolsMonitoringScreen> {
     required String condition,
     String? assignedTo,
     String? borrowAt,
+    String? expectedReturnDate,
+    String? expectedReturnTime,
   }) async {
     try {
       await ApiService.updateAssetDoc(tool['id'], {
@@ -244,6 +283,8 @@ class _ToolsMonitoringScreenState extends State<ToolsMonitoringScreen> {
         'status': status,
         'assigned_to': assignedTo,
         'borrow_at': borrowAt,
+        'expected_return_date': expectedReturnDate,
+        'expected_return_time': expectedReturnTime,
       });
       return true;
     } catch (e) {
@@ -321,9 +362,9 @@ class _ToolsMonitoringScreenState extends State<ToolsMonitoringScreen> {
     }).toList();
   }
 
-  /// Merges tools that have identical details (name, status, condition,
-  /// borrower, borrow time) into a single entry. The merged entry keeps the
-  /// underlying records in `items` and exposes their count as `quantity`.
+  /// Merges tools that have identical details, including return deadlines.
+  /// The merged entry keeps the underlying records in `items` and exposes
+  /// their count as `quantity`.
   List<Map<String, dynamic>> _groupTools(List<Map<String, dynamic>> tools) {
     final Map<String, Map<String, dynamic>> groups = {};
     for (final t in tools) {
@@ -333,6 +374,8 @@ class _ToolsMonitoringScreenState extends State<ToolsMonitoringScreen> {
         t['condition'].toString().trim().toLowerCase(),
         t['borrower'] ?? '',
         t['borrowTime'] ?? t['checkoutTime'] ?? '',
+        t['expectedReturnDate'] ?? '',
+        t['expectedReturnTime']?.toString() ?? '',
         t['isOverdue'] == true,
       ].join('|');
       final group = groups.putIfAbsent(
@@ -400,12 +443,6 @@ class _ToolsMonitoringScreenState extends State<ToolsMonitoringScreen> {
                   color: Colors.grey.shade600,
                 ),
               ),
-              const SizedBox(height: 12),
-              OutlinedButton.icon(
-                onPressed: _fetchBorrowHistory,
-                icon: const Icon(Icons.refresh, size: 16),
-                label: const Text('Retry'),
-              ),
             ],
           ),
         ),
@@ -441,7 +478,7 @@ class _ToolsMonitoringScreenState extends State<ToolsMonitoringScreen> {
                 ),
               ],
             )
-          : ListView.separated(
+          : PaginatedListView.separated(
               padding: EdgeInsets.fromLTRB(
                 screenWidth * 0.03,
                 6,
@@ -756,6 +793,8 @@ class _ToolsMonitoringScreenState extends State<ToolsMonitoringScreen> {
                     condition: selectedCondition,
                     assignedTo: null,
                     borrowAt: null,
+                    expectedReturnDate: null,
+                    expectedReturnTime: null,
                   );
                   if (!ok) continue;
                   returned++;
@@ -801,6 +840,8 @@ class _ToolsMonitoringScreenState extends State<ToolsMonitoringScreen> {
     );
     final Map<String, int> selectedQty = {};
     String toolSearchQuery = '';
+    DateTime? expectedReturnDate;
+    TimeOfDay? expectedReturnTime;
 
     TextEditingController? workerCtrl;
 
@@ -874,6 +915,16 @@ class _ToolsMonitoringScreenState extends State<ToolsMonitoringScreen> {
                           ),
                           style: GoogleFonts.inter(
                             fontSize: screenWidth * 0.03,
+                          ),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.only(top: 4),
+                          child: Text(
+                            'If no time is set, the tool is due by the end of that date.',
+                            style: GoogleFonts.inter(
+                              fontSize: screenWidth * 0.024,
+                              color: Colors.grey.shade600,
+                            ),
                           ),
                         ),
                         const SizedBox(height: 8),
@@ -1120,6 +1171,86 @@ class _ToolsMonitoringScreenState extends State<ToolsMonitoringScreen> {
                               ),
                         ),
                         const SizedBox(height: 16),
+                        Text(
+                          'Expected Return Date *',
+                          style: GoogleFonts.inter(
+                            fontSize: screenWidth * 0.03,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        OutlinedButton.icon(
+                          onPressed: () async {
+                            final today = DateTime.now();
+                            final selected = await showDatePicker(
+                              context: context,
+                              initialDate:
+                                  expectedReturnDate ??
+                                  DateTime(
+                                    today.year,
+                                    today.month,
+                                    today.day + 1,
+                                  ),
+                              firstDate: DateTime(
+                                today.year,
+                                today.month,
+                                today.day,
+                              ),
+                              lastDate: DateTime(today.year + 5),
+                            );
+                            if (selected != null) {
+                              setDialogState(
+                                () => expectedReturnDate = selected,
+                              );
+                            }
+                          },
+                          icon: const Icon(Icons.calendar_today_outlined),
+                          label: Text(
+                            expectedReturnDate == null
+                                ? 'Choose return date'
+                                : _dateOnly(expectedReturnDate!),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            OutlinedButton.icon(
+                              onPressed: expectedReturnDate == null
+                                  ? null
+                                  : () async {
+                                      final selected = await showTimePicker(
+                                        context: context,
+                                        initialTime:
+                                            expectedReturnTime ??
+                                            const TimeOfDay(
+                                              hour: 17,
+                                              minute: 0,
+                                            ),
+                                      );
+                                      if (selected != null) {
+                                        setDialogState(
+                                          () => expectedReturnTime = selected,
+                                        );
+                                      }
+                                    },
+                              icon: const Icon(Icons.access_time),
+                              label: Text(
+                                expectedReturnTime == null
+                                    ? 'Add time (optional)'
+                                    : expectedReturnTime!.format(context),
+                              ),
+                            ),
+                            if (expectedReturnTime != null)
+                              IconButton(
+                                tooltip: 'Remove return time',
+                                onPressed: () => setDialogState(
+                                  () => expectedReturnTime = null,
+                                ),
+                                icon: const Icon(Icons.clear),
+                              ),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
                         SizedBox(
                           width: double.infinity,
                           height: 40,
@@ -1134,11 +1265,34 @@ class _ToolsMonitoringScreenState extends State<ToolsMonitoringScreen> {
                             onPressed: () async {
                               final borrowerName =
                                   workerCtrl?.text.trim() ?? '';
-                              if (selectedQty.isEmpty || borrowerName.isEmpty) {
+                              final returnDateValue = expectedReturnDate;
+                              final returnTimeValue = expectedReturnTime;
+                              if (selectedQty.isEmpty ||
+                                  borrowerName.isEmpty ||
+                                  returnDateValue == null) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text(
+                                      returnDateValue == null
+                                          ? 'Please choose an expected return date.'
+                                          : 'Please select at least one tool and enter the borrower name.',
+                                    ),
+                                  ),
+                                );
+                                return;
+                              }
+                              if (returnTimeValue != null &&
+                                  DateTime(
+                                    returnDateValue.year,
+                                    returnDateValue.month,
+                                    returnDateValue.day,
+                                    returnTimeValue.hour,
+                                    returnTimeValue.minute,
+                                  ).isBefore(DateTime.now())) {
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   const SnackBar(
                                     content: Text(
-                                      'Please select at least one tool and enter the borrower name.',
+                                      'Expected return time must be in the future.',
                                     ),
                                   ),
                                 );
@@ -1153,6 +1307,11 @@ class _ToolsMonitoringScreenState extends State<ToolsMonitoringScreen> {
                                       .take(qty),
                                 );
                               }
+                              final returnDate = _dateOnly(returnDateValue);
+                              final returnTime = returnTimeValue == null
+                                  ? null
+                                  : '${returnTimeValue.hour.toString().padLeft(2, '0')}:'
+                                        '${returnTimeValue.minute.toString().padLeft(2, '0')}';
                               Navigator.pop(context);
                               int released = 0;
                               for (final target in targets) {
@@ -1166,6 +1325,8 @@ class _ToolsMonitoringScreenState extends State<ToolsMonitoringScreen> {
                                   borrowAt: DateTime.now()
                                       .toUtc()
                                       .toIso8601String(),
+                                  expectedReturnDate: returnDate,
+                                  expectedReturnTime: returnTime,
                                 );
                                 if (!ok) continue;
                                 released++;
@@ -1229,17 +1390,7 @@ class _ToolsMonitoringScreenState extends State<ToolsMonitoringScreen> {
       appBar: widget.hideAppBar
           ? null
           : ApiService.currentUserRole?.toLowerCase() == 'admin'
-          ? AdminMobileAppBar(
-              actions: [
-                IconButton(
-                  tooltip: 'Refresh',
-                  icon: const Icon(Icons.refresh, color: Colors.black87),
-                  onPressed: _isLoading || _isHistoryLoading
-                      ? null
-                      : _refreshAll,
-                ),
-              ],
-            )
+          ? AdminMobileAppBar()
           : AppBar(
               backgroundColor: Colors.white,
               elevation: 0,
@@ -1248,15 +1399,6 @@ class _ToolsMonitoringScreenState extends State<ToolsMonitoringScreen> {
                 'assets/logo.png',
                 height: screenHeight * 0.032 < 24 ? 24 : screenHeight * 0.032,
               ),
-              actions: [
-                IconButton(
-                  tooltip: 'Refresh',
-                  icon: const Icon(Icons.refresh, color: Colors.black87),
-                  onPressed: _isLoading || _isHistoryLoading
-                      ? null
-                      : _refreshAll,
-                ),
-              ],
             ),
       body: SafeArea(
         child: Column(
@@ -1454,12 +1596,6 @@ class _ToolsMonitoringScreenState extends State<ToolsMonitoringScreen> {
                                 color: Colors.grey.shade600,
                               ),
                             ),
-                            const SizedBox(height: 12),
-                            OutlinedButton.icon(
-                              onPressed: _refreshAll,
-                              icon: const Icon(Icons.refresh, size: 16),
-                              label: const Text('Retry'),
-                            ),
                           ],
                         ),
                       ),
@@ -1496,7 +1632,7 @@ class _ToolsMonitoringScreenState extends State<ToolsMonitoringScreen> {
                                 ),
                               ],
                             )
-                          : ListView.separated(
+                          : PaginatedListView.separated(
                               padding: EdgeInsets.fromLTRB(
                                 screenWidth * 0.03,
                                 6,
@@ -1659,6 +1795,25 @@ class _ToolsMonitoringScreenState extends State<ToolsMonitoringScreen> {
                                                           Colors.grey.shade500,
                                                     ),
                                                   ),
+                                                  if (tool['expectedReturnDate']
+                                                      is DateTime)
+                                                    Text(
+                                                      'Due: ${_dateOnly(tool['expectedReturnDate'] as DateTime)}'
+                                                      '${tool['expectedReturnTime'] is TimeOfDay ? ' • ${(tool['expectedReturnTime'] as TimeOfDay).format(context)}' : ''}',
+                                                      style: GoogleFonts.inter(
+                                                        fontSize:
+                                                            screenWidth * 0.024,
+                                                        fontWeight:
+                                                            FontWeight.w600,
+                                                        color: isOverdue
+                                                            ? const Color(
+                                                                0xFFA63228,
+                                                              )
+                                                            : Colors
+                                                                  .grey
+                                                                  .shade600,
+                                                      ),
+                                                    ),
                                                 ],
                                               ),
                                             ),

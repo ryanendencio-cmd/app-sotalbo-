@@ -5,6 +5,7 @@ import 'reports_screen.dart';
 import 'timekeeper_profile_screen.dart';
 import '../widgets/app_sidebar.dart';
 import '../widgets/shift_schedule_dialog.dart';
+import '../widgets/paginated_list_view.dart';
 import '../services/api_service.dart';
 
 class TimekeeperDashboard extends StatefulWidget {
@@ -1342,7 +1343,7 @@ class _TimekeeperDashboardState extends State<TimekeeperDashboard> {
                           ),
                         ),
                       )
-                    : ListView.separated(
+                    : PaginatedListView.separated(
                         shrinkWrap: true,
                         physics: const NeverScrollableScrollPhysics(),
                         itemCount: _recentLogs.length,
