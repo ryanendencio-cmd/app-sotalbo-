@@ -9,6 +9,7 @@ class AdminService {
     final token = ApiService.authToken;
     return {
       'Content-Type': 'application/json',
+      'x-client-platform': 'mobile',
       if (token != null && token.isNotEmpty) 'Authorization': 'Bearer $token',
     };
   }
@@ -24,6 +25,7 @@ class AdminService {
     int? age,
     String? password,
     required String email,
+    String? emailVerificationToken,
     required String phone,
     String? homeAddress,
     String? address,
@@ -48,6 +50,8 @@ class AdminService {
           if (age != null) 'age': age,
           if (password != null && password.isNotEmpty) 'password': password,
           'email': email,
+          if (emailVerificationToken != null)
+            'email_verification_token': emailVerificationToken,
           'phone': phone,
           if (homeAddress != null) 'homeAddress': homeAddress,
           if (address != null || homeAddress != null)

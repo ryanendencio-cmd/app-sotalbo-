@@ -3,9 +3,9 @@ import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../services/api_service.dart';
 import '../services/psgc_service.dart';
-import '../services/semaphore_service.dart';
 import '../widgets/public_email_input.dart';
 import '../widgets/worker_photo_picker.dart';
+import '../widgets/email_otp_dialog.dart' as email_otp;
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -46,16 +46,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
       TextEditingController();
 
   bool _isLoading = false;
-  bool _isPhoneVerified = false;
-  bool _useEmailOtp = false;
   String _emailDomain = 'gmail.com';
   String? _emailVerificationToken;
   String? _profilePhoto;
-  final List<TextEditingController> _otpControllers = List.generate(
-    6,
-    (_) => TextEditingController(),
-  );
-  final List<FocusNode> _otpFocusNodes = List.generate(6, (_) => FocusNode());
 
   @override
   void initState() {
@@ -98,12 +91,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
     _phoneFocus.dispose();
     _passwordFocus.dispose();
     _confirmPasswordFocus.dispose();
-    for (var c in _otpControllers) {
-      c.dispose();
-    }
-    for (var f in _otpFocusNodes) {
-      f.dispose();
-    }
     super.dispose();
   }
 
@@ -609,7 +596,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
             ),
             const SizedBox(height: 8),
             Text(
-              'Your phone number has been verified. Your account registration is sent to the Admin for approval before you can log in.',
+              'Your email address has been verified. Your account registration is sent to the Admin for approval before you can log in.',
               textAlign: TextAlign.center,
               style: GoogleFonts.inter(
                 fontSize: 13,
@@ -648,269 +635,20 @@ class _RegisterScreenState extends State<RegisterScreen> {
     );
   }
 
-  void _showOtpVerificationDialog() async {
-    for (var c in _otpControllers) {
-      c.clear();
-    }
-
-    final phone = '+63${_phoneController.text.trim()}';
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          'Sending OTP via Semaphore SMS to $phone...',
-          style: GoogleFonts.inter(fontSize: 12),
-        ),
-        duration: const Duration(seconds: 2),
-      ),
-    );
-
-    final result = await SemaphoreService.sendOtp(phone);
-    final String activeOtp = result['otp'] ?? '123456';
-    final bool isSimulated = result['isSimulated'] ?? true;
-
-    if (!mounted) return;
-
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (dialogContext) {
-        return AlertDialog(
-          backgroundColor: Colors.white,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
-          ),
-          contentPadding: const EdgeInsets.all(24),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFA63228).withValues(alpha: 0.1),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(
-                  Icons.mark_email_read_outlined,
-                  color: Color(0xFFA63228),
-                  size: 36,
-                ),
-              ),
-              const SizedBox(height: 16),
-              Text(
-                'Semaphore OTP Verification',
-                textAlign: TextAlign.center,
-                style: GoogleFonts.inter(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.black87,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Enter the 6-digit verification code sent to $phone',
-                textAlign: TextAlign.center,
-                style: GoogleFonts.inter(
-                  fontSize: 12.5,
-                  color: Colors.grey.shade600,
-                  height: 1.4,
-                ),
-              ),
-              const SizedBox(height: 12),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 6,
-                ),
-                decoration: BoxDecoration(
-                  color: isSimulated
-                      ? Colors.amber.shade50
-                      : Colors.green.shade50,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(
-                    color: isSimulated
-                        ? Colors.amber.shade300
-                        : Colors.green.shade300,
-                  ),
-                ),
-                child: Text(
-                  isSimulated
-                      ? 'Demo OTP Code: $activeOtp (or 123456)'
-                      : 'SMS Sent via Semaphore Gateway ✓',
-                  style: GoogleFonts.inter(
-                    fontSize: 11.5,
-                    fontWeight: FontWeight.bold,
-                    color: isSimulated
-                        ? Colors.amber.shade900
-                        : Colors.green.shade800,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 20),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: List.generate(6, (index) {
-                  return SizedBox(
-                    width: 38,
-                    height: 46,
-                    child: TextFormField(
-                      controller: _otpControllers[index],
-                      focusNode: _otpFocusNodes[index],
-                      autofocus: index == 0,
-                      keyboardType: TextInputType.number,
-                      textAlign: TextAlign.center,
-                      maxLength: 1,
-                      style: GoogleFonts.inter(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                      decoration: InputDecoration(
-                        counterText: '',
-                        contentPadding: EdgeInsets.zero,
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
-                          borderSide: BorderSide(color: Colors.grey.shade300),
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
-                          borderSide: const BorderSide(
-                            color: Color(0xFFA63228),
-                            width: 2,
-                          ),
-                        ),
-                      ),
-                      onChanged: (value) {
-                        if (value.isNotEmpty && index < 5) {
-                          _otpFocusNodes[index + 1].requestFocus();
-                        } else if (value.isEmpty && index > 0) {
-                          _otpFocusNodes[index - 1].requestFocus();
-                        }
-                      },
-                    ),
-                  );
-                }),
-              ),
-              const SizedBox(height: 24),
-              SizedBox(
-                width: double.infinity,
-                height: 44,
-                child: ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFFA63228),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(30),
-                    ),
-                    elevation: 0,
-                  ),
-                  onPressed: () async {
-                    String enteredOtp = _otpControllers
-                        .map((c) => c.text)
-                        .join();
-                    final isValid =
-                        await SemaphoreService.verifyOtp(phone, enteredOtp) ||
-                        enteredOtp == activeOtp;
-                    if (!mounted ||
-                        !dialogContext.mounted ||
-                        !context.mounted) {
-                      return;
-                    }
-
-                    if (isValid) {
-                      setState(() {
-                        _isPhoneVerified = true;
-                      });
-                      Navigator.pop(dialogContext);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text(
-                            'Phone number verified successfully! ✓',
-                            style: GoogleFonts.inter(fontSize: 13),
-                          ),
-                          backgroundColor: Colors.green.shade700,
-                          behavior: SnackBarBehavior.floating,
-                        ),
-                      );
-                    } else {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text(
-                            'Invalid OTP code. Please enter the correct code.',
-                            style: GoogleFonts.inter(fontSize: 12),
-                          ),
-                          backgroundColor: const Color(0xFFA63228),
-                        ),
-                      );
-                    }
-                  },
-                  child: Text(
-                    'Verify OTP',
-                    style: GoogleFonts.inter(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 8),
-              TextButton(
-                onPressed: () async {
-                  await SemaphoreService.sendOtp(phone);
-                  if (!mounted || !context.mounted) return;
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(
-                        'OTP code resent to $phone',
-                        style: GoogleFonts.inter(fontSize: 12),
-                      ),
-                      behavior: SnackBarBehavior.floating,
-                    ),
-                  );
-                },
-                child: Text(
-                  'Resend OTP Code via Semaphore',
-                  style: GoogleFonts.inter(
-                    fontSize: 12,
-                    color: Colors.grey.shade700,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
   Future<void> _submitRegistration() async {
     if (!_formKey.currentState!.validate()) return;
 
-    if (_useEmailOtp && _emailVerificationToken == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please verify your email address with OTP first.'),
-          backgroundColor: Color(0xFFA63228),
-        ),
-      );
-      return;
-    }
-
-    if (!_useEmailOtp && !_isPhoneVerified) {
+    if (_emailVerificationToken == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            'Please verify your phone number with OTP first.',
+            'Please verify your email address with OTP first.',
             style: GoogleFonts.inter(fontSize: 13),
           ),
           backgroundColor: const Color(0xFFA63228),
           behavior: SnackBarBehavior.floating,
         ),
       );
-      _showOtpVerificationDialog();
       return;
     }
 
@@ -947,10 +685,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
         'phone': _phoneController.text.trim().startsWith('+63')
             ? _phoneController.text.trim()
             : '+63${_phoneController.text.trim()}',
-        'email': _emailController.text.trim().isEmpty
-            ? null
-            : '${_emailController.text.trim()}@$_emailDomain',
-        if (_useEmailOtp) 'email_verification_token': _emailVerificationToken,
+        'email': _registrationEmail,
+        'email_verification_token': _emailVerificationToken,
         'address': _addressController.text.trim(),
         if (_profilePhoto != null) 'profile_photo': _profilePhoto,
         'role': 'Worker',
@@ -1025,118 +761,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
   }
 
   Future<String?> _showEmailOtpDialog(String email) async {
-    final controller = TextEditingController();
-    var isVerifying = false;
-    String? errorMessage;
-    try {
-      return await showDialog<String>(
-        context: context,
-        barrierDismissible: false,
-        builder: (dialogContext) => StatefulBuilder(
-          builder: (dialogContext, setDialogState) => AlertDialog(
-            title: const Text('Verify email'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text('Enter the 6-digit code sent to $email.'),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: controller,
-                  autofocus: true,
-                  keyboardType: TextInputType.number,
-                  maxLength: 6,
-                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                  decoration: InputDecoration(
-                    labelText: 'Verification code',
-                    errorText: errorMessage,
-                  ),
-                ),
-              ],
-            ),
-            actionsAlignment: MainAxisAlignment.spaceBetween,
-            actionsOverflowButtonSpacing: 4,
-            actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-            contentPadding: const EdgeInsets.fromLTRB(24, 20, 24, 0),
-            titlePadding: const EdgeInsets.fromLTRB(24, 20, 24, 0),
-            semanticLabel: 'Email verification',
-            actions: [
-              TextButton(
-                onPressed: isVerifying
-                    ? null
-                    : () async {
-                        try {
-                          await ApiService.sendEmailOtp(
-                            email: email,
-                            purpose: 'registration',
-                          );
-                          if (dialogContext.mounted) {
-                            setDialogState(
-                              () => errorMessage = 'A new code was sent.',
-                            );
-                          }
-                        } catch (error) {
-                          if (dialogContext.mounted) {
-                            setDialogState(
-                              () => errorMessage = error.toString(),
-                            );
-                          }
-                        }
-                      },
-                child: const Text('Resend code'),
-              ),
-              TextButton(
-                onPressed: isVerifying
-                    ? null
-                    : () => Navigator.pop(dialogContext),
-                child: const Text('Cancel'),
-              ),
-              FilledButton(
-                onPressed: isVerifying
-                    ? null
-                    : () async {
-                        if (controller.text.trim().length != 6) {
-                          setDialogState(
-                            () => errorMessage = 'Enter all 6 digits.',
-                          );
-                          return;
-                        }
-                        setDialogState(() {
-                          isVerifying = true;
-                          errorMessage = null;
-                        });
-                        try {
-                          final token = await ApiService.verifyEmailOtp(
-                            email: email,
-                            purpose: 'registration',
-                            code: controller.text.trim(),
-                          );
-                          if (dialogContext.mounted) {
-                            Navigator.pop(dialogContext, token);
-                          }
-                        } catch (error) {
-                          if (dialogContext.mounted) {
-                            setDialogState(() {
-                              errorMessage = error.toString();
-                              isVerifying = false;
-                            });
-                          }
-                        }
-                      },
-                child: isVerifying
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Text('Verify'),
-              ),
-            ],
-          ),
-        ),
-      );
-    } finally {
-      controller.dispose();
-    }
+    return email_otp.showEmailOtpDialog(
+      context: context,
+      email: email,
+      purpose: 'registration',
+    );
   }
 
   Widget _buildTextField({
@@ -1487,109 +1116,16 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       ),
 
                       _buildSectionTitle('Worker Contacts'),
-                      Text(
-                        'Verify your account using:',
-                        style: GoogleFonts.inter(
-                          fontSize: 11,
-                          color: Colors.grey.shade600,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Wrap(
-                        spacing: 8,
-                        children: [
-                          ChoiceChip(
-                            label: const Text('Phone OTP'),
-                            selected: !_useEmailOtp,
-                            onSelected: (_) =>
-                                setState(() => _useEmailOtp = false),
-                          ),
-                          ChoiceChip(
-                            label: const Text('Email OTP'),
-                            selected: _useEmailOtp,
-                            onSelected: (_) =>
-                                setState(() => _useEmailOtp = true),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
 
-                      // PHONE NUMBER WITH OTP VERIFICATION
+                      // PHONE NUMBER
                       _buildTextField(
                         controller: _phoneController,
                         focusNode: _phoneFocus,
                         hintText: '9XXXXXXXXX',
                         icon: Icons.phone_outlined,
                         isNumber: true,
-                        readOnly: _isPhoneVerified && !_useEmailOtp,
                         prefixText: '+63 ',
                         inputFormatters: [PhilippinePhoneFormatter()],
-                        suffixWidget: Padding(
-                          padding: const EdgeInsets.only(right: 8.0),
-                          child: _useEmailOtp
-                              ? const SizedBox.shrink()
-                              : _isPhoneVerified
-                              ? Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    const Icon(
-                                      Icons.check_circle,
-                                      color: Colors.green,
-                                      size: 18,
-                                    ),
-                                    const SizedBox(width: 4),
-                                    Text(
-                                      'Verified',
-                                      style: GoogleFonts.inter(
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.bold,
-                                        color: Colors.green.shade700,
-                                      ),
-                                    ),
-                                  ],
-                                )
-                              : TextButton(
-                                  onPressed: () {
-                                    if (_phoneController.text.trim().length <
-                                        10) {
-                                      ScaffoldMessenger.of(
-                                        context,
-                                      ).showSnackBar(
-                                        SnackBar(
-                                          content: Text(
-                                            'Please enter a valid 10-digit phone number first',
-                                            style: GoogleFonts.inter(
-                                              fontSize: 12,
-                                            ),
-                                          ),
-                                          backgroundColor: const Color(
-                                            0xFFA63228,
-                                          ),
-                                        ),
-                                      );
-                                      return;
-                                    }
-                                    _showOtpVerificationDialog();
-                                  },
-                                  style: TextButton.styleFrom(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 10,
-                                      vertical: 4,
-                                    ),
-                                    minimumSize: Size.zero,
-                                    tapTargetSize:
-                                        MaterialTapTargetSize.shrinkWrap,
-                                  ),
-                                  child: Text(
-                                    'Send OTP',
-                                    style: GoogleFonts.inter(
-                                      fontSize: 11.5,
-                                      fontWeight: FontWeight.bold,
-                                      color: const Color(0xFFA63228),
-                                    ),
-                                  ),
-                                ),
-                        ),
                         validator: (value) {
                           final trimmed = value?.trim() ?? '';
                           if (trimmed.isEmpty) return 'Required';
@@ -1599,21 +1135,18 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           if (!trimmed.startsWith('9')) {
                             return 'Must start with 9';
                           }
-                          if (!_useEmailOtp && !_isPhoneVerified) {
-                            return 'OTP verification required';
-                          }
                           return null;
                         },
                       ),
 
-                      if (_phoneFocus.hasFocus && !_isPhoneVerified)
+                      if (_phoneFocus.hasFocus)
                         _validationChecklist(
                           rules: _phoneRules(_phoneController.text),
                         ),
                       PublicEmailInput(
                         controller: _emailController,
                         domain: _emailDomain,
-                        requiredField: _useEmailOtp,
+                        requiredField: true,
                         onChanged: (_) {
                           if (_emailVerificationToken != null) {
                             setState(() => _emailVerificationToken = null);
@@ -1626,10 +1159,26 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           });
                         },
                       ),
-                      if (_useEmailOtp)
-                        SizedBox(
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 8.0),
+                        child: SizedBox(
                           width: double.infinity,
+                          height: 44,
                           child: OutlinedButton.icon(
+                            style: OutlinedButton.styleFrom(
+                              side: BorderSide(
+                                color: _emailVerificationToken != null
+                                    ? Colors.green
+                                    : const Color(0xFFA63228),
+                                width: 1.5,
+                              ),
+                              foregroundColor: _emailVerificationToken != null
+                                  ? Colors.green.shade700
+                                  : const Color(0xFFA63228),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
                             onPressed: _isLoading
                                 ? null
                                 : _emailVerificationToken != null
@@ -1637,16 +1186,24 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                 : _sendRegistrationEmailOtp,
                             icon: Icon(
                               _emailVerificationToken != null
-                                  ? Icons.verified_outlined
+                                  ? Icons.verified
                                   : Icons.mark_email_read_outlined,
+                              color: _emailVerificationToken != null
+                                  ? Colors.green
+                                  : const Color(0xFFA63228),
                             ),
                             label: Text(
                               _emailVerificationToken != null
-                                  ? 'Email Verified'
+                                  ? 'Email Verified ✓'
                                   : 'Send Email OTP',
+                              style: GoogleFonts.inter(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 13,
+                              ),
                             ),
                           ),
                         ),
+                      ),
 
                       // ADDRESS PICKER
                       _buildTextField(

@@ -7,6 +7,7 @@ import '../services/api_service.dart';
 import '../services/psgc_service.dart';
 import '../services/semaphore_service.dart';
 import '../widgets/admin_mobile_chrome.dart';
+import '../widgets/email_otp_dialog.dart' as email_otp;
 
 class AdminEditProfileScreen extends StatefulWidget {
   final int adminId;
@@ -55,6 +56,7 @@ class _AdminEditProfileScreenState extends State<AdminEditProfileScreen> {
   bool _obscureConfirmPassword = true;
   bool _isPhoneVerified = false;
   String _originalPhone = '';
+  String _originalEmail = '';
 
   late final TextEditingController _firstNameController;
   late final TextEditingController _middleNameController;
@@ -90,6 +92,7 @@ class _AdminEditProfileScreenState extends State<AdminEditProfileScreen> {
     );
     _ageController = TextEditingController(text: widget.initialAge);
     _emailController = TextEditingController(text: widget.initialEmail);
+    _originalEmail = widget.initialEmail.trim();
     _originalPhone = widget.initialPhone;
     _phoneController = TextEditingController(
       text: _normalizePhoneForField(_originalPhone),
@@ -523,6 +526,28 @@ class _AdminEditProfileScreenState extends State<AdminEditProfileScreen> {
       return;
     }
 
+    final email = _emailController.text.trim();
+    String? emailVerificationToken;
+    if (email.toLowerCase() != _originalEmail.toLowerCase()) {
+      setState(() => _isSaving = true);
+      try {
+        await ApiService.sendEmailOtp(email: email, purpose: 'email_change');
+        if (!mounted) return;
+        emailVerificationToken = await email_otp.showEmailOtpDialog(
+          context: context,
+          email: email,
+          purpose: 'email_change',
+        );
+      } catch (error) {
+        if (mounted) {
+          _showMessage('Unable to verify new email: $error', isError: true);
+        }
+      } finally {
+        if (mounted) setState(() => _isSaving = false);
+      }
+      if (!mounted || emailVerificationToken == null) return;
+    }
+
     setState(() => _isSaving = true);
     try {
       final firstName = _firstNameController.text.trim();
@@ -541,7 +566,8 @@ class _AdminEditProfileScreenState extends State<AdminEditProfileScreen> {
         password: _passwordController.text.trim().isEmpty
             ? null
             : _passwordController.text,
-        email: _emailController.text.trim(),
+        email: email,
+        emailVerificationToken: emailVerificationToken,
         phone: _normalizePhoneForStorage(_phoneController.text),
         homeAddress: _addressController.text.trim(),
         address: _addressController.text.trim(),
@@ -573,7 +599,7 @@ class _AdminEditProfileScreenState extends State<AdminEditProfileScreen> {
         'username': username,
         'birthday': birthday,
         'age': int.tryParse(_ageController.text) ?? 0,
-        'email': _emailController.text.trim(),
+        'email': email,
         'phone': _normalizePhoneForStorage(_phoneController.text),
         'homeAddress': _addressController.text.trim(),
         'department': _departmentController.text.trim(),

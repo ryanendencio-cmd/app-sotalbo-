@@ -8,6 +8,7 @@ import '../services/api_service.dart';
 import '../services/psgc_service.dart';
 import '../services/semaphore_service.dart';
 import '../widgets/worker_photo_picker.dart';
+import '../widgets/email_otp_dialog.dart' as email_otp;
 
 class WorkerEditProfileScreen extends StatefulWidget {
   final Map<String, dynamic> workerData;
@@ -744,6 +745,34 @@ class _WorkerEditProfileScreenState extends State<WorkerEditProfileScreen> {
             .toString();
     final position = (widget.workerData['position'] ?? role).toString();
 
+    String? emailVerificationToken;
+    if (email.isNotEmpty &&
+        email.toLowerCase() != _originalEmail.toLowerCase()) {
+      setState(() => _isSaving = true);
+      try {
+        await ApiService.sendEmailOtp(email: email, purpose: 'email_change');
+        if (!mounted) return;
+        emailVerificationToken = await email_otp.showEmailOtpDialog(
+          context: context,
+          email: email,
+          purpose: 'email_change',
+        );
+      } catch (error) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Unable to verify new email: $error'),
+              backgroundColor: const Color(0xFFA63228),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+      } finally {
+        if (mounted) setState(() => _isSaving = false);
+      }
+      if (!mounted || emailVerificationToken == null) return;
+    }
+
     setState(() => _isSaving = true);
 
     try {
@@ -758,6 +787,8 @@ class _WorkerEditProfileScreenState extends State<WorkerEditProfileScreen> {
         'age': age,
         'phone': normalizedPhone,
         if (_emailChanged) 'email': email.isEmpty ? null : email,
+        if (emailVerificationToken != null)
+          'email_verification_token': emailVerificationToken,
         if (_profilePhotoChanged) 'profile_photo': _profilePhoto,
         'address': address,
         'role': role,
