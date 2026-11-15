@@ -1,5 +1,6 @@
-package com.example.buildtrack
+package com.sotalboconstruction.buildtrack
 
 import io.flutter.embedding.android.FlutterActivity
 
 class MainActivity : FlutterActivity()
+
