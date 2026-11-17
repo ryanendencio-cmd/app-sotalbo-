@@ -12,7 +12,7 @@ class ApiService {
   // Run `ipconfig` in cmd to find your PC's IPv4 address.
   static String androidHost = const String.fromEnvironment(
     'API_HOST',
-    defaultValue: '10.162.118.195',
+    defaultValue: '172.19.207.195',
   );
   static String get baseUrl {
     if (!kIsWeb && Platform.isAndroid) return 'http://$androidHost:5000/api';

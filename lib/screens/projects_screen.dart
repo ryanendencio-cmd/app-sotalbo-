@@ -1,10 +1,23 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../services/api_service.dart';
+import '../utils/project_helpers.dart';
 import '../widgets/admin_mobile_chrome.dart';
 import '../widgets/paginated_list_view.dart';
 import 'schedules_screen.dart';
 import '../widgets/app_sidebar.dart';
+
+class _ProjectsData {
+  const _ProjectsData({
+    required this.projects,
+    required this.expensesByProject,
+    this.expensesError,
+  });
+
+  final List<dynamic> projects;
+  final Map<String, double> expensesByProject;
+  final String? expensesError;
+}
 
 class ProjectsScreen extends StatefulWidget {
   const ProjectsScreen({super.key});
@@ -14,24 +27,55 @@ class ProjectsScreen extends StatefulWidget {
 }
 
 class _ProjectsScreenState extends State<ProjectsScreen> {
-  late Future<List<dynamic>> _future;
+  late Future<_ProjectsData> _future;
   String _searchQuery = '';
   String _statusFilter = 'All';
 
   @override
   void initState() {
     super.initState();
-    _future = ApiService.getProjects();
+    _future = _loadProjects();
+  }
+
+  Future<_ProjectsData> _loadProjects() async {
+    final projects = await ApiService.getProjects();
+    try {
+      final expenses = await ApiService.getAllExpenses();
+      final expensesByProject = <String, double>{};
+      for (final expense in expenses) {
+        final projectId = expense['project_id'] ?? expense['projectId'];
+        if (projectId == null) continue;
+        final amount = double.tryParse(expense['amount']?.toString() ?? '');
+        if (amount == null || !amount.isFinite) continue;
+        final key = projectId.toString();
+        expensesByProject.update(
+          key,
+          (total) => total + amount,
+          ifAbsent: () => amount,
+        );
+      }
+      return _ProjectsData(
+        projects: projects,
+        expensesByProject: expensesByProject,
+      );
+    } catch (error) {
+      return _ProjectsData(
+        projects: projects,
+        expensesByProject: const {},
+        expensesError: error.toString(),
+      );
+    }
   }
 
   Color _statusColor(String? status) {
-    switch ((status ?? '').toLowerCase()) {
-      case 'ongoing':
-      case 'active':
+    switch (normalizedProjectStatus(status)) {
+      case 'ONGOING':
         return Colors.blue;
-      case 'completed':
+      case 'UPCOMING':
+        return Colors.amber.shade800;
+      case 'COMPLETED':
         return Colors.green;
-      case 'on hold':
+      case 'ON HOLD':
         return Colors.orange;
       default:
         return Colors.grey;
@@ -50,7 +94,6 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
     final expensesFuture = projectId == null
         ? Future<List<dynamic>>.value([])
         : ApiService.getExpenses(projectId);
-    final budget = double.tryParse(project['budget']?.toString() ?? '') ?? 0;
     final progress =
         double.tryParse(project['progress']?.toString() ?? '') ?? 0;
 
@@ -85,15 +128,6 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
                               fontWeight: FontWeight.w800,
                             ),
                           ),
-                          const SizedBox(height: 4),
-                          Text(
-                            project['location']?.toString() ??
-                                'No location set',
-                            style: GoogleFonts.inter(
-                              fontSize: 11,
-                              color: Colors.grey.shade700,
-                            ),
-                          ),
                         ],
                       ),
                     ),
@@ -111,23 +145,61 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
                   shrinkWrap: true,
                   padding: const EdgeInsets.all(14),
                   children: [
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: [
-                        _projectInfoChip(
-                          'Status',
-                          project['status']?.toString() ?? 'Ongoing',
-                          _statusColor(project['status']?.toString()),
-                        ),
-                        _projectInfoChip(
-                          'Budget',
-                          '₱${budget.toStringAsFixed(2)}',
-                          const Color(0xFFA63228),
-                        ),
-                      ],
+                    _projectDetailRow(
+                      'Project Type',
+                      _projectValue(
+                        project['project_type'] ?? project['projectType'],
+                      ),
                     ),
-                    const SizedBox(height: 10),
+                    _projectDetailRow(
+                      'Building Type',
+                      _projectValue(
+                        project['building_type'] ?? project['buildingType'],
+                      ),
+                    ),
+                    _projectDetailRow(
+                      'Floors',
+                      _projectValue(
+                        project['number_of_floors'] ??
+                            project['numberOfFloors'],
+                      ),
+                    ),
+                    _projectDetailRow(
+                      'Lot Area',
+                      _projectValue(project['lot_area'] ?? project['lotArea']),
+                    ),
+                    _projectDetailRow(
+                      'Floor Area',
+                      _projectValue(
+                        project['floor_area'] ?? project['floorArea'],
+                      ),
+                    ),
+                    _projectDetailRow(
+                      'Description',
+                      _projectValue(
+                        project['project_description'] ??
+                            project['projectDescription'] ??
+                            project['description'],
+                      ),
+                    ),
+                    _projectDetailRow(
+                      'Location',
+                      _projectValue(project['location']),
+                    ),
+                    _projectDetailRow(
+                      'Status',
+                      projectStatusLabel(project['status']),
+                    ),
+                    _projectDetailRow(
+                      'Contract Amount',
+                      _formatProjectAmount(
+                        project['contract_amount'] ??
+                            project['contractAmount'] ??
+                            project['contract'] ??
+                            project['budget'],
+                      ),
+                    ),
+                    const SizedBox(height: 8),
                     _projectDetailRow(
                       'Project ID',
                       projectId?.toString() ?? '—',
@@ -140,14 +212,6 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
                       'Target Completion',
                       _formatProjectDate(project['end_date']),
                     ),
-                    if ((project['description'] ?? '')
-                        .toString()
-                        .trim()
-                        .isNotEmpty)
-                      _projectDetailRow(
-                        'Description',
-                        project['description'].toString(),
-                      ),
                     const SizedBox(height: 8),
                     Text(
                       'PROJECT PROGRESS',
@@ -230,7 +294,10 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
                                   ) ??
                                   0),
                         );
-                        final remaining = budget - spent;
+                        final remaining = remainingProjectBudget(
+                          project,
+                          spent,
+                        );
                         final recentExpenses = expenses.take(5).toList();
 
                         return Column(
@@ -249,8 +316,12 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
                                 Expanded(
                                   child: _projectMetricCard(
                                     'Remaining',
-                                    '₱${remaining.toStringAsFixed(2)}',
-                                    remaining < 0
+                                    remaining == null
+                                        ? 'Unavailable'
+                                        : '₱${remaining.toStringAsFixed(2)}',
+                                    remaining == null
+                                        ? Colors.grey.shade700
+                                        : remaining < 0
                                         ? Colors.red
                                         : Colors.green.shade700,
                                   ),
@@ -310,22 +381,14 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
     );
   }
 
-  Widget _projectInfoChip(String label, String value, Color color) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Text(
-        '$label: $value',
-        style: GoogleFonts.inter(
-          fontSize: 10,
-          fontWeight: FontWeight.w700,
-          color: color,
-        ),
-      ),
-    );
+  String _projectValue(dynamic value) {
+    if (value == null || value.toString().trim().isEmpty) return '—';
+    return value.toString();
+  }
+
+  String _formatProjectAmount(dynamic value) {
+    final amount = double.tryParse(value?.toString() ?? '');
+    return amount == null ? '—' : '₱${amount.toStringAsFixed(2)}';
   }
 
   Widget _projectMetricCard(String label, String value, Color color) {
@@ -418,27 +481,24 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
                 ),
               ),
             ),
-      body: FutureBuilder<List<dynamic>>(
+      body: FutureBuilder<_ProjectsData>(
         future: _future,
         builder: (context, snapshot) {
-          final loadedProjects = snapshot.data ?? [];
+          final projectsData = snapshot.data;
+          final loadedProjects = projectsData?.projects ?? [];
 
           // Apply filters
           final filteredProjects = loadedProjects.where((p) {
             final name = (p['name'] ?? '').toString().toLowerCase();
             final location = (p['location'] ?? '').toString().toLowerCase();
-            final rawStatus = (p['status'] ?? 'Ongoing')
-                .toString()
-                .trim()
-                .toLowerCase();
-            final status = rawStatus == 'active' ? 'ongoing' : rawStatus;
+            final status = normalizedProjectStatus(p['status']);
 
             final matchesSearch =
                 name.contains(_searchQuery.toLowerCase()) ||
                 location.contains(_searchQuery.toLowerCase());
             final matchesStatus =
                 _statusFilter == 'All' ||
-                status == _statusFilter.trim().toLowerCase();
+                status == normalizedProjectStatus(_statusFilter);
 
             return matchesSearch && matchesStatus;
           }).toList();
@@ -520,6 +580,7 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
                                     [
                                       'All',
                                       'Ongoing',
+                                      'Upcoming',
                                       'Completed',
                                       'On Hold',
                                     ].map((status) {
@@ -578,14 +639,30 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
                                 itemCount: filteredProjects.length,
                                 itemBuilder: (context, i) {
                                   final p = filteredProjects[i];
+                                  final project = Map<String, dynamic>.from(p);
                                   final name = p['name'] ?? 'Untitled Project';
                                   final location =
                                       p['location'] ?? 'No location set';
-                                  final budget = (p['budget'] != null)
-                                      ? '₱${double.tryParse(p['budget'].toString())?.toStringAsFixed(2) ?? '0.00'}'
-                                      : '₱0.00';
-                                  final status = p['status'] ?? 'Ongoing';
+                                  final status = projectStatusLabel(
+                                    p['status'],
+                                  );
                                   final color = _statusColor(status);
+                                  final projectId = p['id']?.toString() ?? '';
+                                  final remaining =
+                                      projectsData!.expensesError == null
+                                      ? remainingProjectBudget(
+                                          project,
+                                          projectsData
+                                                  .expensesByProject[projectId] ??
+                                              0,
+                                        )
+                                      : null;
+                                  final remainingLabel =
+                                      projectsData.expensesError != null
+                                      ? 'Unavailable'
+                                      : remaining == null
+                                      ? '—'
+                                      : '₱${remaining.toStringAsFixed(2)}';
                                   final isAdmin =
                                       ApiService.currentUserRole
                                           ?.toLowerCase() ==
@@ -602,9 +679,7 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
                                     ),
                                     margin: const EdgeInsets.only(bottom: 10),
                                     child: InkWell(
-                                      onTap: () => _showProjectDetails(
-                                        Map<String, dynamic>.from(p as Map),
-                                      ),
+                                      onTap: () => _showProjectDetails(project),
                                       borderRadius: BorderRadius.circular(12),
                                       child: Padding(
                                         padding: const EdgeInsets.all(12),
@@ -691,13 +766,18 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
                                                   MainAxisAlignment
                                                       .spaceBetween,
                                               children: [
-                                                Text(
-                                                  'Budget: $budget',
-                                                  style: GoogleFonts.inter(
-                                                    fontSize: 11,
-                                                    fontWeight: FontWeight.bold,
-                                                    color: const Color(
-                                                      0xFFA63228,
+                                                Expanded(
+                                                  child: Text(
+                                                    'Remaining Budget: $remainingLabel',
+                                                    overflow:
+                                                        TextOverflow.ellipsis,
+                                                    style: GoogleFonts.inter(
+                                                      fontSize: 11,
+                                                      fontWeight:
+                                                          FontWeight.bold,
+                                                      color: const Color(
+                                                        0xFFA63228,
+                                                      ),
                                                     ),
                                                   ),
                                                 ),

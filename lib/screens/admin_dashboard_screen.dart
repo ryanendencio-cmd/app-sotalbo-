@@ -9,6 +9,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 import 'package:share_plus/share_plus.dart';
 import '../services/admin_service.dart';
 import '../services/api_service.dart';
+import '../utils/project_helpers.dart';
 import '../widgets/admin_mobile_chrome.dart';
 import '../widgets/paginated_list_view.dart';
 import 'tools_monitoring_screen.dart';
@@ -143,7 +144,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
         setState(() {
           _projectsList = List<Map<String, dynamic>>.from(projectsData);
-          _activeProjectsCount = _projectsList.length;
+          _activeProjectsCount = _projectsList
+              .where((project) => countsAsActiveProject(project['status']))
+              .length;
 
           _totalExpenses = _parseDouble(expSummary['total']);
           _recentExpenses =
