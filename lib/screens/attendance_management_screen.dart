@@ -169,11 +169,13 @@ class _AttendanceManagementScreenState extends State<AttendanceManagementScreen>
     } catch (_) {}
   }
 
-  Future<void> _loadData() async {
-    setState(() {
-      _isLoading = true;
-      _loadError = null;
-    });
+  Future<void> _loadData({bool showSpinner = true}) async {
+    if (showSpinner) {
+      setState(() {
+        _isLoading = true;
+        _loadError = null;
+      });
+    }
     try {
       final results = await Future.wait([
         ApiService.getAttendanceSettings(),
@@ -240,7 +242,9 @@ class _AttendanceManagementScreenState extends State<AttendanceManagementScreen>
       if (!mounted) return;
       setState(() {
         _isLoading = false;
-        _loadError = 'Unable to load attendance management data: $error';
+        if (showSpinner) {
+          _loadError = 'Unable to load attendance management data: $error';
+        }
       });
     }
   }
@@ -315,24 +319,24 @@ class _AttendanceManagementScreenState extends State<AttendanceManagementScreen>
         MaterialPageRoute(
           builder: (_) => _NfcAttendanceScannerScreen(
             onScan: (uid) => ApiService.scanAttendanceWithNfc(uid),
-            onAttendanceRecorded: _loadData,
+            onAttendanceRecorded: () => _loadData(showSpinner: false),
           ),
         ),
       );
       if (mounted) {
-        await _loadData();
+        await _loadData(showSpinner: false);
       }
     } else {
       await Navigator.of(context).push<void>(
         MaterialPageRoute(
           builder: (_) => _QrAttendanceScannerScreen(
             onScan: (workerCode) => ApiService.scanAttendanceWithQr(workerCode),
-            onAttendanceRecorded: _loadData,
+            onAttendanceRecorded: () => _loadData(showSpinner: false),
           ),
         ),
       );
       if (mounted) {
-        await _loadData();
+        await _loadData(showSpinner: false);
       }
     }
   }
@@ -1430,7 +1434,7 @@ class _AttendanceManagementScreenState extends State<AttendanceManagementScreen>
       );
     return RefreshIndicator(
       color: _primary,
-      onRefresh: _loadData,
+      onRefresh: () => _loadData(showSpinner: false),
       child: ListView(
         physics: const AlwaysScrollableScrollPhysics(
           parent: BouncingScrollPhysics(),
@@ -1654,7 +1658,7 @@ class _AttendanceManagementScreenState extends State<AttendanceManagementScreen>
       });
     return RefreshIndicator(
       color: _primary,
-      onRefresh: _loadData,
+      onRefresh: () => _loadData(showSpinner: false),
       child: requests.isEmpty
           ? ListView(
               physics: const AlwaysScrollableScrollPhysics(),
@@ -1688,7 +1692,7 @@ class _AttendanceManagementScreenState extends State<AttendanceManagementScreen>
       });
     return RefreshIndicator(
       color: _primary,
-      onRefresh: _loadData,
+      onRefresh: () => _loadData(showSpinner: false),
       child: requests.isEmpty
           ? ListView(
               physics: const AlwaysScrollableScrollPhysics(),
@@ -2236,7 +2240,7 @@ class _AttendanceManagementScreenState extends State<AttendanceManagementScreen>
 
     return RefreshIndicator(
       color: _primary,
-      onRefresh: _loadData,
+      onRefresh: () => _loadData(showSpinner: false),
       child: ListView(
         physics: const AlwaysScrollableScrollPhysics(
           parent: BouncingScrollPhysics(),
@@ -2633,32 +2637,41 @@ class _AttendanceManagementScreenState extends State<AttendanceManagementScreen>
               centerTitle: true,
               bottom: _buildAttendanceTabs(),
             ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator(color: _primary))
-          : _loadError != null
-          ? Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [Text(_loadError!, textAlign: TextAlign.center)],
-                ),
-              ),
-            )
-          : TabBarView(
-              controller: _tabController,
-              children: [
-                _canMonitorAttendance
-                    ? _buildAttendanceMonitorTab()
-                    : _buildRulesTab(),
-                _buildRequestsTab(),
-                _buildCorrectionRequestsTab(),
-              ],
-            ),
+      body: TabBarView(
+        controller: _tabController,
+        children: [
+          _isLoading
+              ? const Center(child: CircularProgressIndicator(color: _primary))
+              : _loadError != null
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(_loadError!, textAlign: TextAlign.center),
+                      ],
+                    ),
+                  ),
+                )
+              : _canMonitorAttendance
+              ? _buildAttendanceMonitorTab()
+              : _buildRulesTab(),
+          _isLoading
+              ? const Center(child: CircularProgressIndicator(color: _primary))
+              : _buildRequestsTab(),
+          _isLoading
+              ? const Center(child: CircularProgressIndicator(color: _primary))
+              : _buildCorrectionRequestsTab(),
+        ],
+      ),
       bottomNavigationBar: _isAdminMobile
           ? AdminMobileBottomNavigationBar(
               currentIndex: 4,
-              onTap: (index) => navigateAdminMobileSection(context, index),
+              onTap: (index) {
+                if (index == 4) return;
+                navigateAdminMobileSection(context, index);
+              },
             )
           : null,
     );
