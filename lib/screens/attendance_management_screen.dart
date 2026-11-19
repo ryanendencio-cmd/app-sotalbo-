@@ -2133,26 +2133,42 @@ class _AttendanceManagementScreenState extends State<AttendanceManagementScreen>
       final name = _workerName(worker);
       final record =
           recordsByWorkerId[id] ?? recordsByWorkerName[name.toLowerCase()];
-      final morningIn = _firstAttendanceValue(record, [
+      String morningIn = _firstAttendanceValue(record, [
         'morningIn',
         'morning_in',
-        'timeIn',
-        'time_in',
       ]);
-      final morningOut = _firstAttendanceValue(record, [
+      String morningOut = _firstAttendanceValue(record, [
         'morningOut',
         'morning_out',
       ]);
-      final afternoonIn = _firstAttendanceValue(record, [
+      String afternoonIn = _firstAttendanceValue(record, [
         'afternoonIn',
         'afternoon_in',
       ]);
-      final afternoonOut = _firstAttendanceValue(record, [
+      String afternoonOut = _firstAttendanceValue(record, [
         'afternoonOut',
         'afternoon_out',
-        'timeOut',
-        'time_out',
       ]);
+
+      // Fallback for legacy single-session records
+      if (morningIn == '—' && afternoonIn == '—') {
+        final legacyIn = _firstAttendanceValue(record, ['timeIn', 'time_in']);
+        if (legacyIn != '—') {
+          morningIn = legacyIn;
+        }
+      }
+      if (morningOut == '—' && afternoonOut == '—') {
+        final legacyOut = _firstAttendanceValue(record, ['timeOut', 'time_out']);
+        if (legacyOut != '—') {
+          final isAfternoon = legacyOut.toUpperCase().contains('PM') &&
+              !legacyOut.startsWith('12:');
+          if (isAfternoon) {
+            afternoonOut = legacyOut;
+          } else {
+            morningOut = legacyOut;
+          }
+        }
+      }
       final rawStatus =
           (record?['status'] ?? (record == null ? 'Not Recorded' : 'Present'))
               .toString();
@@ -2359,34 +2375,189 @@ class _AttendanceManagementScreenState extends State<AttendanceManagementScreen>
             )
           else
             ...visibleRows.map((row) {
-              final timeIn = _attendanceSessionFilter == 'Morning'
-                  ? row['morningIn']
-                  : _attendanceSessionFilter == 'Afternoon'
-                  ? row['afternoonIn']
-                  : row['morningIn'] != '—'
-                  ? row['morningIn']
-                  : row['afternoonIn'];
-              final timeOut = _attendanceSessionFilter == 'Morning'
-                  ? row['morningOut']
-                  : _attendanceSessionFilter == 'Afternoon'
-                  ? row['afternoonOut']
-                  : row['afternoonOut'] != '—'
-                  ? row['afternoonOut']
-                  : row['morningOut'];
+              final morningIn = (row['morningIn'] ?? '—').toString();
+              final morningOut = (row['morningOut'] ?? '—').toString();
+              final afternoonIn = (row['afternoonIn'] ?? '—').toString();
+              final afternoonOut = (row['afternoonOut'] ?? '—').toString();
+
               return Card(
                 color: Colors.white,
                 elevation: 0,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  side: BorderSide(color: Colors.grey.shade200),
+                ),
                 margin: const EdgeInsets.only(bottom: 8),
-                child: ListTile(
-                  title: Text(
-                    row['name'] as String,
-                    style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  row['name'] as String,
+                                  style: GoogleFonts.inter(
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 13.5,
+                                    color: Colors.black87,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  row['role'] as String,
+                                  style: GoogleFonts.inter(
+                                    fontSize: 11,
+                                    color: Colors.grey.shade600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          _statusBadge(row['status'] as String),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      if (_attendanceSessionFilter == 'All') ...[
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 8,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF9F8F6),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: Colors.grey.shade200),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Icon(
+                                    Icons.wb_twilight_rounded,
+                                    size: 14,
+                                    color: Colors.orange.shade800,
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    'Morning: ',
+                                    style: GoogleFonts.inter(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.grey.shade800,
+                                    ),
+                                  ),
+                                  Expanded(
+                                    child: Text(
+                                      'In $morningIn · Out $morningOut',
+                                      style: GoogleFonts.inter(
+                                        fontSize: 11,
+                                        color: morningIn != '—' ||
+                                                morningOut != '—'
+                                            ? Colors.black87
+                                            : Colors.grey.shade500,
+                                        fontWeight: morningIn != '—' ||
+                                                morningOut != '—'
+                                            ? FontWeight.w600
+                                            : FontWeight.normal,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 5),
+                              Row(
+                                children: [
+                                  Icon(
+                                    Icons.wb_sunny_rounded,
+                                    size: 14,
+                                    color: Colors.blue.shade700,
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    'Afternoon: ',
+                                    style: GoogleFonts.inter(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.grey.shade800,
+                                    ),
+                                  ),
+                                  Expanded(
+                                    child: Text(
+                                      'In $afternoonIn · Out $afternoonOut',
+                                      style: GoogleFonts.inter(
+                                        fontSize: 11,
+                                        color: afternoonIn != '—' ||
+                                                afternoonOut != '—'
+                                            ? Colors.black87
+                                            : Colors.grey.shade500,
+                                        fontWeight: afternoonIn != '—' ||
+                                                afternoonOut != '—'
+                                            ? FontWeight.w600
+                                            : FontWeight.normal,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ] else if (_attendanceSessionFilter == 'Morning') ...[
+                        Row(
+                          children: [
+                            Icon(
+                              Icons.wb_twilight_rounded,
+                              size: 14,
+                              color: Colors.orange.shade800,
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              'Morning: In $morningIn · Out $morningOut',
+                              style: GoogleFonts.inter(
+                                fontSize: 11.5,
+                                color: morningIn != '—' || morningOut != '—'
+                                    ? Colors.black87
+                                    : Colors.grey.shade600,
+                                fontWeight: morningIn != '—' || morningOut != '—'
+                                    ? FontWeight.w600
+                                    : FontWeight.normal,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ] else ...[
+                        Row(
+                          children: [
+                            Icon(
+                              Icons.wb_sunny_rounded,
+                              size: 14,
+                              color: Colors.blue.shade700,
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              'Afternoon: In $afternoonIn · Out $afternoonOut',
+                              style: GoogleFonts.inter(
+                                fontSize: 11.5,
+                                color: afternoonIn != '—' || afternoonOut != '—'
+                                    ? Colors.black87
+                                    : Colors.grey.shade600,
+                                fontWeight: afternoonIn != '—' || afternoonOut != '—'
+                                    ? FontWeight.w600
+                                    : FontWeight.normal,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ],
                   ),
-                  subtitle: Text(
-                    '${row['role']} · In $timeIn · Out $timeOut',
-                    style: GoogleFonts.inter(fontSize: 11),
-                  ),
-                  trailing: _statusBadge(row['status'] as String),
                 ),
               );
             }),
