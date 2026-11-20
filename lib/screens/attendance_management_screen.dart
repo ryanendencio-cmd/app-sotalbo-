@@ -23,10 +23,31 @@ class AttendanceManagementScreen extends StatefulWidget {
 class _AttendanceManagementScreenState extends State<AttendanceManagementScreen>
     with SingleTickerProviderStateMixin {
   static const _primary = Color(0xFFA63228);
+  static const _defaultShiftTimes = <String, String>{
+    'morning_time_in_start': '07:00',
+    'morning_time_in_on_time_end': '08:00',
+    'morning_time_in_late_1_end': '08:10',
+    'morning_time_in_close': '08:20',
+    'morning_time_out_start': '12:00',
+    'morning_time_out_close': '12:30',
+    'afternoon_time_in_start': '12:30',
+    'afternoon_time_in_on_time_end': '13:00',
+    'afternoon_time_in_late_1_end': '13:10',
+    'afternoon_time_in_close': '13:20',
+    'afternoon_time_out_start': '17:00',
+    'afternoon_time_out_close': '17:30',
+  };
 
   late final TabController _tabController;
   final _hoursController = TextEditingController();
   final _graceController = TextEditingController();
+  final _lateTierOneController = TextEditingController(text: '100');
+  final _lateTierTwoController = TextEditingController(text: '200');
+  final _overtimeRateController = TextEditingController(text: '50');
+  final _overtimeIntervalController = TextEditingController(text: '15');
+  final Map<String, String> _shiftTimes = Map<String, String>.from(
+    _defaultShiftTimes,
+  );
   List<Map<String, dynamic>> _workers = [];
   List<Map<String, dynamic>> _projects = [];
   List<Map<String, dynamic>> _schedules = [];
@@ -42,9 +63,12 @@ class _AttendanceManagementScreenState extends State<AttendanceManagementScreen>
   bool _isRecordingScan = false;
   bool _autoSchedule = true;
   bool _sundaysOff = true;
+  bool _firstShiftClosed = false;
+  bool _secondShiftClosed = false;
   String _manualOverride = 'AUTO';
   String _timeIn = '08:00';
   String _timeOut = '17:00';
+  String _shiftClosureDate = '';
   String? _loadError;
   String? _notificationsError;
   List<Map<String, dynamic>> _notifications = [];
@@ -113,6 +137,10 @@ class _AttendanceManagementScreenState extends State<AttendanceManagementScreen>
     _tabController.dispose();
     _hoursController.dispose();
     _graceController.dispose();
+    _lateTierOneController.dispose();
+    _lateTierTwoController.dispose();
+    _overtimeRateController.dispose();
+    _overtimeIntervalController.dispose();
     super.dispose();
   }
 
@@ -166,6 +194,21 @@ class _AttendanceManagementScreenState extends State<AttendanceManagementScreen>
         _hoursController.text = (settings['daily_work_hours'] ?? 8).toString();
         _graceController.text = (settings['grace_period_minutes'] ?? 10)
             .toString();
+        for (final entry in _defaultShiftTimes.entries) {
+          _shiftTimes[entry.key] = (settings[entry.key] ?? entry.value)
+              .toString();
+        }
+        _firstShiftClosed = settings['first_shift_closed'] == true;
+        _secondShiftClosed = settings['second_shift_closed'] == true;
+        _shiftClosureDate = (settings['shift_closure_date'] ?? '').toString();
+        _lateTierOneController.text = (settings['late_tier_1_deduction'] ?? 100)
+            .toString();
+        _lateTierTwoController.text = (settings['late_tier_2_deduction'] ?? 200)
+            .toString();
+        _overtimeRateController.text =
+            (settings['overtime_rate_per_interval'] ?? 50).toString();
+        _overtimeIntervalController.text =
+            (settings['overtime_interval_minutes'] ?? 15).toString();
         _schedules = (results[1] as List)
             .map((value) => Map<String, dynamic>.from(value as Map))
             .toList();
@@ -486,6 +529,25 @@ class _AttendanceManagementScreenState extends State<AttendanceManagementScreen>
       '${date.month.toString().padLeft(2, '0')}-'
       '${date.day.toString().padLeft(2, '0')}';
 
+  String _todayInManila() =>
+      _formatDate(DateTime.now().toUtc().add(const Duration(hours: 8)));
+
+  void _setShiftClosed({required bool firstShift, required bool closed}) {
+    final today = _todayInManila();
+    setState(() {
+      if (_shiftClosureDate != today) {
+        _firstShiftClosed = false;
+        _secondShiftClosed = false;
+      }
+      _shiftClosureDate = today;
+      if (firstShift) {
+        _firstShiftClosed = closed;
+      } else {
+        _secondShiftClosed = closed;
+      }
+    });
+  }
+
   String _formatTime(TimeOfDay time) =>
       '${time.hour.toString().padLeft(2, '0')}:'
       '${time.minute.toString().padLeft(2, '0')}';
@@ -524,15 +586,121 @@ class _AttendanceManagementScreenState extends State<AttendanceManagementScreen>
     if (value != null) onPicked(_formatTime(value));
   }
 
+  int? _scheduleMinutes(String? value) {
+    if (value == null || !RegExp(r'^\d{2}:\d{2}$').hasMatch(value)) {
+      return null;
+    }
+    final parts = value.split(':').map(int.parse).toList();
+    if (parts[0] > 23 || parts[1] > 59) return null;
+    return parts[0] * 60 + parts[1];
+  }
+
+  Map<String, String> _scheduleTimeErrors() {
+    final errors = <String, String>{};
+    for (final entry in _shiftTimes.entries) {
+      if (_scheduleMinutes(entry.value) == null) {
+        errors[entry.key] = 'Enter a valid time.';
+      }
+    }
+
+    const timeInSequences = [
+      [
+        'morning_time_in_start',
+        'morning_time_in_on_time_end',
+        'morning_time_in_late_1_end',
+        'morning_time_in_close',
+      ],
+      [
+        'afternoon_time_in_start',
+        'afternoon_time_in_on_time_end',
+        'afternoon_time_in_late_1_end',
+        'afternoon_time_in_close',
+      ],
+    ];
+    const timeLabels = {
+      'morning_time_in_start': 'Opens',
+      'morning_time_in_on_time_end': 'On-Time Ends',
+      'morning_time_in_late_1_end': 'Late Tier 1 Ends',
+      'morning_time_in_close': 'Closes',
+      'afternoon_time_in_start': 'Opens',
+      'afternoon_time_in_on_time_end': 'On-Time Ends',
+      'afternoon_time_in_late_1_end': 'Late Tier 1 Ends',
+      'afternoon_time_in_close': 'Closes',
+    };
+    for (final sequence in timeInSequences) {
+      for (var index = 1; index < sequence.length; index++) {
+        final currentKey = sequence[index];
+        final previousKey = sequence[index - 1];
+        final current = _scheduleMinutes(_shiftTimes[currentKey]);
+        final previous = _scheduleMinutes(_shiftTimes[previousKey]);
+        if (current != null &&
+            previous != null &&
+            current < previous &&
+            !errors.containsKey(currentKey)) {
+          errors[currentKey] =
+              '${timeLabels[currentKey]} must not be earlier than ${timeLabels[previousKey]}.';
+          break;
+        }
+      }
+    }
+
+    for (final shift in const [
+      ('morning_time_out_start', 'morning_time_out_close', '1st Shift'),
+      ('afternoon_time_out_start', 'afternoon_time_out_close', '2nd Shift'),
+    ]) {
+      final start = _scheduleMinutes(_shiftTimes[shift.$1]);
+      final close = _scheduleMinutes(_shiftTimes[shift.$2]);
+      if (start != null && close != null && close <= start) {
+        errors[shift.$2] =
+            '${shift.$3} Time Out closing time must be later than its opening time.';
+      }
+    }
+    return errors;
+  }
+
   Future<void> _saveSettings() async {
+    final today = _todayInManila();
+    final firstShiftClosed = _shiftClosureDate == today && _firstShiftClosed;
+    final secondShiftClosed = _shiftClosureDate == today && _secondShiftClosed;
     final hours = double.tryParse(_hoursController.text.trim());
     final grace = int.tryParse(_graceController.text.trim());
+    final lateTierOne = double.tryParse(_lateTierOneController.text.trim());
+    final lateTierTwo = double.tryParse(_lateTierTwoController.text.trim());
+    final overtimeRate = double.tryParse(_overtimeRateController.text.trim());
+    final overtimeInterval = int.tryParse(
+      _overtimeIntervalController.text.trim(),
+    );
+    final timeErrors = _scheduleTimeErrors();
+    if (timeErrors.isNotEmpty) {
+      _showMessage(timeErrors.values.first);
+      return;
+    }
     if (hours == null || hours <= 0 || hours > 24) {
       _showMessage('Working hours must be between 0 and 24 hours.');
       return;
     }
     if (grace == null || grace < 0 || grace > 180) {
       _showMessage('Grace period must be between 0 and 180 minutes.');
+      return;
+    }
+    if (lateTierOne == null ||
+        lateTierOne < 0 ||
+        lateTierOne > 100000 ||
+        lateTierTwo == null ||
+        lateTierTwo < 0 ||
+        lateTierTwo > 100000 ||
+        overtimeRate == null ||
+        overtimeRate < 0 ||
+        overtimeRate > 100000) {
+      _showMessage(
+        'Deduction and overtime amounts must be between 0 and 100,000.',
+      );
+      return;
+    }
+    if (overtimeInterval == null ||
+        overtimeInterval < 1 ||
+        overtimeInterval > 1440) {
+      _showMessage('Overtime interval must be between 1 and 1,440 minutes.');
       return;
     }
     setState(() => _isSavingSettings = true);
@@ -547,8 +715,23 @@ class _AttendanceManagementScreenState extends State<AttendanceManagementScreen>
         'grace_period_minutes': grace,
         'auto_sundays_off': _sundaysOff,
         'manual_override': _manualOverride == 'AUTO' ? null : _manualOverride,
+        ..._shiftTimes,
+        'late_tier_1_deduction': lateTierOne,
+        'late_tier_2_deduction': lateTierTwo,
+        'overtime_rate_per_interval': overtimeRate,
+        'overtime_interval_minutes': overtimeInterval,
+        'shift_closure_date': today,
+        'first_shift_closed': firstShiftClosed,
+        'second_shift_closed': secondShiftClosed,
         'updated_by': _adminName(),
       });
+      if (mounted && _shiftClosureDate != today) {
+        setState(() {
+          _shiftClosureDate = today;
+          _firstShiftClosed = false;
+          _secondShiftClosed = false;
+        });
+      }
       _showMessage('Attendance rules saved.');
     } catch (error) {
       _showMessage('Unable to save attendance rules: $error');
@@ -1106,25 +1289,161 @@ class _AttendanceManagementScreenState extends State<AttendanceManagementScreen>
     ).showSnackBar(SnackBar(content: Text(message), backgroundColor: _primary));
   }
 
-  Widget _timeButton(String label, String value, VoidCallback onPressed) {
-    return OutlinedButton(
-      onPressed: onPressed,
-      style: OutlinedButton.styleFrom(
-        padding: const EdgeInsets.symmetric(vertical: 13, horizontal: 10),
-        foregroundColor: Colors.black87,
-        side: BorderSide(color: Colors.grey.shade300),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(label, style: GoogleFonts.inter(fontSize: 12)),
-          Text(
-            value,
-            style: GoogleFonts.inter(
-              fontSize: 12,
-              fontWeight: FontWeight.bold,
-              color: _primary,
+  Widget _timeButton(
+    String label,
+    String value,
+    VoidCallback onPressed, {
+    String? error,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        OutlinedButton(
+          onPressed: onPressed,
+          style: OutlinedButton.styleFrom(
+            padding: const EdgeInsets.symmetric(vertical: 13, horizontal: 10),
+            foregroundColor: Colors.black87,
+            side: BorderSide(
+              color: error == null ? Colors.grey.shade300 : Colors.red,
             ),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(label, style: GoogleFonts.inter(fontSize: 12)),
+              Text(
+                value,
+                style: GoogleFonts.inter(
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  color: _primary,
+                ),
+              ),
+            ],
+          ),
+        ),
+        if (error != null)
+          Padding(
+            padding: const EdgeInsets.only(left: 4, top: 3),
+            child: Text(
+              error,
+              style: GoogleFonts.inter(
+                fontSize: 10,
+                color: Colors.red.shade700,
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _shiftTimeButton(String key, String label) {
+    final value = _shiftTimes[key] ?? '--:--';
+    return _timeButton(
+      label,
+      value,
+      () => _pickTime(
+        current: value,
+        onPicked: (nextValue) => setState(() => _shiftTimes[key] = nextValue),
+      ),
+      error: _scheduleTimeErrors()[key],
+    );
+  }
+
+  Widget _buildShiftScheduleCard({
+    required String title,
+    required String prefix,
+    required bool closed,
+    required ValueChanged<bool> onClosed,
+  }) {
+    final fields = <(String, String)>[
+      ('${prefix}_time_in_start', 'Time In Opens'),
+      ('${prefix}_time_in_on_time_end', 'On-Time Ends'),
+      ('${prefix}_time_in_late_1_end', 'Late Tier 1 Ends'),
+      ('${prefix}_time_in_close', 'Time In Closes'),
+      ('${prefix}_time_out_start', 'Time Out Opens'),
+      ('${prefix}_time_out_close', 'Time Out Closes'),
+    ];
+    return _sectionCard(
+      title: title,
+      icon: Icons.schedule_outlined,
+      child: Column(
+        children: [
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            activeThumbColor: _primary,
+            title: Text('Close $title for today'),
+            subtitle: const Text('Blocks both Time In and Time Out today.'),
+            value: closed,
+            onChanged: onClosed,
+          ),
+          const Divider(height: 8),
+          for (final field in fields) ...[
+            _shiftTimeButton(field.$1, field.$2),
+            const SizedBox(height: 6),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDeductionsAndOvertimeCard() {
+    Widget amountField(String label, TextEditingController controller) {
+      return TextField(
+        controller: controller,
+        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+        decoration: InputDecoration(
+          labelText: label,
+          border: const OutlineInputBorder(),
+          isDense: true,
+        ),
+      );
+    }
+
+    return _sectionCard(
+      title: 'Deductions & Overtime',
+      icon: Icons.payments_outlined,
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: amountField(
+                  'Late Tier 1 Deduction',
+                  _lateTierOneController,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: amountField(
+                  'Late Tier 2 Deduction',
+                  _lateTierTwoController,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: amountField(
+                  'Overtime Rate / Interval',
+                  _overtimeRateController,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: TextField(
+                  controller: _overtimeIntervalController,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'Overtime Interval (minutes)',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -1148,7 +1467,7 @@ class _AttendanceManagementScreenState extends State<AttendanceManagementScreen>
         padding: const EdgeInsets.all(14),
         children: [
           _sectionCard(
-            title: 'Default Attendance Rules',
+            title: 'General Schedule & Rest-Day Policy',
             icon: Icons.rule_outlined,
             child: Column(
               children: [
@@ -1209,45 +1528,67 @@ class _AttendanceManagementScreenState extends State<AttendanceManagementScreen>
                   value: _sundaysOff,
                   onChanged: (value) => setState(() => _sundaysOff = value),
                 ),
-                DropdownButtonFormField<String>(
-                  initialValue: _manualOverride,
-                  decoration: const InputDecoration(
-                    labelText: 'Attendance terminal',
-                    border: OutlineInputBorder(),
-                    isDense: true,
-                  ),
-                  items: const [
-                    DropdownMenuItem(value: 'AUTO', child: Text('Automatic')),
-                    DropdownMenuItem(value: 'OPEN', child: Text('Force open')),
-                    DropdownMenuItem(
-                      value: 'CLOSED',
-                      child: Text('Force closed'),
-                    ),
-                  ],
-                  onChanged: (value) {
-                    if (value != null) setState(() => _manualOverride = value);
-                  },
-                ),
-                const SizedBox(height: 12),
-                SizedBox(
-                  width: double.infinity,
-                  child: FilledButton.icon(
-                    onPressed: _isSavingSettings ? null : _saveSettings,
-                    style: FilledButton.styleFrom(backgroundColor: _primary),
-                    icon: _isSavingSettings
-                        ? const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.white,
-                            ),
-                          )
-                        : const Icon(Icons.save_outlined),
-                    label: const Text('Save Rules'),
-                  ),
-                ),
               ],
+            ),
+          ),
+          const SizedBox(height: 14),
+          _buildShiftScheduleCard(
+            title: '1st Shift',
+            prefix: 'morning',
+            closed: _shiftClosureDate == _todayInManila() && _firstShiftClosed,
+            onClosed: (value) =>
+                _setShiftClosed(firstShift: true, closed: value),
+          ),
+          const SizedBox(height: 14),
+          _buildShiftScheduleCard(
+            title: '2nd Shift',
+            prefix: 'afternoon',
+            closed: _shiftClosureDate == _todayInManila() && _secondShiftClosed,
+            onClosed: (value) =>
+                _setShiftClosed(firstShift: false, closed: value),
+          ),
+          const SizedBox(height: 14),
+          _buildDeductionsAndOvertimeCard(),
+          const SizedBox(height: 14),
+          _sectionCard(
+            title: 'Attendance Terminal Override',
+            icon: Icons.settings_remote_outlined,
+            child: DropdownButtonFormField<String>(
+              initialValue: _manualOverride,
+              decoration: const InputDecoration(
+                labelText: 'Attendance terminal',
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+              items: const [
+                DropdownMenuItem(value: 'AUTO', child: Text('Automatic')),
+                DropdownMenuItem(value: 'OPEN', child: Text('Force open')),
+                DropdownMenuItem(value: 'CLOSED', child: Text('Force closed')),
+              ],
+              onChanged: (value) {
+                if (value != null) setState(() => _manualOverride = value);
+              },
+            ),
+          ),
+          const SizedBox(height: 14),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: _isSavingSettings || _scheduleTimeErrors().isNotEmpty
+                  ? null
+                  : _saveSettings,
+              style: FilledButton.styleFrom(backgroundColor: _primary),
+              icon: _isSavingSettings
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Icon(Icons.save_outlined),
+              label: const Text('Save Attendance Rules'),
             ),
           ),
           const SizedBox(height: 14),

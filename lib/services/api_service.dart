@@ -11,11 +11,18 @@ class ApiService {
   // For emulator, use '10.0.2.2'.
   // For physical device via wireless debugging, use your PC's local IP address.
   // Run `ipconfig` in cmd to find your PC's IPv4 address.
+  static const String _configuredBaseUrl = String.fromEnvironment(
+    'API_BASE_URL',
+  );
   static String androidHost = const String.fromEnvironment(
     'API_HOST',
     defaultValue: '10.0.2.2',
   );
   static String get baseUrl {
+    final configured = _configuredBaseUrl.trim();
+    if (configured.isNotEmpty) {
+      return configured.replaceFirst(RegExp(r'/+$'), '');
+    }
     if (!kIsWeb && Platform.isAndroid) return 'http://$androidHost:5000/api';
     return 'http://localhost:5000/api';
   }
