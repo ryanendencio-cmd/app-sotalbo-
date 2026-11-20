@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../services/api_service.dart';
 import '../widgets/worker_app_header.dart';
@@ -14,6 +16,7 @@ class WorkerAttendanceScreen extends StatefulWidget {
 class _WorkerAttendanceScreenState extends State<WorkerAttendanceScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
+  Timer? _autoRefreshTimer;
   bool _isLoading = false;
   String? _loadError;
   List<Map<String, dynamic>> _attendanceLogs = [];
@@ -45,12 +48,24 @@ class _WorkerAttendanceScreenState extends State<WorkerAttendanceScreen>
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+    _tabController.addListener(() {
+      if (!_tabController.indexIsChanging && _tabController.index == 1) {
+        _loadEarlyOutRequests(silent: _earlyOutRequests.isNotEmpty);
+      }
+    });
     _loadAttendance();
     _loadEarlyOutRequests();
+    _autoRefreshTimer = Timer.periodic(const Duration(seconds: 4), (_) {
+      if (mounted) {
+        _loadEarlyOutRequests(silent: true);
+        refreshWorkerAnnouncementBadge();
+      }
+    });
   }
 
   @override
   void dispose() {
+    _autoRefreshTimer?.cancel();
     _tabController.dispose();
     super.dispose();
   }
@@ -133,19 +148,23 @@ class _WorkerAttendanceScreenState extends State<WorkerAttendanceScreen>
     );
   }
 
-  Future<void> _loadEarlyOutRequests() async {
+  Future<void> _loadEarlyOutRequests({bool silent = false}) async {
     final user = ApiService.currentUser;
     final workerId = user?['id'] ?? user?['worker_id'];
     if (workerId == null) {
-      setState(() {
-        _requestError = 'Worker account ID is unavailable.';
-      });
+      if (!silent && mounted) {
+        setState(() {
+          _requestError = 'Worker account ID is unavailable.';
+        });
+      }
       return;
     }
-    setState(() {
-      _isLoadingRequests = true;
-      _requestError = null;
-    });
+    if (!silent && mounted) {
+      setState(() {
+        _isLoadingRequests = true;
+        _requestError = null;
+      });
+    }
     try {
       final requests = await ApiService.getEarlyOutRequests(workerId: workerId);
       if (!mounted) return;
@@ -153,11 +172,12 @@ class _WorkerAttendanceScreenState extends State<WorkerAttendanceScreen>
         _earlyOutRequests = requests
             .map((request) => Map<String, dynamic>.from(request as Map))
             .toList();
+        _requestError = null;
       });
     } catch (error) {
-      if (mounted) setState(() => _requestError = error.toString());
+      if (!silent && mounted) setState(() => _requestError = error.toString());
     } finally {
-      if (mounted) setState(() => _isLoadingRequests = false);
+      if (!silent && mounted) setState(() => _isLoadingRequests = false);
     }
   }
 
@@ -856,10 +876,12 @@ class _WorkerAttendanceScreenState extends State<WorkerAttendanceScreen>
   }
 
   Future<void> _showEarlyOutDialog() async {
+    final messenger = ScaffoldMessenger.of(context);
     final TextEditingController reasonController = TextEditingController();
     String selectedReason = 'Medical / Health';
     TimeOfDay requestedOutTime = const TimeOfDay(hour: 15, minute: 30);
     bool isSubmitting = false;
+    String? validationError;
     final List<String> reasons = [
       'Medical / Health',
       'Family Emergency',
@@ -870,8 +892,8 @@ class _WorkerAttendanceScreenState extends State<WorkerAttendanceScreen>
 
     await showDialog(
       context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) => Dialog(
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) => Dialog(
           backgroundColor: Colors.white,
           insetPadding: const EdgeInsets.symmetric(
             horizontal: 20,
@@ -919,7 +941,7 @@ class _WorkerAttendanceScreenState extends State<WorkerAttendanceScreen>
                         ),
                         padding: EdgeInsets.zero,
                         constraints: const BoxConstraints(),
-                        onPressed: () => Navigator.pop(context),
+                        onPressed: () => Navigator.of(dialogContext).pop(),
                       ),
                     ],
                   ),
@@ -938,7 +960,7 @@ class _WorkerAttendanceScreenState extends State<WorkerAttendanceScreen>
                         ? null
                         : () async {
                             final picked = await showTimePicker(
-                              context: context,
+                              context: dialogContext,
                               initialTime: requestedOutTime,
                               builder: (context, child) => Theme(
                                 data: Theme.of(context).copyWith(
@@ -978,7 +1000,12 @@ class _WorkerAttendanceScreenState extends State<WorkerAttendanceScreen>
                     children: reasons.map((r) {
                       final isSelected = selectedReason == r;
                       return GestureDetector(
-                        onTap: () => setDialogState(() => selectedReason = r),
+                        onTap: () => setDialogState(() {
+                          selectedReason = r;
+                          if (validationError != null) {
+                            validationError = null;
+                          }
+                        }),
                         child: Container(
                           padding: const EdgeInsets.symmetric(
                             horizontal: 10,
@@ -1010,29 +1037,66 @@ class _WorkerAttendanceScreenState extends State<WorkerAttendanceScreen>
                   const SizedBox(height: 10),
                   TextField(
                     controller: reasonController,
+                    maxLength: 100,
                     maxLines: 2,
+                    inputFormatters: [
+                      LengthLimitingTextInputFormatter(100),
+                      _NoLeadingOrRepeatedSpacesFormatter(),
+                    ],
+                    onChanged: (val) {
+                      if (validationError != null) {
+                        setDialogState(() => validationError = null);
+                      } else {
+                        setDialogState(() {});
+                      }
+                    },
                     style: GoogleFonts.inter(fontSize: 12),
                     decoration: InputDecoration(
                       filled: true,
                       fillColor: const Color(0xFFFAF8F5),
                       isDense: true,
-                      hintText: 'Additional details (optional)',
+                      hintText: selectedReason == 'Other'
+                          ? 'Please specify your reason (required)'
+                          : 'Additional details (max 100 letters)',
                       hintStyle: GoogleFonts.inter(
                         color: Colors.grey.shade400,
                         fontSize: 11,
                       ),
+                      errorText: validationError,
+                      errorStyle: GoogleFonts.inter(
+                        fontSize: 10.5,
+                        color: const Color(0xFFA63228),
+                        fontWeight: FontWeight.w600,
+                      ),
+                      counterText: '${reasonController.text.length} / 100',
+                      counterStyle: GoogleFonts.inter(
+                        fontSize: 10,
+                        color: reasonController.text.length >= 100
+                            ? const Color(0xFFA63228)
+                            : Colors.grey.shade500,
+                      ),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(10),
-                        borderSide: BorderSide(color: Colors.grey.shade300),
+                        borderSide: BorderSide(
+                          color: validationError != null
+                              ? const Color(0xFFA63228)
+                              : Colors.grey.shade300,
+                        ),
                       ),
                       enabledBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(10),
-                        borderSide: BorderSide(color: Colors.grey.shade300),
+                        borderSide: BorderSide(
+                          color: validationError != null
+                              ? const Color(0xFFA63228)
+                              : Colors.grey.shade300,
+                        ),
                       ),
                       focusedBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(10),
-                        borderSide: const BorderSide(
-                          color: Color(0xFFA63228),
+                        borderSide: BorderSide(
+                          color: validationError != null
+                              ? const Color(0xFFA63228)
+                              : const Color(0xFFA63228),
                           width: 1.5,
                         ),
                       ),
@@ -1050,7 +1114,7 @@ class _WorkerAttendanceScreenState extends State<WorkerAttendanceScreen>
                             ),
                             side: BorderSide(color: Colors.grey.shade300),
                           ),
-                          onPressed: () => Navigator.pop(context),
+                          onPressed: isSubmitting ? null : () => Navigator.of(dialogContext).pop(),
                           child: Text(
                             'Cancel',
                             style: GoogleFonts.inter(
@@ -1075,6 +1139,29 @@ class _WorkerAttendanceScreenState extends State<WorkerAttendanceScreen>
                           onPressed: isSubmitting
                               ? null
                               : () async {
+                                  final rawDetails = reasonController.text;
+                                  final trimmedDetails = rawDetails.trim();
+
+                                  // Bawal kapag spacing lang ang in-input
+                                  if (rawDetails.isNotEmpty &&
+                                      trimmedDetails.isEmpty) {
+                                    setDialogState(() {
+                                      validationError =
+                                          'Spaces only are not allowed. Please enter a valid reason.';
+                                    });
+                                    return;
+                                  }
+
+                                  // Kapag "Other" ang napiling reason, kailangan maglagay ng detalye
+                                  if (selectedReason == 'Other' &&
+                                      trimmedDetails.isEmpty) {
+                                    setDialogState(() {
+                                      validationError =
+                                          'Please specify your reason for "Other".';
+                                    });
+                                    return;
+                                  }
+
                                   final user = ApiService.currentUser;
                                   final workerId =
                                       user?['id'] ?? user?['worker_id'];
@@ -1085,7 +1172,7 @@ class _WorkerAttendanceScreenState extends State<WorkerAttendanceScreen>
                                           .toString()
                                           .trim();
                                   if (workerId == null || workerName.isEmpty) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
+                                    messenger.showSnackBar(
                                       const SnackBar(
                                         content: Text(
                                           'Your worker profile is missing an ID or name. Please contact an administrator.',
@@ -1105,46 +1192,45 @@ class _WorkerAttendanceScreenState extends State<WorkerAttendanceScreen>
                                       'requested_out_time':
                                           '${requestedOutTime.hour.toString().padLeft(2, '0')}:${requestedOutTime.minute.toString().padLeft(2, '0')}',
                                       'reason': selectedReason,
-                                      'details': reasonController.text.trim(),
+                                      'details': trimmedDetails,
                                     });
-                                    if (!context.mounted) return;
-                                    Navigator.pop(context);
-                                    await _loadEarlyOutRequests();
-                                    if (!context.mounted) return;
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
-                                        content: Text(
-                                          'Early-out request submitted: $selectedReason',
-                                          style: GoogleFonts.inter(
-                                            fontSize: 12,
+                                    if (dialogContext.mounted) {
+                                      Navigator.of(dialogContext).pop();
+                                    }
+                                    if (mounted) {
+                                      await _loadEarlyOutRequests(silent: false);
+                                      refreshWorkerAnnouncementBadge();
+                                      messenger.showSnackBar(
+                                        SnackBar(
+                                          content: Text(
+                                            'Early-out request submitted: $selectedReason',
+                                            style: GoogleFonts.inter(
+                                              fontSize: 12,
+                                            ),
+                                          ),
+                                          backgroundColor: const Color(
+                                            0xFFA63228,
+                                          ),
+                                          behavior: SnackBarBehavior.floating,
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius: BorderRadius.circular(
+                                              8,
+                                            ),
                                           ),
                                         ),
-                                        backgroundColor: const Color(
-                                          0xFFA63228,
-                                        ),
-                                        behavior: SnackBarBehavior.floating,
-                                        shape: RoundedRectangleBorder(
-                                          borderRadius: BorderRadius.circular(
-                                            8,
-                                          ),
-                                        ),
-                                      ),
-                                    );
+                                      );
+                                    }
                                   } catch (error) {
-                                    if (!context.mounted) return;
-                                    ScaffoldMessenger.of(context).showSnackBar(
+                                    if (dialogContext.mounted) {
+                                      setDialogState(() => isSubmitting = false);
+                                    }
+                                    messenger.showSnackBar(
                                       SnackBar(
                                         content: Text(
                                           'Unable to submit request: $error',
                                         ),
                                       ),
                                     );
-                                  } finally {
-                                    if (context.mounted) {
-                                      setDialogState(
-                                        () => isSubmitting = false,
-                                      );
-                                    }
                                   }
                                 },
                           child: Text(
@@ -1674,5 +1760,32 @@ class _WorkerAttendanceScreenState extends State<WorkerAttendanceScreen>
         ],
       ),
     );
+  }
+}
+
+class _NoLeadingOrRepeatedSpacesFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    String text = newValue.text;
+    // Disallow leading whitespace/spaces
+    if (text.startsWith(RegExp(r'\s'))) {
+      text = text.replaceFirst(RegExp(r'^\s+'), '');
+    }
+    // Collapse 2 or more consecutive spaces into a single space
+    text = text.replaceAll(RegExp(r' {2,}'), ' ');
+
+    if (text != newValue.text) {
+      final newOffset = text.length < newValue.selection.baseOffset
+          ? text.length
+          : newValue.selection.baseOffset;
+      return TextEditingValue(
+        text: text,
+        selection: TextSelection.collapsed(offset: newOffset),
+      );
+    }
+    return newValue;
   }
 }

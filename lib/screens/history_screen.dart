@@ -60,8 +60,9 @@ class _HistoryScreenState extends State<HistoryScreen>
             userName.isNotEmpty &&
             wName.isNotEmpty &&
             !wName.contains(userName) &&
-            !userName.contains(wName))
+            !userName.contains(wName)) {
           continue;
+        }
 
         final dateStr = (r['date'] ?? '').toString();
         final dt = DateTime.tryParse(dateStr);
@@ -102,8 +103,9 @@ class _HistoryScreenState extends State<HistoryScreen>
             userName.isNotEmpty &&
             bName.isNotEmpty &&
             !bName.contains(userName) &&
-            !userName.contains(bName))
+            !userName.contains(bName)) {
           continue;
+        }
 
         final rawDate = (t['date_time'] ?? t['created_at'] ?? '').toString();
         final rawAction =
@@ -148,8 +150,20 @@ class _HistoryScreenState extends State<HistoryScreen>
           _isLoading = false;
         });
       }
-    } catch (_) {
-      if (mounted) setState(() => _isLoading = false);
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Unable to load history logs. Please try again.',
+              style: GoogleFonts.inter(fontSize: 13),
+            ),
+            backgroundColor: const Color(0xFFA63228),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
     }
   }
 

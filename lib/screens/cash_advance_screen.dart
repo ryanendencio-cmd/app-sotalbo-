@@ -40,8 +40,12 @@ class _CashAdvanceScreenState extends State<CashAdvanceScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error: $e'),
+            content: Text(
+              e.toString().replaceAll('Exception: ', 'Unable to process: '),
+              style: GoogleFonts.inter(fontSize: 13),
+            ),
             backgroundColor: const Color(0xFFA63228),
+            behavior: SnackBarBehavior.floating,
           ),
         );
       }

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'worker_attendance_screen.dart';
@@ -441,11 +442,11 @@ class _WorkerDashboardState extends State<WorkerDashboard> {
   Future<void> _loadAnnouncements() async {
     try {
       final notifications = await ApiService.getNotifications();
+      final user = _user ?? ApiService.currentUser;
       final announcements = notifications
           .map((value) => Map<String, dynamic>.from(value as Map))
           .where(
-            (item) =>
-                (item['type'] ?? '').toString().toLowerCase() == 'announcement',
+            (item) => isNotificationForWorker(item, user),
           )
           .toList();
       updateWorkerAnnouncementBadge(announcements);
@@ -1434,267 +1435,376 @@ class _WorkerDashboardState extends State<WorkerDashboard> {
     final TextEditingController amountController = TextEditingController();
     final TextEditingController reasonController = TextEditingController();
     final List<String> quickAmounts = ['500', '1000', '1500'];
+    String? amountError;
+    String? reasonError;
+    bool isSubmitting = false;
 
     showDialog(
       context: context,
-      builder: (context) => Dialog(
-        backgroundColor: Colors.white,
-        insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 400),
-          child: Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      'Request Cash Advance',
-                      style: GoogleFonts.inter(
-                        fontSize: 14.5,
-                        fontWeight: FontWeight.w800,
-                        color: Colors.black87,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => Dialog(
+          backgroundColor: Colors.white,
+          insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 400),
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'Request Cash Advance',
+                        style: GoogleFonts.inter(
+                          fontSize: 14.5,
+                          fontWeight: FontWeight.w800,
+                          color: Colors.black87,
+                        ),
                       ),
-                    ),
-                    IconButton(
-                      icon: const Icon(
-                        Icons.close,
-                        size: 16,
-                        color: Colors.grey,
+                      IconButton(
+                        icon: const Icon(
+                          Icons.close,
+                          size: 16,
+                          color: Colors.grey,
+                        ),
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                        onPressed: () => Navigator.pop(context),
                       ),
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(),
-                      onPressed: () => Navigator.pop(context),
-                    ),
-                  ],
-                ),
-                Text(
-                  'Submitted directly to site admin for cutoff review',
-                  style: GoogleFonts.inter(
-                    fontSize: 10.5,
-                    color: Colors.grey.shade600,
+                    ],
                   ),
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  children: quickAmounts.map((amt) {
-                    return Padding(
-                      padding: const EdgeInsets.only(right: 6.0),
-                      child: InkWell(
-                        borderRadius: BorderRadius.circular(6),
-                        onTap: () => amountController.text =
-                            CurrencyInputFormatter.formatEditing(amt),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 5,
+                  Text(
+                    'Submitted directly to site admin for cutoff review',
+                    style: GoogleFonts.inter(
+                      fontSize: 10.5,
+                      color: Colors.grey.shade600,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: quickAmounts.map((amt) {
+                      return Padding(
+                        padding: const EdgeInsets.only(right: 6.0),
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(6),
+                          onTap: () {
+                            amountController.text =
+                                CurrencyInputFormatter.formatEditing(amt);
+                            if (amountError != null) {
+                              setDialogState(() => amountError = null);
+                            }
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 5,
+                            ),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF5F3EF),
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(color: Colors.grey.shade300),
+                            ),
+                            child: Text(
+                              '₱$amt',
+                              style: GoogleFonts.inter(
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.black87,
+                              ),
+                            ),
                           ),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFF5F3EF),
-                            borderRadius: BorderRadius.circular(6),
-                            border: Border.all(color: Colors.grey.shade300),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                  const SizedBox(height: 10),
+                  CurrencyTextField(
+                    controller: amountController,
+                    onChanged: (val) {
+                      if (amountError != null) {
+                        setDialogState(() => amountError = null);
+                      }
+                    },
+                    style: GoogleFonts.inter(
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                    ),
+                    decoration: InputDecoration(
+                      filled: true,
+                      fillColor: const Color(0xFFFAF8F5),
+                      isDense: true,
+                      prefixText: '₱ ',
+                      prefixStyle: GoogleFonts.inter(
+                        fontWeight: FontWeight.bold,
+                        color: const Color(0xFFA63228),
+                      ),
+                      hintText: 'Enter amount',
+                      hintStyle: GoogleFonts.inter(
+                        color: Colors.grey.shade400,
+                        fontWeight: FontWeight.normal,
+                        fontSize: 12,
+                      ),
+                      errorText: amountError,
+                      errorStyle: GoogleFonts.inter(
+                        fontSize: 10.5,
+                        color: const Color(0xFFA63228),
+                        fontWeight: FontWeight.w600,
+                      ),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: BorderSide(
+                          color: amountError != null
+                              ? const Color(0xFFA63228)
+                              : Colors.grey.shade300,
+                        ),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: BorderSide(
+                          color: amountError != null
+                              ? const Color(0xFFA63228)
+                              : Colors.grey.shade300,
+                        ),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: const BorderSide(
+                          color: Color(0xFFA63228),
+                          width: 1.5,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: reasonController,
+                    maxLength: 100,
+                    maxLines: 2,
+                    inputFormatters: [
+                      LengthLimitingTextInputFormatter(100),
+                      _NoLeadingOrRepeatedSpacesFormatter(),
+                    ],
+                    onChanged: (val) {
+                      if (reasonError != null) {
+                        setDialogState(() => reasonError = null);
+                      } else {
+                        setDialogState(() {});
+                      }
+                    },
+                    style: GoogleFonts.inter(fontSize: 12),
+                    decoration: InputDecoration(
+                      filled: true,
+                      fillColor: const Color(0xFFFAF8F5),
+                      isDense: true,
+                      hintText: 'Reason (max 100 letters, e.g., Medical, Travel fare)',
+                      hintStyle: GoogleFonts.inter(
+                        color: Colors.grey.shade400,
+                        fontSize: 11,
+                      ),
+                      errorText: reasonError,
+                      errorStyle: GoogleFonts.inter(
+                        fontSize: 10.5,
+                        color: const Color(0xFFA63228),
+                        fontWeight: FontWeight.w600,
+                      ),
+                      counterText: '${reasonController.text.length} / 100',
+                      counterStyle: GoogleFonts.inter(
+                        fontSize: 10,
+                        color: reasonController.text.length >= 100
+                            ? const Color(0xFFA63228)
+                            : Colors.grey.shade500,
+                      ),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: BorderSide(
+                          color: reasonError != null
+                              ? const Color(0xFFA63228)
+                              : Colors.grey.shade300,
+                        ),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: BorderSide(
+                          color: reasonError != null
+                              ? const Color(0xFFA63228)
+                              : Colors.grey.shade300,
+                        ),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: const BorderSide(
+                          color: Color(0xFFA63228),
+                          width: 1.5,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 10),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            side: BorderSide(color: Colors.grey.shade300),
                           ),
+                          onPressed: () => Navigator.pop(context),
                           child: Text(
-                            '₱$amt',
+                            'Cancel',
                             style: GoogleFonts.inter(
                               fontSize: 11.5,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.black87,
+                              color: Colors.grey.shade700,
+                              fontWeight: FontWeight.w600,
                             ),
                           ),
                         ),
                       ),
-                    );
-                  }).toList(),
-                ),
-                const SizedBox(height: 10),
-                CurrencyTextField(
-                  controller: amountController,
-                  style: GoogleFonts.inter(
-                    fontSize: 13,
-                    fontWeight: FontWeight.bold,
-                  ),
-                  decoration: InputDecoration(
-                    filled: true,
-                    fillColor: const Color(0xFFFAF8F5),
-                    isDense: true,
-                    prefixText: '₱ ',
-                    prefixStyle: GoogleFonts.inter(
-                      fontWeight: FontWeight.bold,
-                      color: const Color(0xFFA63228),
-                    ),
-                    hintText: 'Enter amount',
-                    hintStyle: GoogleFonts.inter(
-                      color: Colors.grey.shade400,
-                      fontWeight: FontWeight.normal,
-                      fontSize: 12,
-                    ),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(10),
-                      borderSide: BorderSide(color: Colors.grey.shade300),
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(10),
-                      borderSide: BorderSide(color: Colors.grey.shade300),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(10),
-                      borderSide: const BorderSide(
-                        color: Color(0xFFA63228),
-                        width: 1.5,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: reasonController,
-                  maxLines: 2,
-                  style: GoogleFonts.inter(fontSize: 12),
-                  decoration: InputDecoration(
-                    filled: true,
-                    fillColor: const Color(0xFFFAF8F5),
-                    isDense: true,
-                    hintText: 'Reason (e.g., Medical, Travel fare)',
-                    hintStyle: GoogleFonts.inter(
-                      color: Colors.grey.shade400,
-                      fontSize: 11,
-                    ),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(10),
-                      borderSide: BorderSide(color: Colors.grey.shade300),
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(10),
-                      borderSide: BorderSide(color: Colors.grey.shade300),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(10),
-                      borderSide: const BorderSide(
-                        color: Color(0xFFA63228),
-                        width: 1.5,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 14),
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton(
-                        style: OutlinedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 10),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFFA63228),
+                            elevation: 0,
+                            padding: const EdgeInsets.symmetric(vertical: 10),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
                           ),
-                          side: BorderSide(color: Colors.grey.shade300),
-                        ),
-                        onPressed: () => Navigator.pop(context),
-                        child: Text(
-                          'Cancel',
-                          style: GoogleFonts.inter(
-                            fontSize: 11.5,
-                            color: Colors.grey.shade700,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFFA63228),
-                          elevation: 0,
-                          padding: const EdgeInsets.symmetric(vertical: 10),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                        ),
-                        onPressed: () async {
-                          final amount =
-                              CurrencyInputFormatter.parse(
-                                amountController.text,
-                              ) ??
-                              0.0;
-                          final reason = reasonController.text.trim();
+                          onPressed: isSubmitting
+                              ? null
+                              : () async {
+                                  final rawAmount =
+                                      amountController.text.trim();
+                                  final amount =
+                                      CurrencyInputFormatter.parse(rawAmount) ??
+                                      0.0;
+                                  final rawReason = reasonController.text;
+                                  final trimmedReason = rawReason.trim();
 
-                          if (amount <= 0 || reason.isEmpty) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text(
-                                  'Please enter valid amount and reason',
-                                ),
-                              ),
-                            );
-                            return;
-                          }
+                                  // Condition 1: Check amount first (Main condition)
+                                  if (rawAmount.isEmpty || amount <= 0) {
+                                    setDialogState(() {
+                                      amountError =
+                                          'Please enter an amount greater than ₱0.';
+                                      reasonError = null; // Hindi sabay / doble
+                                    });
+                                    return;
+                                  }
 
-                          try {
-                            final user = ApiService.currentUser;
-                            final workerName =
-                                user?['name'] ??
-                                user?['full_name'] ??
-                                '${user?['firstName'] ?? user?['first_name'] ?? ''} ${user?['lastName'] ?? user?['last_name'] ?? ''}'
-                                    .trim();
-                            final dateStr = DateTime.now()
-                                .toIso8601String()
-                                .split('T')[0];
+                                  // Condition 2: Spaces-only check
+                                  if (rawReason.isNotEmpty &&
+                                      trimmedReason.isEmpty) {
+                                    setDialogState(() {
+                                      reasonError =
+                                          'Spaces only are not allowed.';
+                                      amountError = null;
+                                    });
+                                    return;
+                                  }
 
-                            await ApiService.createCashAdvance({
-                              'project_id':
-                                  1, // Defaulting to 1 for now if worker project is unknown
-                              'workerId': user?['id'],
-                              'workerName': workerName.isNotEmpty
-                                  ? workerName
-                                  : 'Worker',
-                              'amount': amount,
-                              'reason': reason,
-                              'date': dateStr,
-                              'status': 'Pending',
-                            });
+                                  // Condition 3: Check reason
+                                  if (trimmedReason.isEmpty) {
+                                    setDialogState(() {
+                                      reasonError =
+                                          'Please enter a reason for cash advance.';
+                                      amountError = null;
+                                    });
+                                    return;
+                                  }
 
-                            if (mounted && context.mounted) {
-                              setState(() {
-                                _cashAdvance = '₱ ${amount.toStringAsFixed(2)}';
-                                _caStatus = 'Pending';
-                              });
-                              Navigator.pop(context);
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text(
-                                    'Vale request submitted to Admin portal',
+                                  setDialogState(() {
+                                    amountError = null;
+                                    reasonError = null;
+                                    isSubmitting = true;
+                                  });
+
+                                  try {
+                                    final user = ApiService.currentUser;
+                                    final workerName =
+                                        user?['name'] ??
+                                        user?['full_name'] ??
+                                        '${user?['firstName'] ?? user?['first_name'] ?? ''} ${user?['lastName'] ?? user?['last_name'] ?? ''}'
+                                            .trim();
+                                    final dateStr = DateTime.now()
+                                        .toIso8601String()
+                                        .split('T')[0];
+
+                                    await ApiService.createCashAdvance({
+                                      'project_id': 1,
+                                      'workerId': user?['id'],
+                                      'workerName': workerName.isNotEmpty
+                                          ? workerName
+                                          : 'Worker',
+                                      'amount': amount,
+                                      'reason': trimmedReason,
+                                      'date': dateStr,
+                                      'status': 'Pending',
+                                    });
+
+                                    if (mounted && context.mounted) {
+                                      setState(() {
+                                        _cashAdvance =
+                                            '₱ ${amount.toStringAsFixed(2)}';
+                                        _caStatus = 'Pending';
+                                      });
+                                      Navigator.pop(context);
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(
+                                          content: Text(
+                                            'Cash advance request submitted!',
+                                            style: GoogleFonts.inter(fontSize: 12),
+                                          ),
+                                          backgroundColor: Colors.green.shade700,
+                                          behavior: SnackBarBehavior.floating,
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius: BorderRadius.circular(8),
+                                          ),
+                                        ),
+                                      );
+                                    }
+                                  } catch (e) {
+                                    if (context.mounted) {
+                                      setDialogState(() {
+                                        isSubmitting = false;
+                                        reasonError =
+                                            ApiService.sanitizeErrorMessage(
+                                              e,
+                                              'Unable to submit cash advance.',
+                                            );
+                                      });
+                                    }
+                                  }
+                                },
+                          child: isSubmitting
+                              ? const SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.white,
+                                  ),
+                                )
+                              : Text(
+                                  'Submit',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 11.5,
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.bold,
                                   ),
                                 ),
-                              );
-                            }
-                          } catch (e) {
-                            if (mounted && context.mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text('Failed to request vale: $e'),
-                                ),
-                              );
-                            }
-                          }
-                        },
-                        child: Text(
-                          'Submit Vale',
-                          style: GoogleFonts.inter(
-                            fontSize: 11.5,
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                          ),
                         ),
                       ),
-                    ),
-                  ],
-                ),
-              ],
+                    ],
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -3088,5 +3198,32 @@ class _WorkerDashboardState extends State<WorkerDashboard> {
         ],
       ),
     );
+  }
+}
+
+class _NoLeadingOrRepeatedSpacesFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    String text = newValue.text;
+    // Disallow leading whitespace/spaces
+    if (text.startsWith(RegExp(r'\s'))) {
+      text = text.replaceFirst(RegExp(r'^\s+'), '');
+    }
+    // Collapse 2 or more consecutive spaces into a single space
+    text = text.replaceAll(RegExp(r' {2,}'), ' ');
+
+    if (text != newValue.text) {
+      final newOffset = text.length < newValue.selection.baseOffset
+          ? text.length
+          : newValue.selection.baseOffset;
+      return TextEditingValue(
+        text: text,
+        selection: TextSelection.collapsed(offset: newOffset),
+      );
+    }
+    return newValue;
   }
 }

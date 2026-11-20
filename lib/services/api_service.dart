@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
@@ -7,12 +8,12 @@ import 'package:shared_preferences/shared_preferences.dart';
 class ApiService {
   static const _readNotificationIdsKey = 'readNotificationIds';
 
-  // For physical device via wireless debugging, use your PC's local IP address.
   // For emulator, use '10.0.2.2'.
+  // For physical device via wireless debugging, use your PC's local IP address.
   // Run `ipconfig` in cmd to find your PC's IPv4 address.
   static String androidHost = const String.fromEnvironment(
     'API_HOST',
-    defaultValue: '10.162.118.195',
+    defaultValue: '10.0.2.2',
   );
   static String get baseUrl {
     if (!kIsWeb && Platform.isAndroid) return 'http://$androidHost:5000/api';
@@ -71,52 +72,157 @@ class ApiService {
     if (currentUser?['id'] != null) 'x-actor-id': currentUser!['id'].toString(),
   };
 
+  static const Duration requestTimeout = Duration(seconds: 12);
+
+  /// Converts raw technical exceptions into user-friendly messages
+  static String sanitizeErrorMessage(
+    dynamic error, [
+    String fallback = 'An unexpected error occurred. Please try again.',
+  ]) {
+    final text = error.toString().replaceAll('Exception: ', '').trim();
+    final lower = text.toLowerCase();
+
+    if (lower.contains('failed host lookup') ||
+        lower.contains('connection refused') ||
+        lower.contains('network is unreachable') ||
+        lower.contains('clientexception') ||
+        lower.contains('socketexception') ||
+        lower.contains('connection closed') ||
+        lower.contains('failed to connect') ||
+        lower.contains('software caused connection abort')) {
+      return 'Unable to connect to the server. Please check your network connection.';
+    }
+
+    if (lower.contains('timed out') || lower.contains('timeoutexception')) {
+      return 'Request timed out. The server took too long to respond. Please try again.';
+    }
+
+    if (lower.contains('resource_exhausted') || lower.contains('quota exceeded')) {
+      return 'Database quota exceeded. Service resets daily at 4:00 PM.';
+    }
+
+    if (lower.contains('formatexception')) {
+      return 'Invalid response received from server.';
+    }
+
+    return text.isNotEmpty ? text : fallback;
+  }
+
+  static String _extractErrorMessage(http.Response res, String defaultMessage) {
+    try {
+      final response = jsonDecode(res.body);
+      if (response is Map) {
+        if (response['error'] != null &&
+            response['error'].toString().trim().isNotEmpty) {
+          return response['error'].toString().trim();
+        }
+        if (response['message'] != null &&
+            response['message'].toString().trim().isNotEmpty) {
+          return response['message'].toString().trim();
+        }
+      }
+    } catch (_) {}
+    return defaultMessage;
+  }
+
   static Future<dynamic> _get(String path) async {
-    final res = await http.get(Uri.parse('$baseUrl$path'), headers: _headers);
-    if (res.statusCode == 200) return jsonDecode(res.body);
-    throw Exception('Failed to load $path (${res.statusCode})');
+    try {
+      final res = await http
+          .get(Uri.parse('$baseUrl$path'), headers: _headers)
+          .timeout(requestTimeout);
+      if (res.statusCode == 200) return jsonDecode(res.body);
+      final message = _extractErrorMessage(
+        res,
+        'Failed to load $path (${res.statusCode})',
+      );
+      throw Exception(message);
+    } catch (e) {
+      if (e is Exception &&
+          !e.toString().contains('SocketException') &&
+          !e.toString().contains('TimeoutException') &&
+          !e.toString().contains('ClientException')) {
+        rethrow;
+      }
+      throw Exception(sanitizeErrorMessage(e));
+    }
   }
 
   static Future<dynamic> _post(String path, Map<String, dynamic> body) async {
-    final res = await http.post(
-      Uri.parse('$baseUrl$path'),
-      headers: _headers,
-      body: jsonEncode(body),
-    );
-    if (res.statusCode == 200 || res.statusCode == 201) {
-      return jsonDecode(res.body);
-    }
-    var message = 'Failed to post $path (${res.statusCode})';
     try {
-      final response = jsonDecode(res.body);
-      if (response is Map && response['error'] != null) {
-        message = response['error'].toString();
-      } else if (response is Map && response['message'] != null) {
-        message = response['message'].toString();
+      final res = await http
+          .post(
+            Uri.parse('$baseUrl$path'),
+            headers: _headers,
+            body: jsonEncode(body),
+          )
+          .timeout(requestTimeout);
+      if (res.statusCode == 200 || res.statusCode == 201) {
+        return jsonDecode(res.body);
       }
-    } on FormatException {
-      // Keep the HTTP status message when the server response is not JSON.
+      final message = _extractErrorMessage(
+        res,
+        'Failed to submit data (${res.statusCode})',
+      );
+      throw Exception(message);
+    } catch (e) {
+      if (e is Exception &&
+          !e.toString().contains('SocketException') &&
+          !e.toString().contains('TimeoutException') &&
+          !e.toString().contains('ClientException')) {
+        rethrow;
+      }
+      throw Exception(sanitizeErrorMessage(e));
     }
-    throw Exception(message);
   }
 
   static Future<dynamic> _put(String path, Map<String, dynamic> body) async {
-    final res = await http.put(
-      Uri.parse('$baseUrl$path'),
-      headers: _headers,
-      body: jsonEncode(body),
-    );
-    if (res.statusCode == 200) return jsonDecode(res.body);
-    throw Exception('Failed to put $path (${res.statusCode})');
+    try {
+      final res = await http
+          .put(
+            Uri.parse('$baseUrl$path'),
+            headers: _headers,
+            body: jsonEncode(body),
+          )
+          .timeout(requestTimeout);
+      if (res.statusCode == 200 || res.statusCode == 201) {
+        return jsonDecode(res.body);
+      }
+      final message = _extractErrorMessage(
+        res,
+        'Failed to update $path (${res.statusCode})',
+      );
+      throw Exception(message);
+    } catch (e) {
+      if (e is Exception &&
+          !e.toString().contains('SocketException') &&
+          !e.toString().contains('TimeoutException') &&
+          !e.toString().contains('ClientException')) {
+        rethrow;
+      }
+      throw Exception(sanitizeErrorMessage(e));
+    }
   }
 
   static Future<void> _delete(String path) async {
-    final res = await http.delete(
-      Uri.parse('$baseUrl$path'),
-      headers: _headers,
-    );
-    if (res.statusCode != 200 && res.statusCode != 204) {
-      throw Exception('Failed to delete $path (${res.statusCode})');
+    try {
+      final res = await http
+          .delete(Uri.parse('$baseUrl$path'), headers: _headers)
+          .timeout(requestTimeout);
+      if (res.statusCode != 200 && res.statusCode != 204) {
+        final message = _extractErrorMessage(
+          res,
+          'Failed to delete $path (${res.statusCode})',
+        );
+        throw Exception(message);
+      }
+    } catch (e) {
+      if (e is Exception &&
+          !e.toString().contains('SocketException') &&
+          !e.toString().contains('TimeoutException') &&
+          !e.toString().contains('ClientException')) {
+        rethrow;
+      }
+      throw Exception(sanitizeErrorMessage(e));
     }
   }
 
@@ -359,8 +465,16 @@ class ApiService {
     return [];
   }
 
-  static Future<void> approveCashAdvance(dynamic id, String status) =>
-      _put('/cash-advances/$id/approve', {'status': status});
+  static Future<void> approveCashAdvance(
+    dynamic id,
+    String status, {
+    String? rejectionReason,
+  }) =>
+      _put('/cash-advances/$id/approve', {
+        'status': status,
+        if (status == 'Rejected')
+          'rejection_reason': rejectionReason ?? 'Rejected by Administrator',
+      });
   static Future<List<dynamic>> getWorkerCashAdvances(dynamic workerId) =>
       _get('/workers/$workerId/cash-advances').then((v) => v as List);
   static Future<List<dynamic>> getWorkerPayroll(dynamic workerId) =>
@@ -419,6 +533,7 @@ class ApiService {
     String? actorName,
     String? actorRole,
     String? action,
+    String? workerId,
   }) => _post('/notifications', {
     'title': title,
     'message': message,
@@ -427,6 +542,7 @@ class ApiService {
     if (actorName != null) 'actor_name': actorName,
     if (actorRole != null) 'actor_role': actorRole,
     if (action != null) 'action': action,
+    if (workerId != null) 'worker_id': workerId,
   });
 
   // Auth
@@ -567,70 +683,105 @@ class ApiService {
 
     http.Response? lastWorkerRes;
 
-    for (final id in identifiersToTry) {
-      final res = await http.post(
-        Uri.parse('$baseUrl/login'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'username': id, 'password': password}),
-      );
-      lastWorkerRes = res;
+    try {
+      for (final id in identifiersToTry) {
+        final res = await http
+            .post(
+              Uri.parse('$baseUrl/login'),
+              headers: {'Content-Type': 'application/json'},
+              body: jsonEncode({'username': id, 'password': password}),
+            )
+            .timeout(requestTimeout);
+        lastWorkerRes = res;
 
-      if (res.statusCode == 200) {
-        final body = jsonDecode(res.body);
+        if (res.statusCode == 200) {
+          final body = jsonDecode(res.body);
 
-        // Extract status if available
-        String? status;
-        if (body['status'] != null) {
-          status = body['status'].toString();
-        } else if (body['worker'] != null && body['worker']['status'] != null) {
-          status = body['worker']['status'].toString();
-        } else if (body['user'] != null && body['user']['status'] != null) {
-          status = body['user']['status'].toString();
+          // Extract status if available
+          String? status;
+          if (body['status'] != null) {
+            status = body['status'].toString();
+          } else if (body['worker'] != null &&
+              body['worker']['status'] != null) {
+            status = body['worker']['status'].toString();
+          } else if (body['user'] != null && body['user']['status'] != null) {
+            status = body['user']['status'].toString();
+          }
+
+          if (status != null) {
+            if (status.toLowerCase() == 'pending' ||
+                status.toLowerCase().contains('pending')) {
+              throw Exception('pending_approval');
+            }
+            if (status.toLowerCase() == 'rejected' ||
+                status.toLowerCase().contains('reject')) {
+              throw Exception('Account was rejected');
+            }
+          }
+
+          return body;
         }
 
-        if (status != null) {
-          if (status.toLowerCase() == 'pending' ||
-              status.toLowerCase().contains('pending')) {
+        if (res.statusCode == 403) {
+          final body = jsonDecode(res.body);
+          if (body['error'] == 'pending_approval') {
             throw Exception('pending_approval');
           }
-          if (status.toLowerCase() == 'rejected' ||
-              status.toLowerCase().contains('reject')) {
+          if (body['error'] == 'rejected') {
             throw Exception('Account was rejected');
           }
         }
 
-        return body;
-      }
-
-      if (res.statusCode == 403) {
-        final body = jsonDecode(res.body);
-        if (body['error'] == 'pending_approval') {
-          throw Exception('pending_approval');
-        }
-        if (body['error'] == 'rejected') {
-          throw Exception('Account was rejected');
-        }
-      }
-
-      if (res.statusCode == 401) {
-        try {
-          final body = jsonDecode(res.body);
-          if (body['error'] == 'Invalid password') {
-            throw Exception('Wrong Password');
+        if (res.statusCode == 401) {
+          try {
+            final body = jsonDecode(res.body);
+            if (body['error'] == 'Invalid password') {
+              throw Exception('Wrong Password');
+            }
+          } catch (e) {
+            if (e is! FormatException) rethrow;
           }
-        } catch (e) {
-          if (e is! FormatException) rethrow;
         }
+
+        if (res.statusCode == 500) {
+          try {
+            final body = jsonDecode(res.body);
+            final err = (body['error'] ?? '').toString();
+            if (err.contains('RESOURCE_EXHAUSTED') ||
+                err.contains('Quota exceeded')) {
+              throw Exception(
+                'Firebase Daily Quota Exceeded. Reset occurs daily at 4:00 PM.',
+              );
+            }
+          } catch (e) {
+            if (e.toString().contains('Firebase Daily Quota')) rethrow;
+          }
+        }
+      }
+    } catch (e) {
+      final str = e.toString();
+      if (str.contains('pending_approval') ||
+          str.contains('Account was rejected') ||
+          str.contains('Wrong Password') ||
+          str.contains('Firebase Daily Quota')) {
+        rethrow;
+      }
+      if (str.contains('SocketException') ||
+          str.contains('TimeoutException') ||
+          str.contains('ClientException')) {
+        throw Exception(sanitizeErrorMessage(e));
       }
     }
 
     // Try admin login
     try {
-      final adminRes = await http.post(
-        Uri.parse('$baseUrl/admin/login'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'username': raw, 'password': password}),
-      );
+      final adminRes = await http
+          .post(
+            Uri.parse('$baseUrl/admin/login'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({'username': raw, 'password': password}),
+          )
+          .timeout(requestTimeout);
 
       if (adminRes.statusCode == 200) {
         final data = jsonDecode(adminRes.body);
@@ -643,7 +794,23 @@ class ApiService {
           'user': data['admin'],
         };
       }
-    } catch (_) {
+
+      if (adminRes.statusCode == 500) {
+        try {
+          final body = jsonDecode(adminRes.body);
+          final err = (body['error'] ?? '').toString();
+          if (err.contains('RESOURCE_EXHAUSTED') ||
+              err.contains('Quota exceeded')) {
+            throw Exception(
+              'Firebase Daily Quota Exceeded. Reset occurs daily at 4:00 PM.',
+            );
+          }
+        } catch (e) {
+          if (e.toString().contains('Firebase Daily Quota')) rethrow;
+        }
+      }
+    } catch (e) {
+      if (e.toString().contains('Firebase Daily Quota')) rethrow;
       // continue to error handling
     }
 
@@ -674,8 +841,16 @@ class ApiService {
   static Future<List<dynamic>> getPendingRegistrations() =>
       _get('/pending-registrations').then((v) => v as List);
 
-  static Future<void> approveWorker(dynamic id, String status) =>
-      _put('/workers/$id/approve', {'status': status});
+  static Future<void> approveWorker(
+    dynamic id,
+    String status, {
+    String? rejectionReason,
+  }) =>
+      _put('/workers/$id/approve', {
+        'status': status,
+        if (status == 'Rejected' && rejectionReason != null)
+          'rejection_reason': rejectionReason,
+      });
 
   static Future<Map<String, dynamic>> getWorker(dynamic id) =>
       _get('/workers').then((v) {

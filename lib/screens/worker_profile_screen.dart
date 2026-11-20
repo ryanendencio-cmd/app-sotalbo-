@@ -57,6 +57,18 @@ class _WorkerProfileScreenState extends State<WorkerProfileScreen> {
       }
     } catch (e) {
       debugPrint('Failed to fetch profile: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Unable to load profile. Please check your connection and try again.',
+              style: GoogleFonts.inter(fontSize: 13),
+            ),
+            backgroundColor: const Color(0xFFA63228),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }

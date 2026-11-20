@@ -289,9 +289,16 @@ class _ToolsMonitoringScreenState extends State<ToolsMonitoringScreen> {
       return true;
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Failed to update tool: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              e.toString().replaceAll('Exception: ', 'Unable to update tool: '),
+              style: GoogleFonts.inter(fontSize: 13),
+            ),
+            backgroundColor: const Color(0xFFA63228),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
       }
       return false;
     }
@@ -1390,7 +1397,7 @@ class _ToolsMonitoringScreenState extends State<ToolsMonitoringScreen> {
       appBar: widget.hideAppBar
           ? null
           : ApiService.currentUserRole?.toLowerCase() == 'admin'
-          ? AdminMobileAppBar()
+          ? const AdminMobileAppBar()
           : AppBar(
               backgroundColor: Colors.white,
               elevation: 0,

@@ -73,6 +73,18 @@ class _PayslipScreenState extends State<PayslipScreen> {
       }
     } catch (e) {
       debugPrint('Failed to load payslip data: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Unable to load payslip. Please try again.',
+              style: GoogleFonts.inter(fontSize: 13),
+            ),
+            backgroundColor: const Color(0xFFA63228),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
     }
   }
 

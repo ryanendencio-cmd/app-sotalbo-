@@ -26,7 +26,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   int _currentIndex = 0;
 
   bool _pushNotifications = true;
-  String _activeProjectSite = 'RYAN';
+  String _activeProjectSite = '';
 
   List<Map<String, dynamic>> _pendingRegistrations = [];
   bool _isLoadingPending = false;
@@ -80,14 +80,14 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   List<double> _monthlyExpenses = List<double>.filled(12, 0.0);
 
   // Admin profile data
-  final int _adminId = 1; // Default admin ID
+  final int _adminId = 1;
   String _adminDocId = ''; // Firestore document ID
-  String _adminFirstName = 'Aldrich';
-  String _adminLastName = 'Sotalbo';
-  String _adminFullName = 'Aldrich Sotalbo';
-  String _adminEmail = 'ajsotalbo@gmail.com';
+  String _adminFirstName = '';
+  String _adminLastName = '';
+  String _adminFullName = '';
+  String _adminEmail = '';
   String _adminRole = 'Administrator';
-  String _adminPhone = '09068135609';
+  String _adminPhone = '';
 
   @override
   void initState() {
@@ -143,7 +143,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
         setState(() {
           _projectsList = List<Map<String, dynamic>>.from(projectsData);
-          _activeProjectsCount = _projectsList.length;
+          _activeProjectsCount = _activeProjects().length;
 
           _totalExpenses = _parseDouble(expSummary['total']);
           _recentExpenses =
@@ -286,24 +286,27 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
   Future<void> _loadAdminProfile() async {
     try {
-      final profile = await AdminService.getAdminProfile(
-        _adminDocId.isNotEmpty ? _adminDocId : _adminId,
-      );
-      if (profile['id'] != null && mounted) {
+      final currentUser = ApiService.currentUser;
+      final lookupId = _adminDocId.isNotEmpty
+          ? _adminDocId
+          : (currentUser?['id'] ?? currentUser?['_id'] ?? _adminId);
+
+      final profile = await AdminService.getAdminProfile(lookupId);
+      if (mounted) {
         setState(() {
-          _adminDocId = profile['id']?.toString() ?? '';
+          _adminDocId = profile['id']?.toString() ??
+              currentUser?['id']?.toString() ??
+              '';
           final rawFullName = (profile['fullName'] as String?)?.trim() ?? '';
           final rawFirstName = (profile['firstName'] as String?)?.trim() ?? '';
           final rawLastName = (profile['lastName'] as String?)?.trim() ?? '';
-          final currentUser = ApiService.currentUser;
+          final userFullName = (currentUser?['name'] ??
+                  currentUser?['full_name'] ??
+                  '')
+              .toString()
+              .trim();
           final fullNameParts =
-              (rawFullName.isNotEmpty
-                      ? rawFullName
-                      : (currentUser?['name'] ??
-                            currentUser?['full_name'] ??
-                            ''))
-                  .toString()
-                  .trim()
+              (rawFullName.isNotEmpty ? rawFullName : userFullName)
                   .split(RegExp(r'\s+'))
                   .where((part) => part.isNotEmpty)
                   .toList();
@@ -312,38 +315,42 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             _adminFullName = rawFullName;
           } else if (rawFirstName.isNotEmpty || rawLastName.isNotEmpty) {
             _adminFullName = '$rawFirstName $rawLastName'.trim();
+          } else if (userFullName.isNotEmpty) {
+            _adminFullName = userFullName;
           } else {
-            _adminFullName = 'Aldrich Sotalbo';
+            _adminFullName = 'Administrator';
           }
 
           _adminFirstName = rawFirstName.isNotEmpty
               ? rawFirstName
               : (currentUser?['firstName'] ??
-                        currentUser?['first_name'] ??
-                        (fullNameParts.isNotEmpty
-                            ? fullNameParts.first
-                            : 'Aldrich'))
-                    .toString()
-                    .trim();
+                      currentUser?['first_name'] ??
+                      (fullNameParts.isNotEmpty ? fullNameParts.first : ''))
+                  .toString()
+                  .trim();
           _adminLastName = rawLastName.isNotEmpty
               ? rawLastName
               : (currentUser?['lastName'] ??
-                        currentUser?['last_name'] ??
-                        (fullNameParts.length > 1 ? fullNameParts.last : ''))
-                    .toString()
-                    .trim();
-          _adminEmail =
-              (profile['email'] as String?)?.trim() ?? 'ajsotalbo@gmail.com';
-          _adminRole = (profile['role'] as String?)?.trim() ?? 'Administrator';
-          _adminPhone = (profile['phone'] as String?)?.trim() ?? '09068135609';
+                      currentUser?['last_name'] ??
+                      (fullNameParts.length > 1 ? fullNameParts.last : ''))
+                  .toString()
+                  .trim();
+          _adminEmail = (profile['email'] as String?)?.trim() ??
+              (currentUser?['email'] ?? '').toString().trim();
+          _adminRole = (profile['role'] as String?)?.trim() ??
+              (currentUser?['role'] ?? 'Administrator').toString().trim();
+          _adminPhone = (profile['phone'] as String?)?.trim() ??
+              (currentUser?['phone'] ?? '').toString().trim();
 
           final dbSite = (profile['assignedProjectSite'] as String?)?.trim();
           if (dbSite != null && dbSite.isNotEmpty) {
             _activeProjectSite = dbSite;
+          } else if (_activeProjects().isNotEmpty) {
+            _activeProjectSite = _activeProjects().first['name'] ?? '';
           } else if (_projectsList.isNotEmpty) {
-            _activeProjectSite = _projectsList.first['name'] ?? 'RYAN';
+            _activeProjectSite = _projectsList.first['name'] ?? '';
           } else {
-            _activeProjectSite = 'RYAN';
+            _activeProjectSite = '';
           }
 
           _pushNotifications = profile['pushNotificationsEnabled'] == true;
@@ -352,6 +359,192 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     } catch (e) {
       debugPrint('Error loading admin profile: $e');
     }
+  }
+
+  Future<String?> _showRejectReasonDialog({
+    required String title,
+    required String subtitle,
+    required String workerName,
+  }) async {
+    final controller = TextEditingController();
+    String? validationError;
+
+    return showDialog<String>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => Dialog(
+          backgroundColor: Colors.white,
+          insetPadding: const EdgeInsets.symmetric(
+            horizontal: 20,
+            vertical: 24,
+          ),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 400),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(
+                        Icons.block_rounded,
+                        color: Color(0xFFA63228),
+                        size: 20,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          title,
+                          style: GoogleFonts.inter(
+                            fontSize: 14.5,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close, size: 16),
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                        onPressed: () => Navigator.pop(ctx),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    subtitle,
+                    style: GoogleFonts.inter(
+                      fontSize: 11,
+                      color: Colors.grey.shade600,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: controller,
+                    maxLength: 100,
+                    maxLines: 3,
+                    autofocus: true,
+                    inputFormatters: [
+                      LengthLimitingTextInputFormatter(100),
+                      _NoLeadingOrRepeatedSpacesFormatter(),
+                    ],
+                    onChanged: (_) {
+                      if (validationError != null) {
+                        setDialogState(() => validationError = null);
+                      }
+                    },
+                    style: GoogleFonts.inter(fontSize: 12),
+                    decoration: InputDecoration(
+                      filled: true,
+                      fillColor: const Color(0xFFFAF8F5),
+                      isDense: true,
+                      hintText: 'e.g. Incomplete requirements, schedule conflict, etc.',
+                      hintStyle: GoogleFonts.inter(
+                        color: Colors.grey.shade400,
+                        fontSize: 11,
+                      ),
+                      errorText: validationError,
+                      errorStyle: GoogleFonts.inter(
+                        fontSize: 10.5,
+                        color: const Color(0xFFA63228),
+                        fontWeight: FontWeight.w600,
+                      ),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: BorderSide(
+                          color: validationError != null
+                              ? const Color(0xFFA63228)
+                              : Colors.grey.shade300,
+                        ),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: BorderSide(
+                          color: validationError != null
+                              ? const Color(0xFFA63228)
+                              : Colors.grey.shade300,
+                        ),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: const BorderSide(
+                          color: Color(0xFFA63228),
+                          width: 1.5,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 10),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            side: BorderSide(
+                              color: Colors.grey.shade300,
+                            ),
+                          ),
+                          onPressed: () => Navigator.pop(ctx),
+                          child: Text(
+                            'Cancel',
+                            style: GoogleFonts.inter(
+                              fontSize: 11.5,
+                              color: Colors.grey.shade700,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFFA63228),
+                            elevation: 0,
+                            padding: const EdgeInsets.symmetric(vertical: 10),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
+                          onPressed: () {
+                            final raw = controller.text;
+                            if (raw.trim().isEmpty) {
+                              setDialogState(() {
+                                validationError = raw.isEmpty
+                                    ? 'Rejection reason is required.'
+                                    : 'Spaces only are not allowed.';
+                              });
+                              return;
+                            }
+                            Navigator.pop(ctx, raw.trim());
+                          },
+                          child: Text(
+                            'Confirm Reject',
+                            style: GoogleFonts.inter(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   Future<void> _handleAccountApproval(int index, bool isApproved) async {
@@ -366,8 +559,23 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               .trim();
     final String statusStr = isApproved ? 'Approved' : 'Rejected';
 
+    String? rejectionReason;
+    if (!isApproved) {
+      rejectionReason = await _showRejectReasonDialog(
+        title: 'Reject Registration',
+        subtitle:
+            'Please provide a reason why you are rejecting $name\'s registration.',
+        workerName: name,
+      );
+      if (rejectionReason == null) return;
+    }
+
     try {
-      await ApiService.approveWorker(workerId, statusStr);
+      await ApiService.approveWorker(
+        workerId,
+        statusStr,
+        rejectionReason: rejectionReason,
+      );
       if (mounted) {
         setState(() => _pendingRegistrations.removeAt(index));
         ScaffoldMessenger.of(context).showSnackBar(
@@ -495,6 +703,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     final vale = _pendingValeRequests[index];
     final statusStr = isApproved ? 'Approved' : 'Rejected';
     final valeId = vale['id']?.toString();
+    final workerName =
+        (vale['name'] ?? vale['workerName'] ?? 'Worker').toString();
 
     if (valeId == null || valeId.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -511,12 +721,47 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       return;
     }
 
+    String? rejectionReason;
+    if (!isApproved) {
+      final rawAmount = vale['amount'] ?? vale['rawAmount'];
+      final formattedAmount = _formatValeAmount(rawAmount);
+      rejectionReason = await _showRejectReasonDialog(
+        title: 'Reject Cash Advance',
+        subtitle:
+            'Please provide a reason why you are rejecting $workerName\'s cash advance of $formattedAmount.',
+        workerName: workerName,
+      );
+      if (rejectionReason == null) return;
+    }
+
     try {
-      await ApiService.approveCashAdvance(valeId, statusStr);
+      await ApiService.approveCashAdvance(
+        valeId,
+        statusStr,
+        rejectionReason: rejectionReason,
+      );
+      try {
+        final targetWorkerId = (vale['worker_id'] ?? vale['workerId'])?.toString();
+        await ApiService.logAdminNotification(
+          title: isApproved ? 'Cash Advance Approved' : 'Cash Advance Rejected',
+          message: isApproved
+              ? '$workerName\'s cash advance request for ₱${vale['amount']} was approved.'
+              : '$workerName\'s cash advance request for ₱${vale['amount']} was rejected. Reason: ${rejectionReason ?? '—'}',
+          type: 'Cash Advance',
+          severity: isApproved ? 'Low' : 'Medium',
+          actorName: 'Admin',
+          actorRole: 'Admin',
+          action: isApproved ? 'VALE_APPROVED' : 'VALE_REJECTED',
+          workerId: targetWorkerId,
+        );
+      } catch (_) {}
       if (mounted) {
         setState(() {
           final updated = Map<String, dynamic>.from(vale);
           updated['status'] = statusStr;
+          if (rejectionReason != null) {
+            updated['rejection_reason'] = rejectionReason;
+          }
           _pendingValeRequests.removeAt(index);
           _valeHistory.removeWhere((item) => item['id']?.toString() == valeId);
           _valeHistory.insert(0, updated);
@@ -525,7 +770,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              'Cash advance for ${vale['name'] ?? vale['workerName'] ?? 'Worker'} has been $statusStr.',
+              'Cash advance for $workerName has been $statusStr.',
               style: GoogleFonts.inter(fontSize: 11),
             ),
             backgroundColor: isApproved
@@ -647,11 +892,38 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     return 'Good evening';
   }
 
+  bool _isUpcomingStatus(String? statusStr) {
+    final s = (statusStr ?? '').trim().toUpperCase();
+    return s == 'UPCOMING' ||
+        s == 'STANDBY' ||
+        s.contains('UPCOMING') ||
+        s.contains('STANDBY');
+  }
+
+  bool _isOngoingStatus(String? statusStr) {
+    final s = (statusStr ?? '').trim().toUpperCase();
+    return s == 'ONGOING' || s == 'ACTIVE' || s.isEmpty;
+  }
+
+  bool _isProjectActive(Map<String, dynamic> project) {
+    final id = project['id']?.toString().trim() ?? '';
+    if (id.isEmpty || id.toLowerCase() == 'all') return false;
+    final status = project['status']?.toString();
+    return _isOngoingStatus(status) || _isUpcomingStatus(status);
+  }
+
+  List<Map<String, dynamic>> _activeProjects() =>
+      _projectsList.where(_isProjectActive).toList();
+
   List<Map<String, dynamic>> _ongoingProjects() =>
       _projectsList.where((project) {
         final id = project['id']?.toString().trim() ?? '';
         final status = project['status']?.toString().toUpperCase();
-        return id.isNotEmpty && (status == 'ONGOING' || status == 'ACTIVE');
+        return id.isNotEmpty &&
+            (status == 'ONGOING' ||
+                status == 'ACTIVE' ||
+                status == 'UPCOMING' ||
+                status == 'STANDBY');
       }).toList();
 
   List<String> _expenseItemSuggestions(String category) {
@@ -3255,7 +3527,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                     ],
                   ),
                   const SizedBox(height: 10),
-                  if (_projectsList.isEmpty)
+                  if (_activeProjects().isEmpty)
                     Padding(
                       padding: const EdgeInsets.all(12.0),
                       child: Center(
@@ -3269,7 +3541,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                       ),
                     )
                   else
-                    ..._projectsList.take(3).map((proj) {
+                    ..._activeProjects().take(3).map((proj) {
                       final name = proj['name'] ?? 'Untitled Project';
                       final budget = _parseDouble(proj['budget']);
                       final progress = _parseDouble(proj['progress']);
@@ -4794,6 +5066,48 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                                 color: Colors.grey.shade700,
                               ),
                             ),
+                            if (isRejected &&
+                                (item['rejection_reason'] ?? '')
+                                    .toString()
+                                    .trim()
+                                    .isNotEmpty) ...[
+                              const SizedBox(height: 6),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 6,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.red.shade50,
+                                  borderRadius: BorderRadius.circular(6),
+                                  border: Border.all(
+                                    color: Colors.red.shade200,
+                                  ),
+                                ),
+                                child: Row(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.start,
+                                  children: [
+                                    const Icon(
+                                      Icons.info_outline,
+                                      size: 13,
+                                      color: Color(0xFFA63228),
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Expanded(
+                                      child: Text(
+                                        'Rejection reason: ${item['rejection_reason']}',
+                                        style: GoogleFonts.inter(
+                                          fontSize: 10.5,
+                                          color: const Color(0xFFA63228),
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
                             const Divider(height: 12),
                             Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -5535,7 +5849,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                             child: Text(
                               _adminFullName.isNotEmpty
                                   ? _adminFullName
-                                  : 'Aldrich Sotalbo',
+                                  : 'Administrator',
                               style: GoogleFonts.inter(
                                 fontSize: 13,
                                 fontWeight: FontWeight.bold,
@@ -5572,7 +5886,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                       Text(
                         _adminEmail.isNotEmpty
                             ? _adminEmail
-                            : 'ajsotalbo@gmail.com',
+                            : '—',
                         style: GoogleFonts.inter(
                           fontSize: 11,
                           color: Colors.grey.shade600,
@@ -6277,4 +6591,25 @@ class _MonthlyVolumeBarPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _MonthlyVolumeBarPainter oldDelegate) => true;
+}
+
+class _NoLeadingOrRepeatedSpacesFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    var text = newValue.text;
+    if (text.startsWith(' ')) {
+      text = text.trimLeft();
+    }
+    text = text.replaceAll(RegExp(r' {2,}'), ' ');
+    final diff = newValue.text.length - text.length;
+    final newOffset =
+        (newValue.selection.baseOffset - diff).clamp(0, text.length);
+    return TextEditingValue(
+      text: text,
+      selection: TextSelection.collapsed(offset: newOffset),
+    );
+  }
 }

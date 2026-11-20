@@ -83,8 +83,12 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Unable to send OTP: ${e.toString()}'),
-          backgroundColor: Colors.red,
+          content: Text(
+            e.toString().replaceAll('Exception: ', 'Unable to send OTP: '),
+            style: GoogleFonts.inter(fontSize: 13),
+          ),
+          backgroundColor: const Color(0xFFA63228),
+          behavior: SnackBarBehavior.floating,
         ),
       );
     } finally {
@@ -118,8 +122,12 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Unable to verify OTP: $error'),
+          content: Text(
+            error.toString().replaceAll('Exception: ', 'Unable to verify OTP: '),
+            style: GoogleFonts.inter(fontSize: 13),
+          ),
           backgroundColor: const Color(0xFFA63228),
+          behavior: SnackBarBehavior.floating,
         ),
       );
     } finally {
@@ -222,8 +230,12 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Unable to reset password: $error'),
+          content: Text(
+            error.toString().replaceAll('Exception: ', 'Unable to reset password: '),
+            style: GoogleFonts.inter(fontSize: 13),
+          ),
           backgroundColor: const Color(0xFFA63228),
+          behavior: SnackBarBehavior.floating,
         ),
       );
     } finally {
@@ -518,8 +530,10 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                               ScaffoldMessenger.of(context).showSnackBar(
                                 SnackBar(
                                   content: Text(
-                                    'Unable to resend code: $error',
+                                    error.toString().replaceAll('Exception: ', 'Unable to resend code: '),
+                                    style: GoogleFonts.inter(fontSize: 13),
                                   ),
+                                  backgroundColor: const Color(0xFFA63228),
                                   behavior: SnackBarBehavior.floating,
                                 ),
                               );

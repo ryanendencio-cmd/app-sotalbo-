@@ -49,10 +49,12 @@ class _TimesheetScreenState extends State<TimesheetScreen> {
               .toString()
               .trim()
               .toLowerCase();
-          if (wId.isNotEmpty)
+          if (wId.isNotEmpty) {
             attendanceMap[wId] = Map<String, dynamic>.from(r as Map);
-          if (wName.isNotEmpty)
+          }
+          if (wName.isNotEmpty) {
             attendanceMap[wName] = Map<String, dynamic>.from(r as Map);
+          }
         }
       }
 
@@ -131,6 +133,18 @@ class _TimesheetScreenState extends State<TimesheetScreen> {
       }
     } catch (e) {
       debugPrint('Failed to load timesheet data: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Unable to load timesheet. Please try again.',
+              style: GoogleFonts.inter(fontSize: 13),
+            ),
+            backgroundColor: const Color(0xFFA63228),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
     }
   }
 
@@ -993,8 +1007,11 @@ class _TimesheetScreenState extends State<TimesheetScreen> {
                                           ).showSnackBar(
                                             SnackBar(
                                               content: Text(
-                                                'Error saving attendance: $e',
+                                                e.toString().replaceAll('Exception: ', 'Unable to save attendance: '),
+                                                style: GoogleFonts.inter(fontSize: 13),
                                               ),
+                                              backgroundColor: const Color(0xFFA63228),
+                                              behavior: SnackBarBehavior.floating,
                                             ),
                                           );
                                         }

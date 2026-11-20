@@ -66,9 +66,9 @@ class _ReportsScreenState extends State<ReportsScreen> {
       final List<Map<String, String>> highOtWorkers = [];
 
       for (final m in manpower) {
-        final hrs = (m['hours'] is num) ? (m['hours'] as num).toDouble() : 8.0;
-        final ot = (m['ot'] is num) ? (m['ot'] as num).toDouble() : 0.0;
-        final rate = (m['rate'] is num) ? (m['rate'] as num).toDouble() : 600.0;
+        final hrs = (m['hours'] is num) ? (m['hours'] as num).toDouble() : (double.tryParse((m['hours'] ?? '0').toString()) ?? 0.0);
+        final ot = (m['ot'] is num) ? (m['ot'] as num).toDouble() : (double.tryParse((m['ot'] ?? '0').toString()) ?? 0.0);
+        final rate = (m['rate'] is num) ? (m['rate'] as num).toDouble() : (double.tryParse((m['rate'] ?? '0').toString()) ?? 0.0);
         final cost = (hrs / 8.0) * rate;
 
         totalLaborCost += cost;
@@ -134,6 +134,18 @@ class _ReportsScreenState extends State<ReportsScreen> {
       }
     } catch (e) {
       debugPrint('Failed to load reports: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Unable to load report data. Please try again.',
+              style: GoogleFonts.inter(fontSize: 13),
+            ),
+            backgroundColor: const Color(0xFFA63228),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
     }
   }
 

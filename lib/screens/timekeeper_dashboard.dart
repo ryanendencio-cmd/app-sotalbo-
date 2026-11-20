@@ -20,8 +20,8 @@ class _TimekeeperDashboardState extends State<TimekeeperDashboard> {
 
   DateTime _selectedTrendDate = DateTime.now();
 
-  List<String> _currentCounts = ['55', '58', '48', '53', '56', '38'];
-  List<double> _currentFactors = [0.85, 0.90, 0.75, 0.82, 0.88, 0.60];
+  List<String> _currentCounts = ['0', '0', '0', '0', '0', '0'];
+  List<double> _currentFactors = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
 
   final List<Map<String, dynamic>> _recentLogs = [];
   List<Map<String, dynamic>> _allWorkers = [];
@@ -62,13 +62,42 @@ class _TimekeeperDashboardState extends State<TimekeeperDashboard> {
           }
         }
       }
-      if (mounted && loaded.isNotEmpty) {
+
+      // Compute actual attendance trend counts from Firestore records for the selected week
+      final monday = _selectedTrendDate.subtract(Duration(days: _selectedTrendDate.weekday - 1));
+      final List<int> dayCounts = List.filled(6, 0);
+      for (int i = 0; i < 6; i++) {
+        final d = monday.add(Duration(days: i));
+        final dStr = '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+        dayCounts[i] = records.where((r) => r['date'] == dStr).length;
+      }
+      final maxCount = dayCounts.fold<int>(0, (max, c) => c > max ? c : max);
+      final factors = dayCounts.map((c) => maxCount > 0 ? (c / maxCount) : 0.0).toList();
+      final countStrings = dayCounts.map((c) => c.toString()).toList();
+
+      if (mounted) {
         setState(() {
           _recentLogs.clear();
           _recentLogs.addAll(loaded);
+          _currentCounts = countStrings;
+          _currentFactors = factors;
         });
       }
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('Failed to load recent logs: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Unable to load attendance data. Please try again.',
+              style: GoogleFonts.inter(fontSize: 13),
+            ),
+            backgroundColor: const Color(0xFFA63228),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
   }
 
   Future<void> _loadWorkers() async {
@@ -111,6 +140,7 @@ class _TimekeeperDashboardState extends State<TimekeeperDashboard> {
         _currentCounts = ['0', '0', '0', '0', '0', '0'];
         _currentFactors = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
       });
+      _loadRecentLogs();
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(

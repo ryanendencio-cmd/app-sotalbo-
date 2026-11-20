@@ -211,7 +211,7 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
                               borderRadius: BorderRadius.circular(10),
                             ),
                             child: Text(
-                              'Could not load project expenses: ${snapshot.error}',
+                              'Unable to load project expenses. Please try again.',
                               style: GoogleFonts.inter(
                                 fontSize: 11,
                                 color: const Color(0xFFA63228),
@@ -458,14 +458,28 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
                         children: [
                           const Icon(
                             Icons.error_outline,
-                            size: 36,
-                            color: Colors.red,
+                            size: 40,
+                            color: Color(0xFFA63228),
                           ),
-                          const SizedBox(height: 8),
+                          const SizedBox(height: 10),
                           Text(
-                            'Failed to load projects: ${snapshot.error}',
-                            style: GoogleFonts.inter(fontSize: 12),
+                            'Unable to load projects.\nPlease check your connection and try again.',
+                            style: GoogleFonts.inter(fontSize: 13, color: Colors.black87),
                             textAlign: TextAlign.center,
+                          ),
+                          const SizedBox(height: 14),
+                          ElevatedButton.icon(
+                            onPressed: () {
+                              setState(() {
+                                _future = ApiService.getProjects();
+                              });
+                            },
+                            icon: const Icon(Icons.refresh, size: 16, color: Colors.white),
+                            label: Text('Retry', style: GoogleFonts.inter(color: Colors.white, fontSize: 13)),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFFA63228),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                            ),
                           ),
                         ],
                       ),

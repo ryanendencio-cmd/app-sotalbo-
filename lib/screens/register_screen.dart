@@ -100,19 +100,25 @@ class _RegisterScreenState extends State<RegisterScreen> {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 2),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(
-            passes ? Icons.check_circle_rounded : Icons.radio_button_unchecked,
-            size: 14,
-            color: passes ? Colors.green.shade600 : Colors.grey.shade400,
+          Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: Icon(
+              passes ? Icons.check_circle_rounded : Icons.radio_button_unchecked,
+              size: 14,
+              color: passes ? Colors.green.shade600 : Colors.grey.shade400,
+            ),
           ),
           const SizedBox(width: 6),
-          Text(
-            label,
-            style: GoogleFonts.inter(
-              fontSize: 11.5,
-              color: passes ? Colors.green.shade700 : Colors.grey.shade600,
-              fontWeight: passes ? FontWeight.w600 : FontWeight.normal,
+          Expanded(
+            child: Text(
+              label,
+              style: GoogleFonts.inter(
+                fontSize: 11.5,
+                color: passes ? Colors.green.shade700 : Colors.grey.shade600,
+                fontWeight: passes ? FontWeight.w600 : FontWeight.normal,
+              ),
             ),
           ),
         ],
@@ -701,8 +707,15 @@ class _RegisterScreenState extends State<RegisterScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Registration failed: ${e.toString()}'),
-            backgroundColor: Colors.red,
+            content: Text(
+              ApiService.sanitizeErrorMessage(
+                e,
+                'Registration failed. Please try again.',
+              ),
+              style: GoogleFonts.inter(fontSize: 13),
+            ),
+            backgroundColor: const Color(0xFFA63228),
+            behavior: SnackBarBehavior.floating,
           ),
         );
       }
@@ -751,8 +764,15 @@ class _RegisterScreenState extends State<RegisterScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Unable to verify email: $error'),
+          content: Text(
+            ApiService.sanitizeErrorMessage(
+              error,
+              'Unable to verify email.',
+            ),
+            style: GoogleFonts.inter(fontSize: 13),
+          ),
           backgroundColor: const Color(0xFFA63228),
+          behavior: SnackBarBehavior.floating,
         ),
       );
     } finally {
@@ -896,22 +916,19 @@ class _RegisterScreenState extends State<RegisterScreen> {
       backgroundColor: Colors.white,
       appBar: AppBar(backgroundColor: Colors.white, elevation: 0),
       body: SafeArea(
-        child: CustomScrollView(
-          physics: const ClampingScrollPhysics(),
-          slivers: [
-            SliverFillRemaining(
-              hasScrollBody: false,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 24.0,
-                  vertical: 12.0,
-                ),
-                child: Form(
-                  key: _formKey,
-                  autovalidateMode: AutovalidateMode.onUserInteraction,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
+        child: SingleChildScrollView(
+          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+          physics: const BouncingScrollPhysics(),
+          padding: const EdgeInsets.symmetric(
+            horizontal: 24.0,
+            vertical: 12.0,
+          ),
+          child: Form(
+            key: _formKey,
+            autovalidateMode: AutovalidateMode.onUserInteraction,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
                       Center(
                         child: Image.asset(
                           'assets/logo.png',
@@ -1312,7 +1329,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           ),
                         ),
 
-                      const Expanded(child: SizedBox(height: 12)),
+                      const SizedBox(height: 16),
 
                       // TERMS AND CONDITIONS CHECKBOX
                       Row(
@@ -1411,39 +1428,39 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       const SizedBox(height: 12),
 
                       // LOGIN LINK
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Text(
-                            "Already have an account? ",
-                            style: GoogleFonts.inter(
-                              fontSize: 13,
-                              color: Colors.grey.shade600,
-                            ),
-                          ),
-                          GestureDetector(
-                            onTap: () => Navigator.pop(context),
-                            child: Text(
-                              'Log in here',
+                      Center(
+                        child: Wrap(
+                          alignment: WrapAlignment.center,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          children: [
+                            Text(
+                              "Already have an account? ",
                               style: GoogleFonts.inter(
                                 fontSize: 13,
-                                fontWeight: FontWeight.bold,
-                                color: const Color(0xFFA63228),
+                                color: Colors.grey.shade600,
                               ),
                             ),
-                          ),
-                        ],
+                            GestureDetector(
+                              onTap: () => Navigator.pop(context),
+                              child: Text(
+                                'Log in here',
+                                style: GoogleFonts.inter(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.bold,
+                                  color: const Color(0xFFA63228),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ],
                   ),
                 ),
               ),
             ),
-          ],
-        ),
-      ),
-    );
-  }
+          );
+        }
 }
 
 class CapitalizeWordsInputFormatter extends TextInputFormatter {

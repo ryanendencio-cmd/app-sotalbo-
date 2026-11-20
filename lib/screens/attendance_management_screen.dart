@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:nfc_manager/nfc_manager.dart';
@@ -86,20 +88,56 @@ class _AttendanceManagementScreenState extends State<AttendanceManagementScreen>
     return '—';
   }
 
+  Timer? _pollingTimer;
+
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
     _loadData();
     if (_isAdminMobile) _loadNotifications();
+    _pollingTimer = Timer.periodic(const Duration(seconds: 4), (_) {
+      if (mounted &&
+          !_isLoading &&
+          _reviewingRequestIds.isEmpty &&
+          _reviewingCorrectionIds.isEmpty) {
+        _loadRequestsSilently();
+        if (_isAdminMobile) _loadNotifications();
+      }
+    });
   }
 
   @override
   void dispose() {
+    _pollingTimer?.cancel();
     _tabController.dispose();
     _hoursController.dispose();
     _graceController.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadRequestsSilently() async {
+    try {
+      final results = await Future.wait([
+        ApiService.getEarlyOutRequests(),
+        ApiService.getAttendanceCorrectionRequests(),
+      ]);
+      if (!mounted) return;
+      setState(() {
+        _requests = results[0]
+            .map((value) => Map<String, dynamic>.from(value as Map))
+            .where(
+              (request) =>
+                  !_isAdminMobile ||
+                  (request['role'] ?? 'Worker').toString().toLowerCase() ==
+                      'worker',
+            )
+            .toList();
+        _correctionRequests = results[1]
+            .map((value) => Map<String, dynamic>.from(value as Map))
+            .toList();
+      });
+    } catch (_) {}
   }
 
   Future<void> _loadData() async {
@@ -734,8 +772,9 @@ class _AttendanceManagementScreenState extends State<AttendanceManagementScreen>
 
   Future<void> _reviewRequest(
     Map<String, dynamic> request,
-    String status,
-  ) async {
+    String status, {
+    String? rejectionReason,
+  }) async {
     final id = request['id']?.toString();
     if (id == null || id.isEmpty) {
       _showMessage('This request has no record ID.');
@@ -746,7 +785,45 @@ class _AttendanceManagementScreenState extends State<AttendanceManagementScreen>
       await ApiService.reviewEarlyOutRequest(id, {
         'status': status,
         'reviewed_by': _adminName(),
+        if (status == 'Rejected' && rejectionReason != null)
+          'rejection_reason': rejectionReason,
       });
+
+      // Log a notification so the worker can see it
+      final workerName =
+          (request['worker_name'] ?? 'Worker').toString();
+      final targetWorkerId = (request['worker_id'] ?? request['workerId'])?.toString();
+      final date = (request['date'] ?? '').toString();
+      final reason = (request['reason'] ?? '').toString();
+      if (status == 'Rejected') {
+        await ApiService.logAdminNotification(
+          title: 'Early-Out Request Rejected',
+          message:
+              '$workerName\'s early-out request for $date ($reason) '
+              'was rejected by ${_adminName()}. '
+              'Reason: ${rejectionReason ?? '—'}',
+          type: 'Attendance',
+          severity: 'Medium',
+          actorName: _adminName(),
+          actorRole: 'Admin',
+          action: 'EARLY_OUT_REJECTED',
+          workerId: targetWorkerId,
+        );
+      } else {
+        await ApiService.logAdminNotification(
+          title: 'Early-Out Request Approved',
+          message:
+              '$workerName\'s early-out request for $date ($reason) '
+              'was approved by ${_adminName()}.',
+          type: 'Attendance',
+          severity: 'Low',
+          actorName: _adminName(),
+          actorRole: 'Admin',
+          action: 'EARLY_OUT_APPROVED',
+          workerId: targetWorkerId,
+        );
+      }
+
       await _loadData();
       _showMessage(
         status == 'Approved'
@@ -764,8 +841,9 @@ class _AttendanceManagementScreenState extends State<AttendanceManagementScreen>
 
   Future<void> _reviewCorrectionRequest(
     Map<String, dynamic> request,
-    String status,
-  ) async {
+    String status, {
+    String? rejectionReason,
+  }) async {
     final id = request['id']?.toString();
     if (id == null || id.isEmpty) {
       _showMessage('This correction request has no record ID.');
@@ -776,7 +854,43 @@ class _AttendanceManagementScreenState extends State<AttendanceManagementScreen>
       await ApiService.reviewAttendanceCorrectionRequest(id, {
         'status': status,
         'reviewed_by': _adminName(),
+        if (status == 'Rejected' && rejectionReason != null)
+          'rejection_reason': rejectionReason,
       });
+
+      final workerName =
+          (request['worker_name'] ?? 'Worker').toString();
+      final targetWorkerId = (request['worker_id'] ?? request['workerId'])?.toString();
+      final date = (request['date'] ?? '').toString();
+      if (status == 'Rejected') {
+        await ApiService.logAdminNotification(
+          title: 'Correction Request Rejected',
+          message:
+              '$workerName\'s attendance correction for $date '
+              'was rejected by ${_adminName()}. '
+              'Reason: ${rejectionReason ?? '—'}',
+          type: 'Attendance',
+          severity: 'Medium',
+          actorName: _adminName(),
+          actorRole: 'Admin',
+          action: 'CORRECTION_REJECTED',
+          workerId: targetWorkerId,
+        );
+      } else {
+        await ApiService.logAdminNotification(
+          title: 'Correction Request Approved',
+          message:
+              '$workerName\'s attendance correction for $date '
+              'was approved by ${_adminName()}.',
+          type: 'Attendance',
+          severity: 'Low',
+          actorName: _adminName(),
+          actorRole: 'Admin',
+          action: 'CORRECTION_APPROVED',
+          workerId: targetWorkerId,
+        );
+      }
+
       await _loadData();
       _showMessage(
         status == 'Approved'
@@ -788,6 +902,201 @@ class _AttendanceManagementScreenState extends State<AttendanceManagementScreen>
     } finally {
       if (mounted) setState(() => _reviewingCorrectionIds.remove(id));
     }
+  }
+
+  /// Shows a dialog asking for a rejection reason.
+  /// Returns the reason string, or null if the user cancelled.
+  Future<String?> _showRejectReasonDialog({
+    required String workerName,
+    String title = 'Reject Request',
+  }) async {
+    final controller = TextEditingController();
+    String? validationError;
+
+    final result = await showDialog<String>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => Dialog(
+          backgroundColor: Colors.white,
+          insetPadding: const EdgeInsets.symmetric(
+            horizontal: 20,
+            vertical: 24,
+          ),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 400),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(
+                        Icons.block_rounded,
+                        color: _primary,
+                        size: 20,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          title,
+                          style: GoogleFonts.inter(
+                            fontSize: 14.5,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close, size: 16),
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                        onPressed: () => Navigator.pop(ctx),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Please provide a reason why you are rejecting '
+                    '$workerName\'s request. This will be visible '
+                    'to the worker.',
+                    style: GoogleFonts.inter(
+                      fontSize: 11,
+                      color: Colors.grey.shade600,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: controller,
+                    maxLength: 100,
+                    maxLines: 3,
+                    autofocus: true,
+                    inputFormatters: [
+                      LengthLimitingTextInputFormatter(100),
+                      _NoLeadingOrRepeatedSpacesFormatter(),
+                    ],
+                    onChanged: (_) {
+                      if (validationError != null) {
+                        setDialogState(() => validationError = null);
+                      }
+                    },
+                    style: GoogleFonts.inter(fontSize: 12),
+                    decoration: InputDecoration(
+                      filled: true,
+                      fillColor: const Color(0xFFFAF8F5),
+                      isDense: true,
+                      hintText: 'e.g. Insufficient manpower today, '
+                          'schedule conflict, etc.',
+                      hintStyle: GoogleFonts.inter(
+                        color: Colors.grey.shade400,
+                        fontSize: 11,
+                      ),
+                      errorText: validationError,
+                      errorStyle: GoogleFonts.inter(
+                        fontSize: 10.5,
+                        color: _primary,
+                        fontWeight: FontWeight.w600,
+                      ),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: BorderSide(
+                          color: validationError != null
+                              ? _primary
+                              : Colors.grey.shade300,
+                        ),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: BorderSide(
+                          color: validationError != null
+                              ? _primary
+                              : Colors.grey.shade300,
+                        ),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: const BorderSide(
+                          color: _primary,
+                          width: 1.5,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          style: OutlinedButton.styleFrom(
+                            padding:
+                                const EdgeInsets.symmetric(vertical: 10),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            side: BorderSide(
+                              color: Colors.grey.shade300,
+                            ),
+                          ),
+                          onPressed: () => Navigator.pop(ctx),
+                          child: Text(
+                            'Cancel',
+                            style: GoogleFonts.inter(
+                              fontSize: 11.5,
+                              color: Colors.grey.shade700,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: _primary,
+                            elevation: 0,
+                            padding:
+                                const EdgeInsets.symmetric(vertical: 10),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
+                          onPressed: () {
+                            final raw = controller.text;
+                            if (raw.trim().isEmpty) {
+                              setDialogState(() {
+                                validationError = raw.isEmpty
+                                    ? 'Rejection reason is required.'
+                                    : 'Spaces only are not allowed.';
+                              });
+                              return;
+                            }
+                            Navigator.pop(ctx, raw.trim());
+                          },
+                          child: Text(
+                            'Confirm Reject',
+                            style: GoogleFonts.inter(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    controller.dispose();
+    return result;
   }
 
   void _showMessage(String message) {
@@ -1145,10 +1454,21 @@ class _AttendanceManagementScreenState extends State<AttendanceManagementScreen>
                                 child: OutlinedButton(
                                   onPressed: isBusy
                                       ? null
-                                      : () => _reviewCorrectionRequest(
-                                          request,
-                                          'Rejected',
-                                        ),
+                                      : () async {
+                                          final workerName =
+                                              (request['worker_name'] ?? 'Worker').toString();
+                                          final reason = await _showRejectReasonDialog(
+                                            workerName: workerName,
+                                            title: 'Reject Correction Request',
+                                          );
+                                          if (reason != null) {
+                                            _reviewCorrectionRequest(
+                                              request,
+                                              'Rejected',
+                                              rejectionReason: reason,
+                                            );
+                                          }
+                                        },
                                   child: const Text('Reject'),
                                 ),
                               ),
@@ -1178,15 +1498,45 @@ class _AttendanceManagementScreenState extends State<AttendanceManagementScreen>
                               ),
                             ],
                           ),
-                        ] else if (request['reviewed_by'] != null) ...[
-                          const SizedBox(height: 6),
-                          Text(
-                            'Reviewed by ${request['reviewed_by']}',
-                            style: GoogleFonts.inter(
-                              fontSize: 10,
-                              color: Colors.grey.shade600,
+                        ] else ...[
+                          if (request['reviewed_by'] != null) ...[
+                            const SizedBox(height: 6),
+                            Text(
+                              'Reviewed by ${request['reviewed_by']}',
+                              style: GoogleFonts.inter(
+                                fontSize: 10,
+                                color: Colors.grey.shade600,
+                              ),
                             ),
-                          ),
+                          ],
+                          if ((request['rejection_reason'] ?? '').toString().trim().isNotEmpty) ...[
+                            const SizedBox(height: 4),
+                            Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: Colors.red.shade50,
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: Colors.red.shade200),
+                              ),
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Icon(Icons.info_outline, size: 14, color: Colors.red.shade700),
+                                  const SizedBox(width: 6),
+                                  Expanded(
+                                    child: Text(
+                                      'Rejection reason: ${request['rejection_reason']}',
+                                      style: GoogleFonts.inter(
+                                        fontSize: 10.5,
+                                        color: Colors.red.shade700,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
                         ],
                       ],
                     ),
@@ -1244,7 +1594,21 @@ class _AttendanceManagementScreenState extends State<AttendanceManagementScreen>
                     child: OutlinedButton(
                       onPressed: isBusy
                           ? null
-                          : () => _reviewRequest(request, 'Rejected'),
+                          : () async {
+                              final workerName =
+                                  (request['worker_name'] ?? 'Worker').toString();
+                              final reason = await _showRejectReasonDialog(
+                                workerName: workerName,
+                                title: 'Reject Early-Out Request',
+                              );
+                              if (reason != null) {
+                                _reviewRequest(
+                                  request,
+                                  'Rejected',
+                                  rejectionReason: reason,
+                                );
+                              }
+                            },
                       child: const Text('Reject'),
                     ),
                   ),
@@ -1269,15 +1633,45 @@ class _AttendanceManagementScreenState extends State<AttendanceManagementScreen>
                   ),
                 ],
               ),
-            ] else if (request['reviewed_by'] != null) ...[
-              const SizedBox(height: 6),
-              Text(
-                'Reviewed by ${request['reviewed_by']}',
-                style: GoogleFonts.inter(
-                  fontSize: 10,
-                  color: Colors.grey.shade600,
+            ] else ...[
+              if (request['reviewed_by'] != null) ...[
+                const SizedBox(height: 6),
+                Text(
+                  'Reviewed by ${request['reviewed_by']}',
+                  style: GoogleFonts.inter(
+                    fontSize: 10,
+                    color: Colors.grey.shade600,
+                  ),
                 ),
-              ),
+              ],
+              if ((request['rejection_reason'] ?? '').toString().trim().isNotEmpty) ...[
+                const SizedBox(height: 4),
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.red.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.red.shade200),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(Icons.info_outline, size: 14, color: Colors.red.shade700),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          'Rejection reason: ${request['rejection_reason']}',
+                          style: GoogleFonts.inter(
+                            fontSize: 10.5,
+                            color: Colors.red.shade700,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ],
           ],
         ),
@@ -2009,6 +2403,27 @@ class _QrAttendanceScannerScreenState
           ),
         ],
       ),
+    );
+  }
+}
+
+class _NoLeadingOrRepeatedSpacesFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    var text = newValue.text;
+    if (text.startsWith(' ')) {
+      text = text.trimLeft();
+    }
+    text = text.replaceAll(RegExp(r' {2,}'), ' ');
+    final diff = newValue.text.length - text.length;
+    final newOffset =
+        (newValue.selection.baseOffset - diff).clamp(0, text.length);
+    return TextEditingValue(
+      text: text,
+      selection: TextSelection.collapsed(offset: newOffset),
     );
   }
 }

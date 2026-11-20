@@ -63,7 +63,11 @@ class _TimekeeperProfileScreenState extends State<TimekeeperProfileScreen> {
             onPressed: () {
               Navigator.pop(context);
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Password updated successfully!')),
+                SnackBar(
+                  content: Text('Password updated successfully!', style: GoogleFonts.inter(fontSize: 13)),
+                  backgroundColor: Colors.green.shade700,
+                  behavior: SnackBarBehavior.floating,
+                ),
               );
             },
             child: Text('Save', style: GoogleFonts.inter(fontSize: 12, color: Colors.white, fontWeight: FontWeight.bold)),
@@ -75,6 +79,16 @@ class _TimekeeperProfileScreenState extends State<TimekeeperProfileScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final user = ApiService.currentUser ?? {};
+    final displayName = (user['name'] ?? user['full_name'] ?? user['username'] ?? 'Timekeeper').toString();
+    final email = (user['email'] ?? '').toString();
+    final role = (user['role'] ?? user['position'] ?? 'Attendance Timekeeper').toString();
+    final assignedProject = (user['assignedProjectSite'] ?? user['project'] ?? '—').toString();
+    final stationLocation = (user['address'] ?? user['location'] ?? '—').toString();
+    final contactNumber = (user['phone'] ?? '—').toString();
+    final terminalId = (user['terminalId'] ?? user['employeeId'] ?? user['id']?.toString() ?? '—').toString();
+    final status = (user['status'] ?? 'Active Duty').toString();
+
     return Scaffold(
       backgroundColor: const Color(0xFFF3EFEA),
       appBar: AppBar(
@@ -135,12 +149,12 @@ class _TimekeeperProfileScreenState extends State<TimekeeperProfileScreen> {
                             ),
                             const SizedBox(height: 8),
                             Text(
-                              '—',
+                              displayName,
                               style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w800, color: Colors.black87),
                             ),
                             const SizedBox(height: 1),
                             Text(
-                              '— • Attendance Timekeeper',
+                              email.isNotEmpty ? '$email • $role' : role,
                               style: GoogleFonts.inter(fontSize: 11, color: Colors.grey.shade600),
                             ),
                             const SizedBox(height: 10),
@@ -155,23 +169,25 @@ class _TimekeeperProfileScreenState extends State<TimekeeperProfileScreen> {
                                     border: Border.all(color: Colors.green.shade200),
                                   ),
                                   child: Text(
-                                    'Active Duty',
+                                    status,
                                     style: GoogleFonts.inter(fontSize: 10.5, fontWeight: FontWeight.bold, color: Colors.green.shade700),
                                   ),
                                 ),
-                                const SizedBox(width: 6),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                  decoration: BoxDecoration(
-                                    color: Colors.grey.shade100,
-                                    borderRadius: BorderRadius.circular(16),
-                                    border: Border.all(color: Colors.grey.shade300),
+                                if (terminalId != '—') ...[
+                                  const SizedBox(width: 6),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                    decoration: BoxDecoration(
+                                      color: Colors.grey.shade100,
+                                      borderRadius: BorderRadius.circular(16),
+                                      border: Border.all(color: Colors.grey.shade300),
+                                    ),
+                                    child: Text(
+                                      'ID: $terminalId',
+                                      style: GoogleFonts.inter(fontSize: 10.5, fontWeight: FontWeight.bold, color: Colors.black87),
+                                    ),
                                   ),
-                                  child: Text(
-                                    'Terminal #04',
-                                    style: GoogleFonts.inter(fontSize: 10.5, fontWeight: FontWeight.bold, color: Colors.black87),
-                                  ),
-                                ),
+                                ],
                               ],
                             ),
                           ],
@@ -184,10 +200,10 @@ class _TimekeeperProfileScreenState extends State<TimekeeperProfileScreen> {
                         title: 'Staff Information',
                         icon: Icons.badge_outlined,
                         children: [
-                          _buildInfoRow('Assigned Project', '—'),
-                          _buildInfoRow('Station Location', '—'),
-                          _buildInfoRow('Contact Number', '—'),
-                          _buildInfoRow('Shift Schedule', '—'),
+                          _buildInfoRow('Assigned Project', assignedProject),
+                          _buildInfoRow('Station Location', stationLocation),
+                          _buildInfoRow('Contact Number', contactNumber),
+                          _buildInfoRow('Role', role),
                         ],
                       ),
                       const SizedBox(height: 10),
@@ -220,7 +236,11 @@ class _TimekeeperProfileScreenState extends State<TimekeeperProfileScreen> {
                             Icons.sync_rounded,
                                 () {
                               ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('Attendance logs successfully synced to server!')),
+                                SnackBar(
+                                  content: Text('Attendance logs successfully synced to server!', style: GoogleFonts.inter(fontSize: 13)),
+                                  backgroundColor: Colors.green.shade700,
+                                  behavior: SnackBarBehavior.floating,
+                                ),
                               );
                             },
                           ),

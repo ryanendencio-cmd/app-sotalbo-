@@ -69,6 +69,7 @@ class PublicEmailInput extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Expanded(
+                flex: 3,
                 child: TextFormField(
                   controller: controller,
                   keyboardType: TextInputType.emailAddress,
@@ -109,8 +110,8 @@ class PublicEmailInput extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 8),
-              SizedBox(
-                width: 142,
+              Expanded(
+                flex: 2,
                 child: DropdownButtonFormField<String>(
                   key: ValueKey(domain),
                   initialValue: domain,

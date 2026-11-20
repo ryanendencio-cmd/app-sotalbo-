@@ -508,9 +508,13 @@ class _AdminEditProfileScreenState extends State<AdminEditProfileScreen> {
   }
 
   void _showMessage(String message, {bool isError = false}) {
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(message),
+        content: Text(
+          message.replaceAll('Exception: ', ''),
+          style: GoogleFonts.inter(fontSize: 13),
+        ),
         backgroundColor: isError
             ? const Color(0xFFA63228)
             : Colors.green.shade700,

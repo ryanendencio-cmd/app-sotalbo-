@@ -93,6 +93,7 @@ class CurrencyTextField extends StatefulWidget {
     required this.decoration,
     this.style,
     this.textAlign = TextAlign.start,
+    this.onChanged,
     super.key,
   });
 
@@ -100,6 +101,7 @@ class CurrencyTextField extends StatefulWidget {
   final InputDecoration decoration;
   final TextStyle? style;
   final TextAlign textAlign;
+  final ValueChanged<String>? onChanged;
 
   @override
   State<CurrencyTextField> createState() => _CurrencyTextFieldState();
@@ -146,5 +148,6 @@ class _CurrencyTextFieldState extends State<CurrencyTextField> {
     textAlign: widget.textAlign,
     style: widget.style,
     decoration: widget.decoration,
+    onChanged: widget.onChanged,
   );
 }

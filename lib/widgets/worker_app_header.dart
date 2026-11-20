@@ -1,27 +1,77 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../services/api_service.dart';
 
 final ValueNotifier<bool> workerHasUnreadAnnouncements = ValueNotifier(false);
 
+bool isNotificationForWorker(Map<String, dynamic> item, Map<String, dynamic>? user) {
+  final type = (item['type'] ?? '').toString().toLowerCase().trim();
+  if (type == 'announcement' || type == 'broadcast' || type == 'general') {
+    return true;
+  }
+
+  if (user == null) {
+    return false;
+  }
+
+  final userIds = {
+    user['id']?.toString().trim(),
+    user['worker_id']?.toString().trim(),
+    user['workerId']?.toString().trim(),
+    user['employee_id']?.toString().trim(),
+  }.where((id) => id != null && id.isNotEmpty).toSet();
+
+  final notifWorkerId = (item['worker_id'] ?? item['target_id'] ?? '').toString().trim();
+  if (notifWorkerId.isNotEmpty && userIds.contains(notifWorkerId)) {
+    return true;
+  }
+
+  final nameCandidates = <String>{
+    user['name']?.toString() ?? '',
+    user['full_name']?.toString() ?? '',
+    user['username']?.toString() ?? '',
+    [
+      user['first_name'] ?? user['firstName'],
+      user['middle_name'] ?? user['middleName'],
+      user['last_name'] ?? user['lastName'],
+    ].where((part) => part != null && part.toString().trim().isNotEmpty).join(' '),
+    [
+      user['first_name'] ?? user['firstName'],
+      user['last_name'] ?? user['lastName'],
+    ].where((part) => part != null && part.toString().trim().isNotEmpty).join(' '),
+  }.where((s) => s.trim().length >= 3).map((s) => s.trim().toLowerCase()).toSet();
+
+  final title = (item['title'] ?? '').toString().toLowerCase();
+  final message = (item['message'] ?? '').toString().toLowerCase();
+
+  for (final name in nameCandidates) {
+    if (title.contains(name) || message.contains(name)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 void updateWorkerAnnouncementBadge(Iterable<Map<String, dynamic>> items) {
+  final user = ApiService.currentUser;
   workerHasUnreadAnnouncements.value = items.any((item) {
-    final isAnnouncement =
-        (item['type'] ?? '').toString().toLowerCase() == 'announcement';
+    if (!isNotificationForWorker(item, user)) return false;
     final isRead =
         item['read'] == true ||
         item['read']?.toString().toLowerCase() == 'true';
-    return isAnnouncement && !isRead;
+    return !isRead;
   });
 }
 
 Future<void> refreshWorkerAnnouncementBadge() async {
   try {
     final notifications = await ApiService.getNotifications();
-    final announcements = notifications
+    final items = notifications
         .map((item) => Map<String, dynamic>.from(item as Map))
         .toList();
-    updateWorkerAnnouncementBadge(announcements);
+    updateWorkerAnnouncementBadge(items);
   } catch (error) {
     debugPrint('Failed to refresh announcement badge: $error');
   }
@@ -54,10 +104,23 @@ class WorkerAppHeader extends StatefulWidget implements PreferredSizeWidget {
 }
 
 class _WorkerAppHeaderState extends State<WorkerAppHeader> {
+  Timer? _notifPollTimer;
+
   @override
   void initState() {
     super.initState();
     refreshWorkerAnnouncementBadge();
+    _notifPollTimer = Timer.periodic(const Duration(seconds: 4), (_) {
+      if (mounted) {
+        refreshWorkerAnnouncementBadge();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _notifPollTimer?.cancel();
+    super.dispose();
   }
 
   Future<void> _openAnnouncements() async {
@@ -92,7 +155,7 @@ class _WorkerAppHeaderState extends State<WorkerAppHeader> {
                 color: Colors.black87,
                 size: 22,
               ),
-              tooltip: 'Announcements',
+              tooltip: 'Notifications & Alerts',
               onPressed: _openAnnouncements,
               padding: EdgeInsets.zero,
               constraints: const BoxConstraints(minWidth: 42),
@@ -104,8 +167,8 @@ class _WorkerAppHeaderState extends State<WorkerAppHeader> {
                       top: 10,
                       right: 12,
                       child: Container(
-                        width: 6,
-                        height: 6,
+                        width: 8,
+                        height: 8,
                         decoration: const BoxDecoration(
                           color: WorkerAppHeader._brandColor,
                           shape: BoxShape.circle,
@@ -123,18 +186,64 @@ class _WorkerAppHeaderState extends State<WorkerAppHeader> {
   }
 }
 
+Widget _buildNotificationTypeBadge(Map<String, dynamic> notif) {
+  final type = (notif['type'] ?? '').toString().toLowerCase();
+  final title = (notif['title'] ?? '').toString().toLowerCase();
+  final message = (notif['message'] ?? '').toString().toLowerCase();
+
+  Color bgColor;
+  Color textColor;
+  String label;
+
+  if (title.contains('rejected') || message.contains('rejected')) {
+    bgColor = const Color(0xFFFFEBEE);
+    textColor = const Color(0xFFC62828);
+    label = 'Rejected';
+  } else if (title.contains('approved') || message.contains('approved')) {
+    bgColor = const Color(0xFFE8F5E9);
+    textColor = const Color(0xFF2E7D32);
+    label = 'Approved';
+  } else if (type == 'attendance' || title.contains('early-out') || title.contains('correction')) {
+    bgColor = const Color(0xFFFFF3E0);
+    textColor = const Color(0xFFE65100);
+    label = 'Attendance';
+  } else if (type == 'cash advance' || title.contains('cash advance') || title.contains('vale')) {
+    bgColor = const Color(0xFFE3F2FD);
+    textColor = const Color(0xFF1565C0);
+    label = 'Cash Advance';
+  } else {
+    bgColor = const Color(0xFFF5F5F5);
+    textColor = Colors.grey.shade700;
+    label = 'Broadcast';
+  }
+
+  return Container(
+    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+    decoration: BoxDecoration(
+      color: bgColor,
+      borderRadius: BorderRadius.circular(4),
+    ),
+    child: Text(
+      label,
+      style: GoogleFonts.inter(
+        fontSize: 9.5,
+        fontWeight: FontWeight.bold,
+        color: textColor,
+      ),
+    ),
+  );
+}
+
 Future<void> showWorkerAnnouncements(BuildContext context) async {
   final pageContext = context;
   final markingIds = <String>{};
   try {
     final notifications = await ApiService.getNotifications();
     if (!pageContext.mounted) return;
+    final user = ApiService.currentUser;
     final announcements = notifications
         .map((item) => Map<String, dynamic>.from(item as Map))
-        .where(
-          (item) =>
-              (item['type'] ?? '').toString().toLowerCase() == 'announcement',
-        )
+        .where((item) => isNotificationForWorker(item, user))
         .toList();
     updateWorkerAnnouncementBadge(announcements);
 
@@ -167,7 +276,7 @@ Future<void> showWorkerAnnouncements(BuildContext context) async {
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
-                          'Broadcast Alerts',
+                          'Notifications & Alerts',
                           style: GoogleFonts.inter(
                             fontSize: 15,
                             fontWeight: FontWeight.bold,
@@ -182,7 +291,7 @@ Future<void> showWorkerAnnouncements(BuildContext context) async {
                     ],
                   ),
                   Text(
-                    'Messages from the Admin',
+                    'Updates on your requests, attendance, and broadcasts',
                     style: GoogleFonts.inter(
                       fontSize: 11,
                       color: Colors.grey.shade600,
@@ -193,7 +302,7 @@ Future<void> showWorkerAnnouncements(BuildContext context) async {
                     child: announcements.isEmpty
                         ? Center(
                             child: Text(
-                              'No announcements at this time.',
+                              'No notifications at this time.',
                               style: GoogleFonts.inter(
                                 fontSize: 12,
                                 color: Colors.grey.shade600,
@@ -218,10 +327,14 @@ Future<void> showWorkerAnnouncements(BuildContext context) async {
                               return Container(
                                 padding: const EdgeInsets.all(11),
                                 decoration: BoxDecoration(
-                                  color: const Color(0xFFFAF8F5),
+                                  color: read
+                                      ? const Color(0xFFFAF8F5)
+                                      : Colors.red.shade50.withValues(alpha: 0.35),
                                   borderRadius: BorderRadius.circular(10),
                                   border: Border.all(
-                                    color: Colors.grey.shade200,
+                                    color: read
+                                        ? Colors.grey.shade200
+                                        : const Color(0xFFA63228).withValues(alpha: 0.3),
                                   ),
                                 ),
                                 child: Column(
@@ -240,22 +353,34 @@ Future<void> showWorkerAnnouncements(BuildContext context) async {
                                         crossAxisAlignment:
                                             CrossAxisAlignment.start,
                                         children: [
-                                          Text(
-                                            (announcement['date'] ?? '')
-                                                .toString(),
-                                            style: GoogleFonts.inter(
-                                              fontSize: 10,
-                                              color: Colors.grey.shade600,
-                                            ),
+                                          Row(
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.spaceBetween,
+                                            children: [
+                                              Text(
+                                                (announcement['date'] ?? '')
+                                                    .toString(),
+                                                style: GoogleFonts.inter(
+                                                  fontSize: 10,
+                                                  color: Colors.grey.shade600,
+                                                ),
+                                              ),
+                                              _buildNotificationTypeBadge(
+                                                announcement,
+                                              ),
+                                            ],
                                           ),
                                           const SizedBox(height: 4),
                                           Text(
                                             (announcement['title'] ??
-                                                    'Announcement')
+                                                    'Notification')
                                                 .toString(),
                                             style: GoogleFonts.inter(
                                               fontSize: 13,
                                               fontWeight: FontWeight.bold,
+                                              color: read
+                                                  ? Colors.black87
+                                                  : const Color(0xFFA63228),
                                             ),
                                           ),
                                           const SizedBox(height: 3),
@@ -298,7 +423,7 @@ Future<void> showWorkerAnnouncements(BuildContext context) async {
                                                     ).showSnackBar(
                                                       SnackBar(
                                                         content: Text(
-                                                          'Unable to mark announcement as read: $error',
+                                                          'Unable to mark notification as read: $error',
                                                         ),
                                                       ),
                                                     );

@@ -17,20 +17,19 @@ class _AdminProfileScreenState extends State<AdminProfileScreen> {
 
   // Profile Data
   final int _adminId = 1;
-  String _firstName = 'Aldrich';
+  String _firstName = '';
   String _middleName = '';
-  String _lastName = 'Sotalbo';
+  String _lastName = '';
   String _username = '';
   String _birthday = '';
   String _age = '';
-  String _email = 'ajsotalbo@gmail.com';
-  String _phone = '09068135609';
-  String _homeAddress =
-      '012 Camillo Lirio Street, Brgy. Poblacion II (Pob.), Nagcarlan, Laguna, Region IV-A - CALABARZON';
-  String _employeeId = 'SCON-ADMIN-001';
-  String _department = 'Management';
+  String _email = '';
+  String _phone = '';
+  String _homeAddress = '';
+  String _employeeId = '';
+  String _department = '';
   String _role = 'Administrator';
-  String _assignedProjectSite = 'RYAN';
+  String _assignedProjectSite = '';
   String _terminalId = '';
   String _status = 'Active Duty';
 
@@ -46,47 +45,60 @@ class _AdminProfileScreenState extends State<AdminProfileScreen> {
   Future<void> _loadProfile() async {
     setState(() => _isLoading = true);
     try {
-      final profile = await AdminService.getAdminProfile(_adminId);
-      if (profile['id'] != null ||
-          profile['fullName'] != null ||
-          profile['firstName'] != null) {
+      final currentUser = ApiService.currentUser;
+      final lookupId = currentUser?['id'] ?? currentUser?['_id'] ?? _adminId;
+      final profile = await AdminService.getAdminProfile(lookupId);
+
+      final userFullName = (currentUser?['name'] ?? currentUser?['full_name'] ?? '').toString().trim();
+      final userParts = userFullName.split(RegExp(r'\s+')).where((p) => p.isNotEmpty).toList();
+
+      if (mounted) {
         setState(() {
-          _firstName =
-              profile['firstName'] ??
+          _firstName = profile['firstName'] ??
               profile['fullName']?.split(' ').first ??
-              _firstName;
-          _lastName =
-              profile['lastName'] ??
+              currentUser?['firstName'] ??
+              currentUser?['first_name'] ??
+              (userParts.isNotEmpty ? userParts.first : '');
+          _lastName = profile['lastName'] ??
               (profile['fullName'] != null && profile['fullName'].contains(' ')
                   ? profile['fullName'].split(' ').sublist(1).join(' ')
-                  : _lastName);
-          _middleName = profile['middleName'] ?? _middleName;
-          _username = profile['username'] ?? _username;
-          _birthday = profile['birthday']?.toString() ?? _birthday;
-          _age = profile['age']?.toString() ?? _age;
-          _email = profile['email'] ?? _email;
-          _phone = profile['phone'] ?? _phone;
-          _homeAddress =
-              profile['homeAddress'] ?? profile['address'] ?? _homeAddress;
-          _employeeId =
-              profile['employeeId'] ??
+                  : (currentUser?['lastName'] ??
+                      currentUser?['last_name'] ??
+                      (userParts.length > 1 ? userParts.last : '')));
+          _middleName = profile['middleName'] ?? currentUser?['middleName'] ?? '';
+          _username = profile['username'] ?? currentUser?['username'] ?? '';
+          _birthday = profile['birthday']?.toString() ?? currentUser?['birthday']?.toString() ?? '';
+          _age = profile['age']?.toString() ?? currentUser?['age']?.toString() ?? '';
+          _email = profile['email'] ?? currentUser?['email'] ?? '';
+          _phone = profile['phone'] ?? currentUser?['phone'] ?? '';
+          _homeAddress = profile['homeAddress'] ?? profile['address'] ?? currentUser?['address'] ?? '';
+          _employeeId = profile['employeeId'] ??
               profile['employee_id'] ??
-              (profile['terminalId'] != null &&
-                      profile['terminalId'].toString().isNotEmpty
+              (profile['terminalId'] != null && profile['terminalId'].toString().isNotEmpty
                   ? profile['terminalId']
-                  : _employeeId);
-          _department = profile['department'] ?? profile['dept'] ?? _department;
-          _role = profile['role'] ?? 'Administrator';
-          _assignedProjectSite =
-              profile['assignedProjectSite'] ?? _assignedProjectSite;
-          _terminalId = profile['terminalId'] ?? _terminalId;
-          _status = profile['status'] ?? 'Active Duty';
-          _pushNotifications =
-              profile['pushNotificationsEnabled'] ?? _pushNotifications;
+                  : (currentUser?['employeeId'] ?? ''));
+          _department = profile['department'] ?? profile['dept'] ?? currentUser?['department'] ?? '';
+          _role = profile['role'] ?? currentUser?['role'] ?? 'Administrator';
+          _assignedProjectSite = profile['assignedProjectSite'] ?? currentUser?['assignedProjectSite'] ?? '';
+          _terminalId = profile['terminalId'] ?? currentUser?['terminalId'] ?? '';
+          _status = profile['status'] ?? currentUser?['status'] ?? 'Active Duty';
+          _pushNotifications = profile['pushNotificationsEnabled'] ?? _pushNotifications;
         });
       }
     } catch (e) {
       debugPrint('Failed to load admin profile: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Unable to load profile. Please try again.',
+              style: GoogleFonts.inter(fontSize: 13),
+            ),
+            backgroundColor: const Color(0xFFA63228),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }

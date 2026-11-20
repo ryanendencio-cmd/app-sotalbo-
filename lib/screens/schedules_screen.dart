@@ -264,22 +264,28 @@ class _SchedulesScreenState extends State<SchedulesScreen> {
                       size: 40,
                       color: Color(0xFFA63228),
                     ),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: 10),
                     Text(
-                      'Failed to load schedules',
+                      'Unable to load schedules.\nPlease check your connection and try again.',
                       style: GoogleFonts.inter(
                         fontSize: 13,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      snapshot.error.toString(),
-                      style: GoogleFonts.inter(
-                        fontSize: 11,
-                        color: Colors.grey.shade600,
+                        color: Colors.black87,
                       ),
                       textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 14),
+                    ElevatedButton.icon(
+                      onPressed: () {
+                        setState(() {
+                          _future = ApiService.getSchedules();
+                        });
+                      },
+                      icon: const Icon(Icons.refresh, size: 16, color: Colors.white),
+                      label: Text('Retry', style: GoogleFonts.inter(color: Colors.white, fontSize: 13)),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFFA63228),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      ),
                     ),
                   ],
                 ),

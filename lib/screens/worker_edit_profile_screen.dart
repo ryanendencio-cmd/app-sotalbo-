@@ -698,7 +698,7 @@ class _WorkerEditProfileScreenState extends State<WorkerEditProfileScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              'Unable to send OTP: $e',
+              e.toString().replaceAll('Exception: ', 'Unable to send OTP: '),
               style: GoogleFonts.inter(fontSize: 12),
             ),
             backgroundColor: const Color(0xFFA63228),
@@ -761,7 +761,10 @@ class _WorkerEditProfileScreenState extends State<WorkerEditProfileScreen> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('Unable to verify new email: $error'),
+              content: Text(
+                error.toString().replaceAll('Exception: ', 'Unable to verify new email: '),
+                style: GoogleFonts.inter(fontSize: 12),
+              ),
               backgroundColor: const Color(0xFFA63228),
               behavior: SnackBarBehavior.floating,
             ),
@@ -848,7 +851,7 @@ class _WorkerEditProfileScreenState extends State<WorkerEditProfileScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              'Unable to update profile: $e',
+              e.toString().replaceAll('Exception: ', 'Unable to update profile: '),
               style: GoogleFonts.inter(fontSize: 12),
             ),
             backgroundColor: const Color(0xFFA63228),
