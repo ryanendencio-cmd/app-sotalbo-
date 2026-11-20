@@ -1390,7 +1390,7 @@ class _ToolsMonitoringScreenState extends State<ToolsMonitoringScreen> {
       appBar: widget.hideAppBar
           ? null
           : ApiService.currentUserRole?.toLowerCase() == 'admin'
-          ? AdminMobileAppBar()
+          ? const AdminMobileAppBar()
           : AppBar(
               backgroundColor: Colors.white,
               elevation: 0,

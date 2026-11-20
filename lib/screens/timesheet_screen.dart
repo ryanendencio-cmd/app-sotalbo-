@@ -49,10 +49,12 @@ class _TimesheetScreenState extends State<TimesheetScreen> {
               .toString()
               .trim()
               .toLowerCase();
-          if (wId.isNotEmpty)
+          if (wId.isNotEmpty) {
             attendanceMap[wId] = Map<String, dynamic>.from(r as Map);
-          if (wName.isNotEmpty)
+          }
+          if (wName.isNotEmpty) {
             attendanceMap[wName] = Map<String, dynamic>.from(r as Map);
+          }
         }
       }
 
