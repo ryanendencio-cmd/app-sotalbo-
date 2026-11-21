@@ -239,20 +239,7 @@ Future<void> showWorkerAnnouncements(BuildContext context) async {
   final pageContext = context;
   final markingIds = <String>{};
   final selectedIds = <String>{};
-  final holdTimers = <String, Timer>{};
-  final holdingPointers = <int, String>{};
-  final holdStarts = <int, Offset>{};
-  final longPressSelectedIds = <String>{};
   var isDeleting = false;
-
-  void cancelAllTimers() {
-    for (final timer in holdTimers.values) {
-      timer.cancel();
-    }
-    holdTimers.clear();
-    holdingPointers.clear();
-    holdStarts.clear();
-  }
 
   try {
     final notifications = await ApiService.getWorkerNotifications();
@@ -398,7 +385,6 @@ Future<void> showWorkerAnnouncements(BuildContext context) async {
                           onPressed: isDeleting
                               ? null
                               : () {
-                                  cancelAllTimers();
                                   Navigator.pop(dialogContext);
                                 },
                           icon: const Icon(Icons.close, size: 18),
@@ -416,7 +402,7 @@ Future<void> showWorkerAnnouncements(BuildContext context) async {
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        'Hold a notification for 3 seconds to select & delete.',
+                        'Hold a notification to select & delete.',
                         style: GoogleFonts.inter(
                           fontSize: 10,
                           color: Colors.grey.shade500,
@@ -550,59 +536,36 @@ Future<void> showWorkerAnnouncements(BuildContext context) async {
                                 final isMarking = markingIds.contains(id);
                                 final isSelected = selectedIds.contains(id);
 
-                                return Listener(
-                                  onPointerDown: (event) {
-                                    if (id.isEmpty || isDeleting) return;
-                                    holdTimers.remove(id)?.cancel();
-                                    longPressSelectedIds.remove(id);
-                                    holdingPointers[event.pointer] = id;
-                                    holdStarts[event.pointer] = event.position;
-                                    holdTimers[id] = Timer(
-                                      const Duration(seconds: 3),
-                                      () {
-                                        if (holdingPointers[event.pointer] !=
-                                            id) {
-                                          return;
-                                        }
-                                        HapticFeedback.heavyImpact();
-                                        longPressSelectedIds.add(id);
-                                        setDialogState(
-                                          () => selectedIds.add(id),
-                                        );
-                                      },
-                                    );
-                                  },
-                                  onPointerMove: (event) {
-                                    final start = holdStarts[event.pointer];
-                                    if (holdingPointers[event.pointer] == id &&
-                                        start != null &&
-                                        (event.position - start).distance >
-                                            12) {
-                                      holdTimers.remove(id)?.cancel();
-                                      holdingPointers.remove(event.pointer);
-                                      holdStarts.remove(event.pointer);
-                                    }
-                                  },
-                                  onPointerUp: (event) {
-                                    if (holdingPointers.remove(event.pointer) ==
-                                        id) {
-                                      holdTimers.remove(id)?.cancel();
-                                      holdStarts.remove(event.pointer);
-                                    }
-                                  },
-                                  onPointerCancel: (event) {
-                                    if (holdingPointers.remove(event.pointer) ==
-                                        id) {
-                                      holdTimers.remove(id)?.cancel();
-                                      holdStarts.remove(event.pointer);
-                                      longPressSelectedIds.remove(id);
-                                    }
-                                  },
-                                  child: Container(
+                                return GestureDetector(
+                                  onLongPress: id.isEmpty || isDeleting
+                                      ? null
+                                      : () {
+                                          HapticFeedback.heavyImpact();
+                                          setDialogState(
+                                            () => selectedIds.add(id),
+                                          );
+                                        },
+                                  onTap: id.isEmpty || isDeleting
+                                      ? null
+                                      : () {
+                                          if (isSelectionMode) {
+                                            toggleSelection(id);
+                                            return;
+                                          }
+                                          Navigator.pop(dialogContext);
+                                          if (!pageContext.mounted) return;
+                                          _showWorkerAnnouncementDetails(
+                                            pageContext,
+                                            announcement,
+                                          );
+                                        },
+                                  child: AnimatedContainer(
+                                    duration:
+                                        const Duration(milliseconds: 200),
                                     decoration: BoxDecoration(
                                       color: isSelected
                                           ? const Color(0xFFA63228)
-                                              .withValues(alpha: 0.06)
+                                              .withValues(alpha: 0.08)
                                           : read
                                               ? const Color(0xFFFAF8F5)
                                               : Colors.red.shade50
@@ -615,194 +578,171 @@ Future<void> showWorkerAnnouncements(BuildContext context) async {
                                                 ? Colors.grey.shade200
                                                 : const Color(0xFFA63228)
                                                     .withValues(alpha: 0.3),
-                                        width: isSelected ? 1.5 : 1.0,
+                                        width: isSelected ? 2.0 : 1.0,
                                       ),
                                     ),
-                                    child: Material(
-                                      color: Colors.transparent,
-                                      child: InkWell(
-                                        borderRadius: BorderRadius.circular(10),
-                                        onTap: id.isEmpty || isDeleting
-                                            ? null
-                                            : () {
-                                                if (longPressSelectedIds
-                                                    .remove(id)) {
-                                                  return;
-                                                }
-                                                if (isSelectionMode) {
-                                                  toggleSelection(id);
-                                                  return;
-                                                }
-                                                Navigator.pop(dialogContext);
-                                                if (!pageContext.mounted) {
-                                                  return;
-                                                }
-                                                _showWorkerAnnouncementDetails(
-                                                  pageContext,
-                                                  announcement,
-                                                );
-                                              },
-                                        child: Padding(
-                                          padding: const EdgeInsets.all(11),
-                                          child: Row(
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.start,
-                                            children: [
-                                              if (isSelectionMode) ...[
-                                                Padding(
-                                                  padding: const EdgeInsets.only(
-                                                    top: 2,
-                                                    right: 8,
-                                                  ),
-                                                  child: Checkbox(
-                                                    value: isSelected,
-                                                    onChanged: isDeleting ||
-                                                            id.isEmpty
-                                                        ? null
-                                                        : (_) =>
-                                                            toggleSelection(id),
-                                                    activeColor: const Color(
-                                                      0xFFA63228,
-                                                    ),
-                                                    visualDensity:
-                                                        VisualDensity.compact,
-                                                    materialTapTargetSize:
-                                                        MaterialTapTargetSize
-                                                            .shrinkWrap,
-                                                  ),
+                                    child: Padding(
+                                      padding: const EdgeInsets.all(11),
+                                      child: Row(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          if (isSelectionMode) ...[
+                                            Padding(
+                                              padding:
+                                                  const EdgeInsets.only(
+                                                top: 2,
+                                                right: 8,
+                                              ),
+                                              child: Checkbox(
+                                                value: isSelected,
+                                                onChanged: isDeleting ||
+                                                        id.isEmpty
+                                                    ? null
+                                                    : (_) =>
+                                                        toggleSelection(id),
+                                                activeColor: const Color(
+                                                  0xFFA63228,
                                                 ),
-                                              ],
-                                              Expanded(
-                                                child: Column(
-                                                  crossAxisAlignment:
-                                                      CrossAxisAlignment.start,
+                                                visualDensity:
+                                                    VisualDensity.compact,
+                                                materialTapTargetSize:
+                                                    MaterialTapTargetSize
+                                                        .shrinkWrap,
+                                              ),
+                                            ),
+                                          ],
+                                          Expanded(
+                                            child: Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              children: [
+                                                Row(
+                                                  mainAxisAlignment:
+                                                      MainAxisAlignment
+                                                          .spaceBetween,
                                                   children: [
-                                                    Row(
-                                                      mainAxisAlignment:
-                                                          MainAxisAlignment
-                                                              .spaceBetween,
-                                                      children: [
-                                                        Text(
-                                                          (announcement[
-                                                                      'date'] ??
-                                                                  '')
-                                                              .toString(),
-                                                          style: GoogleFonts.inter(
-                                                            fontSize: 10,
-                                                            color: Colors.grey
-                                                                .shade600,
-                                                          ),
-                                                        ),
-                                                        _buildNotificationTypeBadge(
-                                                          announcement,
-                                                        ),
-                                                      ],
-                                                    ),
-                                                    const SizedBox(height: 4),
-                                                    Text(
-                                                      (announcement['title'] ??
-                                                              'Notification')
-                                                          .toString(),
-                                                      style: GoogleFonts.inter(
-                                                        fontSize: 13,
-                                                        fontWeight:
-                                                            FontWeight.bold,
-                                                        color: read
-                                                            ? Colors.black87
-                                                            : const Color(
-                                                                0xFFA63228,
-                                                              ),
-                                                      ),
-                                                    ),
-                                                    const SizedBox(height: 3),
                                                     Text(
                                                       (announcement[
-                                                                  'message'] ??
+                                                                  'date'] ??
                                                               '')
                                                           .toString(),
-                                                      maxLines: 2,
-                                                      overflow:
-                                                          TextOverflow.ellipsis,
-                                                      style: GoogleFonts.inter(
-                                                        fontSize: 11,
+                                                      style:
+                                                          GoogleFonts.inter(
+                                                        fontSize: 10,
                                                         color: Colors
-                                                            .grey.shade700,
+                                                            .grey.shade600,
                                                       ),
                                                     ),
-                                                    if (!isSelectionMode)
-                                                      Align(
-                                                        alignment:
-                                                            Alignment.centerRight,
-                                                        child: TextButton.icon(
-                                                          onPressed: read ||
-                                                                  isMarking ||
-                                                                  id.isEmpty
-                                                              ? null
-                                                              : () async {
-                                                                  setDialogState(
-                                                                    () =>
-                                                                        markingIds
-                                                                            .add(
-                                                                      id,
-                                                                    ),
-                                                                  );
-                                                                  try {
-                                                                    await ApiService
-                                                                        .markWorkerNotificationRead(
-                                                                      id,
-                                                                    );
-                                                                    announcement[
-                                                                            'read'] =
-                                                                        true;
-                                                                    updateWorkerAnnouncementBadge(
-                                                                      announcements,
-                                                                    );
-                                                                    setDialogState(
-                                                                        () {});
-                                                                  } catch (
-                                                                      error) {
-                                                                    if (pageContext
-                                                                        .mounted) {
-                                                                      ScaffoldMessenger.of(
-                                                                        pageContext,
-                                                                      ).showSnackBar(
-                                                                        SnackBar(
-                                                                          content: Text(
-                                                                            'Unable to mark notification as read: $error',
-                                                                          ),
-                                                                        ),
-                                                                      );
-                                                                    }
-                                                                  } finally {
-                                                                    markingIds
-                                                                        .remove(
-                                                                      id,
-                                                                    );
-                                                                    setDialogState(
-                                                                        () {});
-                                                                  }
-                                                                },
-                                                          icon: Icon(
-                                                            read
-                                                                ? Icons
-                                                                    .done_all_rounded
-                                                                : Icons
-                                                                    .mark_email_read_outlined,
-                                                            size: 16,
-                                                          ),
-                                                          label: Text(
-                                                            read
-                                                                ? 'Read'
-                                                                : 'Mark as read',
-                                                          ),
-                                                        ),
-                                                      ),
+                                                    _buildNotificationTypeBadge(
+                                                      announcement,
+                                                    ),
                                                   ],
                                                 ),
-                                              ),
-                                            ],
+                                                const SizedBox(height: 4),
+                                                Text(
+                                                  (announcement['title'] ??
+                                                          'Notification')
+                                                      .toString(),
+                                                  style: GoogleFonts.inter(
+                                                    fontSize: 13,
+                                                    fontWeight:
+                                                        FontWeight.bold,
+                                                    color: read
+                                                        ? Colors.black87
+                                                        : const Color(
+                                                            0xFFA63228,
+                                                          ),
+                                                  ),
+                                                ),
+                                                const SizedBox(height: 3),
+                                                Text(
+                                                  (announcement[
+                                                              'message'] ??
+                                                          '')
+                                                      .toString(),
+                                                  maxLines: 2,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                  style: GoogleFonts.inter(
+                                                    fontSize: 11,
+                                                    color:
+                                                        Colors.grey.shade700,
+                                                  ),
+                                                ),
+                                                if (!isSelectionMode)
+                                                  Align(
+                                                    alignment:
+                                                        Alignment.centerRight,
+                                                    child: TextButton.icon(
+                                                      onPressed: read ||
+                                                              isMarking ||
+                                                              id.isEmpty
+                                                          ? null
+                                                          : () async {
+                                                              setDialogState(
+                                                                () =>
+                                                                    markingIds
+                                                                        .add(
+                                                                  id,
+                                                                ),
+                                                              );
+                                                              try {
+                                                                await ApiService
+                                                                    .markWorkerNotificationRead(
+                                                                  id,
+                                                                );
+                                                                announcement[
+                                                                        'read'] =
+                                                                    true;
+                                                                updateWorkerAnnouncementBadge(
+                                                                  announcements,
+                                                                );
+                                                                setDialogState(
+                                                                    () {});
+                                                              } catch (
+                                                                  error) {
+                                                                if (pageContext
+                                                                    .mounted) {
+                                                                  ScaffoldMessenger.of(
+                                                                    pageContext,
+                                                                  ).showSnackBar(
+                                                                    SnackBar(
+                                                                      content:
+                                                                          Text(
+                                                                        'Unable to mark notification as read: $error',
+                                                                      ),
+                                                                    ),
+                                                                  );
+                                                                }
+                                                              } finally {
+                                                                markingIds
+                                                                    .remove(
+                                                                  id,
+                                                                );
+                                                                setDialogState(
+                                                                    () {});
+                                                              }
+                                                            },
+                                                      icon: Icon(
+                                                        read
+                                                            ? Icons
+                                                                .done_all_rounded
+                                                            : Icons
+                                                                .mark_email_read_outlined,
+                                                        size: 16,
+                                                      ),
+                                                      label: Text(
+                                                        read
+                                                            ? 'Read'
+                                                            : 'Mark as read',
+                                                      ),
+                                                    ),
+                                                  ),
+                                              ],
+                                            ),
                                           ),
-                                        ),
+                                        ],
                                       ),
                                     ),
                                   ),
@@ -818,9 +758,7 @@ Future<void> showWorkerAnnouncements(BuildContext context) async {
         },
       ),
     );
-    cancelAllTimers();
   } catch (error) {
-    cancelAllTimers();
     if (!pageContext.mounted) return;
     ScaffoldMessenger.of(pageContext).showSnackBar(
       SnackBar(content: Text('Unable to load announcements: $error')),
@@ -878,3 +816,4 @@ Future<void> _showWorkerAnnouncementDetails(
     ),
   );
 }
+
