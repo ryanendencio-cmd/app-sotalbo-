@@ -4,8 +4,34 @@ import 'package:flutter/services.dart';
 class CurrencyInputFormatter extends TextInputFormatter {
   const CurrencyInputFormatter();
 
+  static const _maxIntegerDigits = 12;
+  static const _maxFractionDigits = 2;
+
+  static String _normalize(String value) {
+    final sanitized = value.replaceAll(RegExp(r'[^\d.]'), '');
+    final decimalIndex = sanitized.indexOf('.');
+    final integer = decimalIndex < 0
+        ? sanitized
+        : sanitized.substring(0, decimalIndex);
+    final cappedInteger = integer.substring(
+      0,
+      integer.length.clamp(0, _maxIntegerDigits).toInt(),
+    );
+    if (decimalIndex < 0) return cappedInteger;
+    final fractionDigits = sanitized
+        .substring(decimalIndex + 1)
+        .replaceAll('.', '');
+    final fraction = fractionDigits.substring(
+      0,
+      fractionDigits.length.clamp(0, _maxFractionDigits).toInt(),
+    );
+    return '$cappedInteger.$fraction';
+  }
+
   static String formatEditing(String value) {
-    final parts = value.replaceAll(',', '').split('.');
+    final normalized = _normalize(value);
+    if (normalized.isEmpty) return '';
+    final parts = normalized.split('.');
     final integer = parts.first.replaceFirst(RegExp(r'^0+(?=\d)'), '');
     final groupedInteger = integer.replaceAllMapped(
       RegExp(r'\B(?=(\d{3})+(?!\d))'),
@@ -16,7 +42,7 @@ class CurrencyInputFormatter extends TextInputFormatter {
   }
 
   static String formatComplete(String value) {
-    final normalized = value.replaceAll(',', '').trim();
+    final normalized = _normalize(value).trim();
     if (normalized.isEmpty) return '';
     final parts = normalized.split('.');
     final integer = parts.first.isEmpty ? '0' : parts.first;
@@ -30,22 +56,7 @@ class CurrencyInputFormatter extends TextInputFormatter {
   }
 
   static double? parse(String value) =>
-      double.tryParse(value.replaceAll(',', '').trim());
-
-  String _normalize(String value) {
-    final sanitized = value.replaceAll(RegExp(r'[^\d.]'), '');
-    final decimalIndex = sanitized.indexOf('.');
-    if (decimalIndex < 0) return sanitized;
-    final integer = sanitized.substring(0, decimalIndex);
-    final fractionDigits = sanitized
-        .substring(decimalIndex + 1)
-        .replaceAll('.', '');
-    final fraction = fractionDigits.substring(
-      0,
-      fractionDigits.length.clamp(0, 2).toInt(),
-    );
-    return '$integer.$fraction';
-  }
+      double.tryParse(_normalize(value).trim());
 
   int _formattedOffset(String formatted, int characterCount) {
     if (characterCount <= 0) return 0;
@@ -93,6 +104,7 @@ class CurrencyTextField extends StatefulWidget {
     required this.decoration,
     this.style,
     this.textAlign = TextAlign.start,
+    this.enabled = true,
     this.onChanged,
     super.key,
   });
@@ -101,6 +113,7 @@ class CurrencyTextField extends StatefulWidget {
   final InputDecoration decoration;
   final TextStyle? style;
   final TextAlign textAlign;
+  final bool enabled;
   final ValueChanged<String>? onChanged;
 
   @override
@@ -145,6 +158,7 @@ class _CurrencyTextFieldState extends State<CurrencyTextField> {
     onEditingComplete: _focusNode.unfocus,
     onTapOutside: (_) => _focusNode.unfocus(),
     inputFormatters: const [CurrencyInputFormatter()],
+    enabled: widget.enabled,
     textAlign: widget.textAlign,
     style: widget.style,
     decoration: widget.decoration,

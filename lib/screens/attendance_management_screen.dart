@@ -10,6 +10,7 @@ import 'package:nfc_manager/nfc_manager_android.dart';
 
 import '../services/api_service.dart';
 import '../widgets/admin_mobile_chrome.dart';
+import '../widgets/currency_text_field.dart';
 import '../widgets/paginated_list_view.dart';
 
 class AttendanceManagementScreen extends StatefulWidget {
@@ -664,9 +665,15 @@ class _AttendanceManagementScreenState extends State<AttendanceManagementScreen>
     final secondShiftClosed = _shiftClosureDate == today && _secondShiftClosed;
     final hours = double.tryParse(_hoursController.text.trim());
     final grace = int.tryParse(_graceController.text.trim());
-    final lateTierOne = double.tryParse(_lateTierOneController.text.trim());
-    final lateTierTwo = double.tryParse(_lateTierTwoController.text.trim());
-    final overtimeRate = double.tryParse(_overtimeRateController.text.trim());
+    final lateTierOne = CurrencyInputFormatter.parse(
+      _lateTierOneController.text,
+    );
+    final lateTierTwo = CurrencyInputFormatter.parse(
+      _lateTierTwoController.text,
+    );
+    final overtimeRate = CurrencyInputFormatter.parse(
+      _overtimeRateController.text,
+    );
     final overtimeInterval = int.tryParse(
       _overtimeIntervalController.text.trim(),
     );
@@ -972,41 +979,6 @@ class _AttendanceManagementScreenState extends State<AttendanceManagementScreen>
           'rejection_reason': rejectionReason,
       });
 
-      // Log a notification so the worker can see it
-      final workerName =
-          (request['worker_name'] ?? 'Worker').toString();
-      final targetWorkerId = (request['worker_id'] ?? request['workerId'])?.toString();
-      final date = (request['date'] ?? '').toString();
-      final reason = (request['reason'] ?? '').toString();
-      if (status == 'Rejected') {
-        await ApiService.logAdminNotification(
-          title: 'Early-Out Request Rejected',
-          message:
-              '$workerName\'s early-out request for $date ($reason) '
-              'was rejected by ${_adminName()}. '
-              'Reason: ${rejectionReason ?? '—'}',
-          type: 'Attendance',
-          severity: 'Medium',
-          actorName: _adminName(),
-          actorRole: 'Admin',
-          action: 'EARLY_OUT_REJECTED',
-          workerId: targetWorkerId,
-        );
-      } else {
-        await ApiService.logAdminNotification(
-          title: 'Early-Out Request Approved',
-          message:
-              '$workerName\'s early-out request for $date ($reason) '
-              'was approved by ${_adminName()}.',
-          type: 'Attendance',
-          severity: 'Low',
-          actorName: _adminName(),
-          actorRole: 'Admin',
-          action: 'EARLY_OUT_APPROVED',
-          workerId: targetWorkerId,
-        );
-      }
-
       await _loadData();
       _showMessage(
         status == 'Approved'
@@ -1040,39 +1012,6 @@ class _AttendanceManagementScreenState extends State<AttendanceManagementScreen>
         if (status == 'Rejected' && rejectionReason != null)
           'rejection_reason': rejectionReason,
       });
-
-      final workerName =
-          (request['worker_name'] ?? 'Worker').toString();
-      final targetWorkerId = (request['worker_id'] ?? request['workerId'])?.toString();
-      final date = (request['date'] ?? '').toString();
-      if (status == 'Rejected') {
-        await ApiService.logAdminNotification(
-          title: 'Correction Request Rejected',
-          message:
-              '$workerName\'s attendance correction for $date '
-              'was rejected by ${_adminName()}. '
-              'Reason: ${rejectionReason ?? '—'}',
-          type: 'Attendance',
-          severity: 'Medium',
-          actorName: _adminName(),
-          actorRole: 'Admin',
-          action: 'CORRECTION_REJECTED',
-          workerId: targetWorkerId,
-        );
-      } else {
-        await ApiService.logAdminNotification(
-          title: 'Correction Request Approved',
-          message:
-              '$workerName\'s attendance correction for $date '
-              'was approved by ${_adminName()}.',
-          type: 'Attendance',
-          severity: 'Low',
-          actorName: _adminName(),
-          actorRole: 'Admin',
-          action: 'CORRECTION_APPROVED',
-          workerId: targetWorkerId,
-        );
-      }
 
       await _loadData();
       _showMessage(
@@ -1389,11 +1328,15 @@ class _AttendanceManagementScreenState extends State<AttendanceManagementScreen>
 
   Widget _buildDeductionsAndOvertimeCard() {
     Widget amountField(String label, TextEditingController controller) {
-      return TextField(
+      return CurrencyTextField(
         controller: controller,
-        keyboardType: const TextInputType.numberWithOptions(decimal: true),
         decoration: InputDecoration(
           labelText: label,
+          prefixText: '₱ ',
+          prefixStyle: const TextStyle(
+            fontWeight: FontWeight.w700,
+            color: _primary,
+          ),
           border: const OutlineInputBorder(),
           isDense: true,
         ),

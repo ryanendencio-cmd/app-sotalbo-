@@ -996,24 +996,44 @@ class _WorkerSalaryScreenState extends State<WorkerSalaryScreen>
                                     ],
                                   ),
                                   const SizedBox(height: 10),
-                                  Row(
-                                    mainAxisAlignment:
-                                        MainAxisAlignment.spaceBetween,
-                                    children: [
-                                      _buildSummaryItem(
-                                        'Total Requested',
-                                        '₱${_cashAdvances.fold<double>(0, (sum, c) => sum + (double.tryParse(c['amount']?.toString() ?? '0') ?? 0)).toStringAsFixed(2)}',
-                                      ),
-                                      _buildSummaryItem(
-                                        'Approved',
-                                        '₱${approvedAdvances.fold<double>(0, (sum, c) => sum + (double.tryParse(c['amount']?.toString() ?? '0') ?? 0)).toStringAsFixed(2)}',
-                                      ),
-                                      _buildSummaryItem(
-                                        'Pending',
-                                        '${_cashAdvances.where((c) => c['status'] == 'Pending').length}',
-                                        isBadge: true,
-                                      ),
-                                    ],
+                                  LayoutBuilder(
+                                    builder: (context, constraints) {
+                                      const spacing = 12.0;
+                                      final columns =
+                                          constraints.maxWidth < 360 ? 2 : 3;
+                                      final itemWidth =
+                                          (constraints.maxWidth -
+                                              spacing * (columns - 1)) /
+                                          columns;
+                                      return Wrap(
+                                        spacing: spacing,
+                                        runSpacing: 10,
+                                        children: [
+                                          SizedBox(
+                                            width: itemWidth,
+                                            child: _buildSummaryItem(
+                                              'Total Requested',
+                                              '₱${_cashAdvances.fold<double>(0, (sum, c) => sum + (double.tryParse(c['amount']?.toString() ?? '0') ?? 0)).toStringAsFixed(2)}',
+                                            ),
+                                          ),
+                                          SizedBox(
+                                            width: itemWidth,
+                                            child: _buildSummaryItem(
+                                              'Approved',
+                                              '₱${approvedAdvances.fold<double>(0, (sum, c) => sum + (double.tryParse(c['amount']?.toString() ?? '0') ?? 0)).toStringAsFixed(2)}',
+                                            ),
+                                          ),
+                                          SizedBox(
+                                            width: itemWidth,
+                                            child: _buildSummaryItem(
+                                              'Pending',
+                                              '${_cashAdvances.where((c) => c['status'] == 'Pending').length}',
+                                              isBadge: true,
+                                            ),
+                                          ),
+                                        ],
+                                      );
+                                    },
                                   ),
                                 ],
                               ),
@@ -1096,6 +1116,8 @@ class _WorkerSalaryScreenState extends State<WorkerSalaryScreen>
       children: [
         Text(
           label,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
           style: GoogleFonts.inter(fontSize: 10, color: Colors.white70),
         ),
         const SizedBox(height: 2),
@@ -1115,12 +1137,16 @@ class _WorkerSalaryScreenState extends State<WorkerSalaryScreen>
                   ),
                 ),
               )
-            : Text(
-                value,
-                style: GoogleFonts.inter(
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white,
+            : FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  value,
+                  style: GoogleFonts.inter(
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
                 ),
               ),
       ],
@@ -1177,22 +1203,39 @@ class _WorkerSalaryScreenState extends State<WorkerSalaryScreen>
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 4),
         child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              label,
-              style: GoogleFonts.inter(
-                fontSize: 10,
-                color: Colors.grey.shade700,
-                fontWeight: emphasize ? FontWeight.bold : FontWeight.w500,
+            Expanded(
+              flex: 3,
+              child: Text(
+                label,
+                softWrap: true,
+                style: GoogleFonts.inter(
+                  fontSize: 10,
+                  color: Colors.grey.shade700,
+                  fontWeight: emphasize ? FontWeight.bold : FontWeight.w500,
+                ),
               ),
             ),
-            Text(
-              value,
-              style: GoogleFonts.inter(
-                fontSize: 10.5,
-                color: emphasize ? const Color(0xFFA63228) : Colors.black87,
-                fontWeight: FontWeight.bold,
+            const SizedBox(width: 8),
+            Expanded(
+              flex: 2,
+              child: Align(
+                alignment: Alignment.centerRight,
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerRight,
+                  child: Text(
+                    value,
+                    style: GoogleFonts.inter(
+                      fontSize: 10.5,
+                      color: emphasize
+                          ? const Color(0xFFA63228)
+                          : Colors.black87,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
               ),
             ),
           ],
@@ -1275,21 +1318,31 @@ class _WorkerSalaryScreenState extends State<WorkerSalaryScreen>
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Text(
-                            '$date • ${log['status'] ?? 'Attendance'}',
-                            style: GoogleFonts.inter(
-                              fontSize: 9.5,
-                              fontWeight: FontWeight.bold,
+                          Expanded(
+                            child: Text(
+                              '$date • ${log['status'] ?? 'Attendance'}',
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: GoogleFonts.inter(
+                                fontSize: 9.5,
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
                           ),
-                          Text(
-                            currency(log['total_earnings']),
-                            style: GoogleFonts.inter(
-                              fontSize: 10,
-                              fontWeight: FontWeight.bold,
-                              color: const Color(0xFFA63228),
+                          const SizedBox(width: 8),
+                          Flexible(
+                            child: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              alignment: Alignment.centerRight,
+                              child: Text(
+                                currency(log['total_earnings']),
+                                style: GoogleFonts.inter(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                  color: const Color(0xFFA63228),
+                                ),
+                              ),
                             ),
                           ),
                         ],
@@ -1361,62 +1414,77 @@ class _WorkerSalaryScreenState extends State<WorkerSalaryScreen>
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Row(
-                children: [
-                  Container(
-                    width: 32,
-                    height: 32,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFA63228).withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: const Icon(
-                      Icons.account_balance_wallet_outlined,
-                      size: 16,
-                      color: Color(0xFFA63228),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        '$cutoffStart — $cutoffEnd',
-                        style: GoogleFonts.inter(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w800,
-                          color: Colors.black87,
-                        ),
+              Expanded(
+                child: Row(
+                  children: [
+                    Container(
+                      width: 32,
+                      height: 32,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFA63228).withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(8),
                       ),
-                      Text(
-                        p['project_name']?.toString() ?? 'Project Site',
-                        style: GoogleFonts.inter(
-                          fontSize: 10,
-                          color: Colors.grey.shade500,
-                        ),
+                      child: const Icon(
+                        Icons.account_balance_wallet_outlined,
+                        size: 16,
+                        color: Color(0xFFA63228),
                       ),
-                    ],
-                  ),
-                ],
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: isPaid
-                      ? const Color(0xFFE8F5E9)
-                      : const Color(0xFFE3F2FD),
-                  borderRadius: BorderRadius.circular(6),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '$cutoffStart — $cutoffEnd',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: GoogleFonts.inter(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w800,
+                              color: Colors.black87,
+                            ),
+                          ),
+                          Text(
+                            p['project_name']?.toString() ?? 'Project Site',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: GoogleFonts.inter(
+                              fontSize: 10,
+                              color: Colors.grey.shade500,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
-                child: Text(
-                  isPaid ? 'PAID / RELEASED' : status.toUpperCase(),
-                  style: GoogleFonts.inter(
-                    fontSize: 9,
-                    fontWeight: FontWeight.w800,
+              ),
+              const SizedBox(width: 8),
+              Flexible(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 3,
+                  ),
+                  decoration: BoxDecoration(
                     color: isPaid
-                        ? const Color(0xFF2E7D32)
-                        : const Color(0xFF1565C0),
+                        ? const Color(0xFFE8F5E9)
+                        : const Color(0xFFE3F2FD),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    isPaid ? 'PAID / RELEASED' : status.toUpperCase(),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.inter(
+                      fontSize: 9,
+                      fontWeight: FontWeight.w800,
+                      color: isPaid
+                          ? const Color(0xFF2E7D32)
+                          : const Color(0xFF1565C0),
+                    ),
                   ),
                 ),
               ),
@@ -1430,49 +1498,59 @@ class _WorkerSalaryScreenState extends State<WorkerSalaryScreen>
               borderRadius: BorderRadius.circular(10),
             ),
             child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Days & Hours Worked',
-                      style: GoogleFonts.inter(
-                        fontSize: 9.5,
-                        color: Colors.grey.shade600,
-                        fontWeight: FontWeight.w600,
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Days & Hours Worked',
+                        style: GoogleFonts.inter(
+                          fontSize: 9.5,
+                          color: Colors.grey.shade600,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
-                    ),
-                    Text(
-                      '$workedDays days ($totalHours hrs)',
-                      style: GoogleFonts.inter(
-                        fontSize: 11,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.black87,
+                      Text(
+                        '$workedDays days ($totalHours hrs)',
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.inter(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.black87,
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Text(
-                      'Gross Earnings',
-                      style: GoogleFonts.inter(
-                        fontSize: 9.5,
-                        color: Colors.grey.shade600,
-                        fontWeight: FontWeight.w600,
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Text(
+                        'Gross Earnings',
+                        style: GoogleFonts.inter(
+                          fontSize: 9.5,
+                          color: Colors.grey.shade600,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
-                    ),
-                    Text(
-                      '₱$grossPay',
-                      style: GoogleFonts.inter(
-                        fontSize: 11,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.black87,
+                      FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerRight,
+                        child: Text(
+                          '₱$grossPay',
+                          style: GoogleFonts.inter(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.black87,
+                          ),
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ],
             ),
@@ -1480,22 +1558,30 @@ class _WorkerSalaryScreenState extends State<WorkerSalaryScreen>
           if ((num.tryParse(overtimePay.toString()) ?? 0) > 0) ...[
             const SizedBox(height: 6),
             Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(
-                  'Approved overtime pay',
-                  style: GoogleFonts.inter(
-                    fontSize: 9.5,
-                    color: const Color(0xFF2E7D32),
-                    fontWeight: FontWeight.w600,
+                Expanded(
+                  child: Text(
+                    'Approved overtime pay',
+                    style: GoogleFonts.inter(
+                      fontSize: 9.5,
+                      color: const Color(0xFF2E7D32),
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
-                Text(
-                  '+₱$overtimePay',
-                  style: GoogleFonts.inter(
-                    fontSize: 10,
-                    color: const Color(0xFF2E7D32),
-                    fontWeight: FontWeight.bold,
+                const SizedBox(width: 8),
+                Flexible(
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerRight,
+                    child: Text(
+                      '+₱$overtimePay',
+                      style: GoogleFonts.inter(
+                        fontSize: 10,
+                        color: const Color(0xFF2E7D32),
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                   ),
                 ),
               ],
@@ -1505,22 +1591,31 @@ class _WorkerSalaryScreenState extends State<WorkerSalaryScreen>
               (num.tryParse(lateDeductions.toString()) ?? 0) > 0) ...[
             const SizedBox(height: 6),
             Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(
-                  'Deductions (Late: ₱$lateDeductions • CA: ₱$caDeductions)',
-                  style: GoogleFonts.inter(
-                    fontSize: 9.5,
-                    color: Colors.red.shade700,
-                    fontWeight: FontWeight.w600,
+                Expanded(
+                  child: Text(
+                    'Deductions (Late: ₱$lateDeductions • CA: ₱$caDeductions)',
+                    softWrap: true,
+                    style: GoogleFonts.inter(
+                      fontSize: 9.5,
+                      color: Colors.red.shade700,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
-                Text(
-                  '-₱${(num.tryParse(caDeductions.toString()) ?? 0) + (num.tryParse(lateDeductions.toString()) ?? 0)}',
-                  style: GoogleFonts.inter(
-                    fontSize: 10,
-                    color: Colors.red.shade700,
-                    fontWeight: FontWeight.bold,
+                const SizedBox(width: 8),
+                Flexible(
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerRight,
+                    child: Text(
+                      '-₱${(num.tryParse(caDeductions.toString()) ?? 0) + (num.tryParse(lateDeductions.toString()) ?? 0)}',
+                      style: GoogleFonts.inter(
+                        fontSize: 10,
+                        color: Colors.red.shade700,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                   ),
                 ),
               ],
@@ -1552,13 +1647,19 @@ class _WorkerSalaryScreenState extends State<WorkerSalaryScreen>
                           style: GoogleFonts.inter(fontSize: 8.5),
                         ),
                       ),
-                      Text(
-                        'Regular ₱${log['base_earned'] ?? 0} • '
-                        'Deduction ₱${log['deduction'] ?? 0} • '
-                        'OT ₱${log['overtime_pay'] ?? 0}',
-                        style: GoogleFonts.inter(
-                          fontSize: 8,
-                          color: Colors.grey.shade700,
+                      Flexible(
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          alignment: Alignment.centerRight,
+                          child: Text(
+                            'Regular ₱${log['base_earned'] ?? 0} • '
+                            'Deduction ₱${log['deduction'] ?? 0} • '
+                            'OT ₱${log['overtime_pay'] ?? 0}',
+                            style: GoogleFonts.inter(
+                              fontSize: 8,
+                              color: Colors.grey.shade700,
+                            ),
+                          ),
                         ),
                       ),
                     ],
@@ -1568,22 +1669,30 @@ class _WorkerSalaryScreenState extends State<WorkerSalaryScreen>
             ),
           const SizedBox(height: 8),
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                'NET TAKE-HOME PAY',
-                style: GoogleFonts.inter(
-                  fontSize: 10.5,
-                  fontWeight: FontWeight.w800,
-                  color: Colors.grey.shade700,
+              Expanded(
+                child: Text(
+                  'NET TAKE-HOME PAY',
+                  style: GoogleFonts.inter(
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w800,
+                    color: Colors.grey.shade700,
+                  ),
                 ),
               ),
-              Text(
-                '₱$netPay',
-                style: GoogleFonts.inter(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w900,
-                  color: const Color(0xFFA63228),
+              const SizedBox(width: 8),
+              Flexible(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerRight,
+                  child: Text(
+                    '₱$netPay',
+                    style: GoogleFonts.inter(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w900,
+                      color: const Color(0xFFA63228),
+                    ),
+                  ),
                 ),
               ),
             ],

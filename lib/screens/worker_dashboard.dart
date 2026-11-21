@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -441,7 +442,7 @@ class _WorkerDashboardState extends State<WorkerDashboard> {
 
   Future<void> _loadAnnouncements() async {
     try {
-      final notifications = await ApiService.getNotifications();
+      final notifications = await ApiService.getWorkerNotifications();
       final user = _user ?? ApiService.currentUser;
       final announcements = notifications
           .map((value) => Map<String, dynamic>.from(value as Map))
@@ -903,13 +904,89 @@ class _WorkerDashboardState extends State<WorkerDashboard> {
   }
 
   Future<void> _showNotificationDialog() async {
+    await showWorkerAnnouncements(context);
+    await _loadAnnouncements();
+  }
+
+  Future<void> _showLegacyNotificationDialog() async {
     await _loadAnnouncements();
     if (!mounted) return;
     final markingIds = <String>{};
+    final selectedIds = <String>{};
+    final holdTimers = <String, Timer>{};
+    final holdingPointers = <int, String>{};
+    final holdStarts = <int, Offset>{};
+    final longPressSelectedIds = <String>{};
+    var isDeleting = false;
+
     await showDialog<void>(
       context: context,
       builder: (context) => StatefulBuilder(
-        builder: (dialogContext, setDialogState) => Dialog(
+        builder: (dialogContext, setDialogState) {
+          void toggleSelection(String id) {
+            setDialogState(() {
+              if (selectedIds.contains(id)) {
+                selectedIds.remove(id);
+              } else {
+                selectedIds.add(id);
+              }
+            });
+          }
+
+          Future<void> deleteSelected() async {
+            if (isDeleting || selectedIds.isEmpty) return;
+            final ids = selectedIds.toList();
+            final confirmed = await showDialog<bool>(
+              context: dialogContext,
+              builder: (confirmationContext) => AlertDialog(
+                title: const Text('Delete notifications?'),
+                content: Text(
+                  'Delete ${ids.length} selected notification${ids.length == 1 ? '' : 's'} from your account?',
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(confirmationContext, false),
+                    child: const Text('Cancel'),
+                  ),
+                  FilledButton(
+                    onPressed: () => Navigator.pop(confirmationContext, true),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: const Color(0xFFA63228),
+                    ),
+                    child: const Text('Delete'),
+                  ),
+                ],
+              ),
+            );
+            if (confirmed != true) return;
+
+            setDialogState(() => isDeleting = true);
+            try {
+              await ApiService.deleteWorkerNotifications(ids);
+              if (!mounted) return;
+              setState(() {
+                _allAnnouncements.removeWhere(
+                  (item) => ids.contains(item['id']?.toString()),
+                );
+                _announcements.removeWhere(
+                  (item) => ids.contains(item['id']?.toString()),
+                );
+              });
+              updateWorkerAnnouncementBadge(_allAnnouncements);
+              selectedIds.clear();
+              _showMessage(
+                '${ids.length} notification${ids.length == 1 ? '' : 's'} deleted.',
+              );
+            } catch (error) {
+              _showMessage('Unable to delete notifications: $error');
+            } finally {
+              if (dialogContext.mounted) {
+                setDialogState(() => isDeleting = false);
+              }
+            }
+          }
+
+          return Dialog(
           backgroundColor: Colors.white,
           insetPadding: const EdgeInsets.symmetric(
             horizontal: 20,
@@ -964,7 +1041,9 @@ class _WorkerDashboardState extends State<WorkerDashboard> {
                         ),
                         padding: EdgeInsets.zero,
                         constraints: const BoxConstraints(),
-                        onPressed: () => Navigator.pop(context),
+                        onPressed: isDeleting
+                            ? null
+                            : () => Navigator.pop(dialogContext),
                       ),
                     ],
                   ),
@@ -976,6 +1055,43 @@ class _WorkerDashboardState extends State<WorkerDashboard> {
                       color: Colors.grey.shade600,
                     ),
                   ),
+                  Text(
+                    'Hold a notification for 3 seconds to select it.',
+                    style: GoogleFonts.inter(
+                      fontSize: 9.5,
+                      color: Colors.grey.shade600,
+                    ),
+                  ),
+                  if (selectedIds.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        Text(
+                          '${selectedIds.length} selected',
+                          style: GoogleFonts.inter(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.grey.shade700,
+                          ),
+                        ),
+                        const Spacer(),
+                        TextButton(
+                          onPressed: isDeleting
+                              ? null
+                              : () => setDialogState(selectedIds.clear),
+                          child: const Text('Cancel'),
+                        ),
+                        TextButton.icon(
+                          onPressed: isDeleting ? null : deleteSelected,
+                          icon: const Icon(Icons.delete_outline, size: 16),
+                          label: const Text('Delete'),
+                          style: TextButton.styleFrom(
+                            foregroundColor: const Color(0xFFA63228),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                   const Divider(height: 14),
                   Expanded(
                     child: ListView.separated(
@@ -1008,6 +1124,7 @@ class _WorkerDashboardState extends State<WorkerDashboard> {
                             notif['read'] == true ||
                             notif['read']?.toString().toLowerCase() == 'true';
                         final isMarking = markingIds.contains(id);
+                        final isSelected = selectedIds.contains(id);
                         return Container(
                           padding: const EdgeInsets.all(10),
                           decoration: BoxDecoration(
@@ -1018,72 +1135,167 @@ class _WorkerDashboardState extends State<WorkerDashboard> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              InkWell(
-                                onTap: () {
-                                  Navigator.pop(dialogContext);
-                                  _showAnnouncementDetails(notif);
-                                },
-                                borderRadius: BorderRadius.circular(8),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Row(
-                                      mainAxisAlignment:
-                                          MainAxisAlignment.spaceBetween,
-                                      children: [
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 6,
-                                            vertical: 2,
-                                          ),
-                                          decoration: BoxDecoration(
-                                            color: const Color(
-                                              0xFFA63228,
-                                            ).withValues(alpha: 0.08),
-                                            borderRadius: BorderRadius.circular(
-                                              4,
-                                            ),
-                                          ),
-                                          child: Text(
-                                            (notif['type'] ?? 'Announcement')
-                                                .toString(),
-                                            style: GoogleFonts.inter(
-                                              fontSize: 9,
-                                              fontWeight: FontWeight.bold,
-                                              color: const Color(0xFFA63228),
-                                            ),
+                              Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  if (selectedIds.isNotEmpty)
+                                    Checkbox(
+                                      value: isSelected,
+                                      onChanged: isDeleting || id.isEmpty
+                                          ? null
+                                          : (_) => toggleSelection(id),
+                                      activeColor: const Color(0xFFA63228),
+                                      visualDensity: VisualDensity.compact,
+                                    ),
+                                  Expanded(
+                                    child: Listener(
+                                      onPointerDown: (event) {
+                                        if (id.isEmpty || isDeleting) return;
+                                        holdTimers.remove(id)?.cancel();
+                                        longPressSelectedIds.remove(id);
+                                        holdingPointers[event.pointer] = id;
+                                        holdStarts[event.pointer] = event.position;
+                                        holdTimers[id] = Timer(
+                                          const Duration(seconds: 3),
+                                          () {
+                                            if (holdingPointers[event.pointer] !=
+                                                id) {
+                                              return;
+                                            }
+                                            longPressSelectedIds.add(id);
+                                            setDialogState(
+                                              () => selectedIds.add(id),
+                                            );
+                                          },
+                                        );
+                                      },
+                                      onPointerMove: (event) {
+                                        final start =
+                                            holdStarts[event.pointer];
+                                        if (holdingPointers[event.pointer] ==
+                                                id &&
+                                            start != null &&
+                                            (event.position - start).distance >
+                                                12) {
+                                          holdTimers.remove(id)?.cancel();
+                                          holdingPointers.remove(event.pointer);
+                                          holdStarts.remove(event.pointer);
+                                        }
+                                      },
+                                      onPointerUp: (event) {
+                                        if (holdingPointers.remove(
+                                              event.pointer,
+                                            ) ==
+                                            id) {
+                                          holdTimers.remove(id)?.cancel();
+                                          holdStarts.remove(event.pointer);
+                                        }
+                                      },
+                                      onPointerCancel: (event) {
+                                        if (holdingPointers.remove(
+                                              event.pointer,
+                                            ) ==
+                                            id) {
+                                          holdTimers.remove(id)?.cancel();
+                                          holdStarts.remove(event.pointer);
+                                          longPressSelectedIds.remove(id);
+                                        }
+                                      },
+                                      child: InkWell(
+                                        onTap: id.isEmpty || isDeleting
+                                            ? null
+                                            : () {
+                                                if (longPressSelectedIds
+                                                    .remove(id)) {
+                                                  return;
+                                                }
+                                                if (selectedIds.isNotEmpty) {
+                                                  toggleSelection(id);
+                                                  return;
+                                                }
+                                                Navigator.pop(dialogContext);
+                                                _showAnnouncementDetails(notif);
+                                              },
+                                        borderRadius: BorderRadius.circular(8),
+                                        child: Padding(
+                                          padding: const EdgeInsets.all(4),
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Row(
+                                                mainAxisAlignment:
+                                                    MainAxisAlignment
+                                                        .spaceBetween,
+                                                children: [
+                                                  Container(
+                                                    padding:
+                                                        const EdgeInsets.symmetric(
+                                                          horizontal: 6,
+                                                          vertical: 2,
+                                                        ),
+                                                    decoration: BoxDecoration(
+                                                      color: const Color(
+                                                        0xFFA63228,
+                                                      ).withValues(alpha: 0.08),
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                            4,
+                                                          ),
+                                                    ),
+                                                    child: Text(
+                                                      (notif['type'] ??
+                                                              'Announcement')
+                                                          .toString(),
+                                                      style: GoogleFonts.inter(
+                                                        fontSize: 9,
+                                                        fontWeight:
+                                                            FontWeight.bold,
+                                                        color: const Color(
+                                                          0xFFA63228,
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  ),
+                                                  Text(
+                                                    (notif['date'] ?? '')
+                                                        .toString(),
+                                                    style: GoogleFonts.inter(
+                                                      fontSize: 9.5,
+                                                      color:
+                                                          Colors.grey.shade500,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                              const SizedBox(height: 4),
+                                              Text(
+                                                (notif['title'] ??
+                                                        'Announcement')
+                                                    .toString(),
+                                                style: GoogleFonts.inter(
+                                                  fontSize: 11.5,
+                                                  fontWeight: FontWeight.bold,
+                                                  color: Colors.black87,
+                                                ),
+                                              ),
+                                              const SizedBox(height: 2),
+                                              Text(
+                                                (notif['message'] ?? '')
+                                                    .toString(),
+                                                style: GoogleFonts.inter(
+                                                  fontSize: 10.5,
+                                                  color: Colors.grey.shade700,
+                                                  height: 1.3,
+                                                ),
+                                              ),
+                                            ],
                                           ),
                                         ),
-                                        Text(
-                                          (notif['date'] ?? '').toString(),
-                                          style: GoogleFonts.inter(
-                                            fontSize: 9.5,
-                                            color: Colors.grey.shade500,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      (notif['title'] ?? 'Announcement')
-                                          .toString(),
-                                      style: GoogleFonts.inter(
-                                        fontSize: 11.5,
-                                        fontWeight: FontWeight.bold,
-                                        color: Colors.black87,
                                       ),
                                     ),
-                                    const SizedBox(height: 2),
-                                    Text(
-                                      (notif['message'] ?? '').toString(),
-                                      style: GoogleFonts.inter(
-                                        fontSize: 10.5,
-                                        color: Colors.grey.shade700,
-                                        height: 1.3,
-                                      ),
-                                    ),
-                                  ],
-                                ),
+                                  ),
+                                ],
                               ),
                               Align(
                                 alignment: Alignment.centerRight,
@@ -1095,7 +1307,7 @@ class _WorkerDashboardState extends State<WorkerDashboard> {
                                             () => markingIds.add(id),
                                           );
                                           try {
-                                            await ApiService.markNotificationRead(
+                                            await ApiService.markWorkerNotificationRead(
                                               id,
                                             );
                                             notif['read'] = true;
@@ -1144,9 +1356,13 @@ class _WorkerDashboardState extends State<WorkerDashboard> {
               ),
             ),
           ),
-        ),
+        );
+      },
       ),
     );
+    for (final timer in holdTimers.values) {
+      timer.cancel();
+    }
   }
 
   Future<void> _showAnnouncementDetails(

@@ -10,6 +10,7 @@ import 'package:share_plus/share_plus.dart';
 import '../services/admin_service.dart';
 import '../services/api_service.dart';
 import '../widgets/admin_mobile_chrome.dart';
+import '../widgets/currency_text_field.dart';
 import '../widgets/paginated_list_view.dart';
 import 'tools_monitoring_screen.dart';
 
@@ -1097,7 +1098,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 ) ??
                 0;
             final price =
-                double.tryParse(
+                CurrencyInputFormatter.parse(
                   (item['price'] as TextEditingController).text,
                 ) ??
                 0;
@@ -1156,7 +1157,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                   ) ??
                   0;
               final price =
-                  double.tryParse(
+                  CurrencyInputFormatter.parse(
                     (item['price'] as TextEditingController).text,
                   ) ??
                   0;
@@ -1191,9 +1192,11 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 final quantity = double.parse(
                   (item['quantity'] as TextEditingController).text,
                 );
-                final price = double.parse(
-                  (item['price'] as TextEditingController).text,
-                );
+                final price =
+                    CurrencyInputFormatter.parse(
+                      (item['price'] as TextEditingController).text,
+                    ) ??
+                    0;
                 return {
                   'qty': quantity,
                   'unit': item['unit'],
@@ -1383,7 +1386,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                           children: [
                             Expanded(
                               child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
+                                crossAxisAlignment:
+                                    CrossAxisAlignment.start,
                                 children: [
                                   fieldLabel('Date Logged'),
                                   OutlinedButton.icon(
@@ -1795,13 +1799,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                                                 ? 'Daily Rate'
                                                 : 'Unit Price',
                                           ),
-                                          TextField(
+                                          CurrencyTextField(
                                             controller: priceController,
                                             enabled: !isSaving,
-                                            keyboardType:
-                                                const TextInputType.numberWithOptions(
-                                                  decimal: true,
-                                                ),
                                             onChanged: (_) =>
                                                 setDialogState(() {}),
                                             decoration: fieldDecoration(
@@ -5085,8 +5085,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                                   ),
                                 ),
                                 child: Row(
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.start,
+                                  crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     const Icon(
                                       Icons.info_outline,

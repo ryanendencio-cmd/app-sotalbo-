@@ -9,21 +9,32 @@ This project is a starting point for a Flutter application.
 ## Connecting to the web app backend
 
 The mobile app uses the same HTTP API as the web app; it does not connect
-directly to MySQL. Set `API_BASE_URL` to the backend URL (including `/api`) when
-running or building the app:
+directly to MySQL or choose the database itself. The backend's `DB_TYPE`
+chooses the database: use `mysql` for the local backend and `firebase` for the
+production backend. The mobile app must point at the matching backend.
 
 ```shell
+# Physical Android phone on the same Wi-Fi as the local backend:
+flutter run --dart-define=API_BASE_URL=http://<PC-LAN-IP>:5000/api
+
+# Android emulator:
 flutter run --dart-define=API_BASE_URL=http://10.0.2.2:5000/api
-flutter build apk --release --dart-define=API_BASE_URL=https://your-api.example.com/api
+
+# Production build: use the same public HTTPS API URL as the web app:
+flutter build apk --release --dart-define=API_BASE_URL=https://<production-api-host>/api
 ```
 
-For a physical phone on the same network as a local development server, use
-the computer's LAN IP instead of `10.0.2.2`. For web or an iOS simulator,
-`http://localhost:5000/api` works when the backend is running on that same
-computer. Production builds should use the web app's HTTPS API URL.
+For local development, set `DB_TYPE=mysql` on the local backend and replace
+`<PC-LAN-IP>` with the computer's LAN IPv4 address. The phone and computer must
+be on the same network, and the backend port must be reachable from the phone.
+For production, set `DB_TYPE=firebase` on the deployed backend and build with
+its public HTTPS API URL. Release builds require `API_BASE_URL` to be provided;
+they will not silently fall back to localhost.
 
-The backend's `DB_TYPE` setting chooses the database, so use the same backend
-instance as the web app if both apps must share data.
+Workers sign in through the worker login and use their assigned worker profile.
+Attendance Monitoring/Timekeeper and Tools Monitoring/Custodian access is
+enabled from the role or position saved on that profile. Admins sign in through
+the Admin login; backend authorization enforces these role-specific permissions.
 
 A few resources to get you started if this is your first Flutter project:
 

@@ -311,10 +311,19 @@ class _ToolsMonitoringScreenState extends State<ToolsMonitoringScreen> {
     String condition,
   ) async {
     try {
+      String? workerId;
+      for (final worker in _workers) {
+        if (_workerName(worker).toLowerCase() ==
+            borrower.trim().toLowerCase()) {
+          workerId = worker['id']?.toString();
+          break;
+        }
+      }
       await ApiService.logBorrowHistory({
         'project_id': tool['projectId'],
         'tool_name': tool['name'],
         'borrower_name': borrower,
+        if (workerId != null) 'worker_id': workerId,
         'quantity': 1,
         'action': action,
         'condition_status': condition,

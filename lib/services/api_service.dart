@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 class ApiService {
   static const _readNotificationIdsKey = 'readNotificationIds';
+  static const _deletedNotificationIdsKey = 'deletedWorkerNotificationIds';
 
   // For emulator, use '10.0.2.2'.
   // For physical device via wireless debugging, use your PC's local IP address.
@@ -16,14 +17,33 @@ class ApiService {
   );
   static String androidHost = const String.fromEnvironment(
     'API_HOST',
-    defaultValue: '10.0.2.2',
+    defaultValue: '192.168.100.75',
   );
-  static String get baseUrl {
-    final configured = _configuredBaseUrl.trim();
-    if (configured.isNotEmpty) {
-      return configured.replaceFirst(RegExp(r'/+$'), '');
+  static String get baseUrl => resolveBaseUrl(
+    configured: _configuredBaseUrl,
+    isReleaseMode: kReleaseMode,
+    isAndroid: !kIsWeb && Platform.isAndroid,
+    androidHost: androidHost,
+  );
+
+  @visibleForTesting
+  static String resolveBaseUrl({
+    required String configured,
+    required bool isReleaseMode,
+    required bool isAndroid,
+    required String androidHost,
+  }) {
+    final configuredUrl = configured.trim();
+    if (configuredUrl.isNotEmpty) {
+      return configuredUrl.replaceFirst(RegExp(r'/+$'), '');
     }
-    if (!kIsWeb && Platform.isAndroid) return 'http://$androidHost:5000/api';
+    if (isReleaseMode) {
+      throw StateError(
+        'API_BASE_URL must be set for release builds. '
+        'Build with --dart-define=API_BASE_URL=https://<backend-host>/api.',
+      );
+    }
+    if (isAndroid) return 'http://$androidHost:5000/api';
     return 'http://localhost:5000/api';
   }
 
@@ -210,10 +230,17 @@ class ApiService {
     }
   }
 
-  static Future<void> _delete(String path) async {
+  static Future<void> _delete(
+    String path, [
+    Map<String, dynamic>? body,
+  ]) async {
     try {
       final res = await http
-          .delete(Uri.parse('$baseUrl$path'), headers: _headers)
+          .delete(
+            Uri.parse('$baseUrl$path'),
+            headers: _headers,
+            body: body == null ? null : jsonEncode(body),
+          )
           .timeout(requestTimeout);
       if (res.statusCode != 200 && res.statusCode != 204) {
         final message = _extractErrorMessage(
@@ -509,6 +536,62 @@ class ApiService {
     }).toList();
   }
 
+  static Future<List<dynamic>> getWorkerNotifications() async {
+    final result =
+        await _get('/worker/notifications').then((value) => value as List);
+    final preferences = await SharedPreferences.getInstance();
+    final readIds = preferences.getStringList(_readNotificationIdsKey) ?? [];
+    final readIdSet = readIds.toSet();
+    final deletedIds =
+        preferences.getStringList(_deletedNotificationIdsKey) ?? [];
+    final deletedIdSet = deletedIds.toSet();
+
+    return result.where((item) {
+      if (item is! Map) return false;
+      final id = item['id']?.toString() ?? '';
+      return !deletedIdSet.contains(id);
+    }).map((item) {
+      final notification = Map<String, dynamic>.from(item as Map);
+      if (notification['read'] == true ||
+          readIdSet.contains(notification['id']?.toString())) {
+        notification['read'] = true;
+      }
+      return notification;
+    }).toList();
+  }
+
+  static Future<void> markWorkerNotificationRead(dynamic id) async {
+    final notificationId = id.toString();
+    try {
+      await _put(
+        '/worker/notifications/${Uri.encodeComponent(notificationId)}/read',
+        {},
+      );
+    } catch (_) {}
+    await _saveReadNotificationIds([notificationId]);
+  }
+
+  static Future<void> deleteWorkerNotifications(
+    List<String> notificationIds,
+  ) async {
+    final uniqueIds =
+        notificationIds.map((e) => e.toString()).toSet().toList();
+    try {
+      await _delete('/worker/notifications', {'notificationIds': uniqueIds});
+    } catch (_) {}
+    await _saveDeletedNotificationIds(uniqueIds);
+  }
+
+  static Future<void> _saveDeletedNotificationIds(Iterable<String> ids) async {
+    final preferences = await SharedPreferences.getInstance();
+    final deletedIds =
+        preferences.getStringList(_deletedNotificationIdsKey) ?? [];
+    await preferences.setStringList(
+      _deletedNotificationIdsKey,
+      {...deletedIds, ...ids}.toList(),
+    );
+  }
+
   static Future<void> markNotificationRead(dynamic id) async {
     final notificationId = id.toString();
     await _put('/notifications/$notificationId/read', {});
@@ -653,28 +736,8 @@ class ApiService {
     final raw = usernameOrPhone.trim();
     final normalized = normalizePhone(raw);
 
-    // List of identifiers to try (normalized +639... first if phone number, then raw)
+    // The worker login endpoint supports phone and username lookup itself.
     final identifiersToTry = <String>[];
-
-    // Attempt to lookup real username if the input is a phone number
-    try {
-      final workersRes = await http.get(Uri.parse('$baseUrl/workers'));
-      if (workersRes.statusCode == 200) {
-        final List<dynamic> workers = jsonDecode(workersRes.body);
-        for (var w in workers) {
-          final wPhone = (w['phone'] ?? '').toString();
-          if (wPhone == raw || wPhone == normalized || wPhone == '+63$raw') {
-            final wUsername = (w['username'] ?? w['user_name'] ?? '')
-                .toString();
-            if (wUsername.isNotEmpty) {
-              identifiersToTry.add(wUsername);
-            }
-          }
-        }
-      }
-    } catch (_) {
-      // ignore
-    }
 
     if (normalized != raw) {
       identifiersToTry.add(normalized);
@@ -726,6 +789,9 @@ class ApiService {
             }
           }
 
+          if (body['token'] is String) {
+            setToken(body['token'] as String);
+          }
           return body;
         }
 
@@ -859,19 +925,9 @@ class ApiService {
           'rejection_reason': rejectionReason,
       });
 
-  static Future<Map<String, dynamic>> getWorker(dynamic id) =>
-      _get('/workers').then((v) {
-        if (v is List) {
-          final worker = v.firstWhere(
-            (w) => w['id']?.toString() == id?.toString(),
-            orElse: () => null,
-          );
-          if (worker != null) {
-            return worker as Map<String, dynamic>;
-          }
-        }
-        throw Exception('Worker not found');
-      });
+  static Future<Map<String, dynamic>> getWorker(dynamic id) => _get(
+    '/workers/${Uri.encodeComponent(id.toString())}',
+  ).then((value) => Map<String, dynamic>.from(value as Map));
 
   static Future<bool> checkPhoneExists(String phone) async {
     final raw = phone.trim();

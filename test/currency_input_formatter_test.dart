@@ -32,6 +32,23 @@ void main() {
       expect(result.text, '1,000.56');
       expect(CurrencyInputFormatter.parse(result.text), 1000.56);
     });
+
+    test('limits amounts to 12 integer digits and 2 decimals', () {
+      final result = formatter.formatEditUpdate(
+        const TextEditingValue(),
+        const TextEditingValue(
+          text: '123456789012345.6789',
+          selection: TextSelection.collapsed(offset: 20),
+        ),
+      );
+
+      expect(result.text, '123,456,789,012.67');
+      expect(
+        CurrencyInputFormatter.formatComplete('123456789012345.6789'),
+        '123,456,789,012.67',
+      );
+      expect(CurrencyInputFormatter.parse(result.text), 123456789012.67);
+    });
   });
 
   testWidgets('formats input on blur while preserving an empty default', (

@@ -17,24 +17,26 @@ class AppSidebar extends StatelessWidget {
   Widget build(BuildContext context) {
     final currentRoute = ModalRoute.of(context)?.settings.name;
     final role = ApiService.currentUserRole ?? 'worker';
-    final position = [
+    final accessProfile = [
+      ApiService.currentUser?['role'],
+      ApiService.currentUser?['roles'],
       ApiService.currentUser?['position'],
       ApiService.currentUser?['positions'],
     ].where((value) => value != null).join(' ').toLowerCase();
     final normalizedRole = role.toLowerCase();
     final isAdmin = normalizedRole == 'admin';
-    final isStaff = normalizedRole == 'staff';
-    final isTool = normalizedRole == 'tool';
+    final isStaff =
+        normalizedRole == 'staff' ||
+        accessProfile.contains('attendance monitoring') ||
+        accessProfile.contains('timekeeper');
+    final isTool =
+        normalizedRole == 'tool' ||
+        accessProfile.contains('tools monitoring') ||
+        accessProfile.contains('custodian');
     final isWorker = normalizedRole == 'worker';
 
-    final bool showAttendanceMonitoring =
-        isAdmin ||
-        isStaff ||
-        (isWorker && position.contains('attendance monitoring'));
-    final bool showToolsMonitoring =
-        isAdmin ||
-        isTool ||
-        (isWorker && position.contains('tools monitoring'));
+    final bool showAttendanceMonitoring = isAdmin || isStaff;
+    final bool showToolsMonitoring = isAdmin || isTool;
 
     return Drawer(
       backgroundColor: Colors.white,
@@ -89,7 +91,7 @@ class AppSidebar extends StatelessWidget {
                       currentRoute,
                       route: '/timekeeper_dashboard',
                       icon: Icons.fact_check_outlined,
-                      label: isStaff
+                      label: isStaff && !isWorker
                           ? 'Timekeeper Dashboard'
                           : 'Manage Attendance',
                     ),

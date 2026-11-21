@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../services/api_service.dart';
 
@@ -67,7 +68,7 @@ void updateWorkerAnnouncementBadge(Iterable<Map<String, dynamic>> items) {
 
 Future<void> refreshWorkerAnnouncementBadge() async {
   try {
-    final notifications = await ApiService.getNotifications();
+    final notifications = await ApiService.getWorkerNotifications();
     final items = notifications
         .map((item) => Map<String, dynamic>.from(item as Map))
         .toList();
@@ -237,8 +238,24 @@ Widget _buildNotificationTypeBadge(Map<String, dynamic> notif) {
 Future<void> showWorkerAnnouncements(BuildContext context) async {
   final pageContext = context;
   final markingIds = <String>{};
+  final selectedIds = <String>{};
+  final holdTimers = <String, Timer>{};
+  final holdingPointers = <int, String>{};
+  final holdStarts = <int, Offset>{};
+  final longPressSelectedIds = <String>{};
+  var isDeleting = false;
+
+  void cancelAllTimers() {
+    for (final timer in holdTimers.values) {
+      timer.cancel();
+    }
+    holdTimers.clear();
+    holdingPointers.clear();
+    holdStarts.clear();
+  }
+
   try {
-    final notifications = await ApiService.getNotifications();
+    final notifications = await ApiService.getWorkerNotifications();
     if (!pageContext.mounted) return;
     final user = ApiService.currentUser;
     final announcements = notifications
@@ -250,214 +267,560 @@ Future<void> showWorkerAnnouncements(BuildContext context) async {
     await showDialog<void>(
       context: context,
       builder: (dialogContext) => StatefulBuilder(
-        builder: (dialogContext, setDialogState) => Dialog(
-          backgroundColor: Colors.white,
-          insetPadding: const EdgeInsets.symmetric(
-            horizontal: 20,
-            vertical: 24,
-          ),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 420, maxHeight: 520),
-            child: Padding(
-              padding: const EdgeInsets.all(14),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      const Icon(
-                        Icons.notifications_active_outlined,
-                        color: WorkerAppHeader._brandColor,
-                        size: 20,
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          'Notifications & Alerts',
-                          style: GoogleFonts.inter(
-                            fontSize: 15,
-                            fontWeight: FontWeight.bold,
+        builder: (dialogContext, setDialogState) {
+          void toggleSelection(String id) {
+            setDialogState(() {
+              if (selectedIds.contains(id)) {
+                selectedIds.remove(id);
+              } else {
+                selectedIds.add(id);
+              }
+            });
+          }
+
+          final allValidIds = announcements
+              .map((a) => a['id']?.toString() ?? '')
+              .where((id) => id.isNotEmpty)
+              .toSet();
+          final isSelectionMode = selectedIds.isNotEmpty;
+          final isAllSelected = allValidIds.isNotEmpty &&
+              selectedIds.length == allValidIds.length;
+
+          void toggleSelectAll() {
+            setDialogState(() {
+              if (isAllSelected) {
+                selectedIds.clear();
+              } else {
+                selectedIds.addAll(allValidIds);
+              }
+            });
+          }
+
+          Future<void> deleteSelected() async {
+            if (isDeleting || selectedIds.isEmpty) return;
+            final ids = selectedIds.toList();
+            final confirmed = await showDialog<bool>(
+              context: dialogContext,
+              builder: (confirmationContext) => AlertDialog(
+                title: Text(
+                  'Delete notifications?',
+                  style: GoogleFonts.inter(fontWeight: FontWeight.bold),
+                ),
+                content: Text(
+                  'Delete ${ids.length} selected notification${ids.length == 1 ? '' : 's'} from your account?',
+                  style: GoogleFonts.inter(fontSize: 13),
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(confirmationContext, false),
+                    child: const Text('Cancel'),
+                  ),
+                  FilledButton(
+                    onPressed: () => Navigator.pop(confirmationContext, true),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: const Color(0xFFA63228),
+                    ),
+                    child: const Text('Delete'),
+                  ),
+                ],
+              ),
+            );
+
+            if (confirmed != true) return;
+
+            setDialogState(() => isDeleting = true);
+            try {
+              await ApiService.deleteWorkerNotifications(ids);
+              announcements.removeWhere(
+                (item) => ids.contains(item['id']?.toString()),
+              );
+              updateWorkerAnnouncementBadge(announcements);
+              selectedIds.clear();
+              if (pageContext.mounted) {
+                ScaffoldMessenger.of(pageContext).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      '${ids.length} notification${ids.length == 1 ? '' : 's'} deleted.',
+                    ),
+                    backgroundColor: const Color(0xFFA63228),
+                  ),
+                );
+              }
+            } catch (error) {
+              if (pageContext.mounted) {
+                ScaffoldMessenger.of(pageContext).showSnackBar(
+                  SnackBar(
+                    content: Text('Unable to delete notifications: $error'),
+                  ),
+                );
+              }
+            } finally {
+              if (dialogContext.mounted) {
+                setDialogState(() => isDeleting = false);
+              }
+            }
+          }
+
+          return Dialog(
+            backgroundColor: Colors.white,
+            insetPadding: const EdgeInsets.symmetric(
+              horizontal: 16,
+              vertical: 24,
+            ),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 420, maxHeight: 540),
+              child: Padding(
+                padding: const EdgeInsets.all(14),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(
+                          Icons.notifications_active_outlined,
+                          color: WorkerAppHeader._brandColor,
+                          size: 20,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Notifications & Alerts',
+                            style: GoogleFonts.inter(
+                              fontSize: 15,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
                         ),
-                      ),
-                      IconButton(
-                        onPressed: () => Navigator.pop(dialogContext),
-                        icon: const Icon(Icons.close, size: 18),
-                        tooltip: 'Close',
-                      ),
-                    ],
-                  ),
-                  Text(
-                    'Updates on your requests, attendance, and broadcasts',
-                    style: GoogleFonts.inter(
-                      fontSize: 11,
-                      color: Colors.grey.shade600,
+                        IconButton(
+                          onPressed: isDeleting
+                              ? null
+                              : () {
+                                  cancelAllTimers();
+                                  Navigator.pop(dialogContext);
+                                },
+                          icon: const Icon(Icons.close, size: 18),
+                          tooltip: 'Close',
+                        ),
+                      ],
                     ),
-                  ),
-                  const Divider(),
-                  Expanded(
-                    child: announcements.isEmpty
-                        ? Center(
-                            child: Text(
-                              'No notifications at this time.',
-                              style: GoogleFonts.inter(
-                                fontSize: 12,
-                                color: Colors.grey.shade600,
-                              ),
-                            ),
-                          )
-                        : ListView.separated(
-                            itemCount: announcements.length,
-                            separatorBuilder: (_, __) =>
-                                const SizedBox(height: 8),
-                            itemBuilder: (context, index) {
-                              final announcement = announcements[index];
-                              final rawId = announcement['id'];
-                              final id = rawId?.toString() ?? '';
-                              final read =
-                                  announcement['read'] == true ||
-                                  announcement['read']
-                                          ?.toString()
-                                          .toLowerCase() ==
-                                      'true';
-                              final isMarking = markingIds.contains(id);
-                              return Container(
-                                padding: const EdgeInsets.all(11),
-                                decoration: BoxDecoration(
-                                  color: read
-                                      ? const Color(0xFFFAF8F5)
-                                      : Colors.red.shade50.withValues(alpha: 0.35),
-                                  borderRadius: BorderRadius.circular(10),
-                                  border: Border.all(
-                                    color: read
-                                        ? Colors.grey.shade200
-                                        : const Color(0xFFA63228).withValues(alpha: 0.3),
-                                  ),
+                    if (!isSelectionMode) ...[
+                      Text(
+                        'Updates on your requests, attendance, and broadcasts',
+                        style: GoogleFonts.inter(
+                          fontSize: 11,
+                          color: Colors.grey.shade600,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        'Hold a notification for 3 seconds to select & delete.',
+                        style: GoogleFonts.inter(
+                          fontSize: 10,
+                          color: Colors.grey.shade500,
+                          fontStyle: FontStyle.italic,
+                        ),
+                      ),
+                    ] else ...[
+                      const SizedBox(height: 4),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFA63228).withValues(alpha: 0.08),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color:
+                                const Color(0xFFA63228).withValues(alpha: 0.25),
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            InkWell(
+                              onTap: isDeleting ? null : toggleSelectAll,
+                              borderRadius: BorderRadius.circular(4),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 4,
+                                  vertical: 2,
                                 ),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
                                   children: [
-                                    InkWell(
-                                      onTap: () {
-                                        Navigator.pop(dialogContext);
-                                        if (!pageContext.mounted) return;
-                                        _showWorkerAnnouncementDetails(
-                                          pageContext,
-                                          announcement,
-                                        );
-                                      },
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Row(
-                                            mainAxisAlignment:
-                                                MainAxisAlignment.spaceBetween,
-                                            children: [
-                                              Text(
-                                                (announcement['date'] ?? '')
-                                                    .toString(),
-                                                style: GoogleFonts.inter(
-                                                  fontSize: 10,
-                                                  color: Colors.grey.shade600,
-                                                ),
-                                              ),
-                                              _buildNotificationTypeBadge(
-                                                announcement,
-                                              ),
-                                            ],
-                                          ),
-                                          const SizedBox(height: 4),
-                                          Text(
-                                            (announcement['title'] ??
-                                                    'Notification')
-                                                .toString(),
-                                            style: GoogleFonts.inter(
-                                              fontSize: 13,
-                                              fontWeight: FontWeight.bold,
-                                              color: read
-                                                  ? Colors.black87
-                                                  : const Color(0xFFA63228),
-                                            ),
-                                          ),
-                                          const SizedBox(height: 3),
-                                          Text(
-                                            (announcement['message'] ?? '')
-                                                .toString(),
-                                            maxLines: 2,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: GoogleFonts.inter(
-                                              fontSize: 11,
-                                              color: Colors.grey.shade700,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
+                                    Checkbox(
+                                      value: isAllSelected,
+                                      onChanged: isDeleting
+                                          ? null
+                                          : (_) => toggleSelectAll(),
+                                      activeColor: const Color(0xFFA63228),
+                                      visualDensity: VisualDensity.compact,
+                                      materialTapTargetSize:
+                                          MaterialTapTargetSize.shrinkWrap,
                                     ),
-                                    Align(
-                                      alignment: Alignment.centerRight,
-                                      child: TextButton.icon(
-                                        onPressed:
-                                            read || isMarking || id.isEmpty
-                                            ? null
-                                            : () async {
-                                                setDialogState(
-                                                  () => markingIds.add(id),
-                                                );
-                                                try {
-                                                  await ApiService.markNotificationRead(
-                                                    id,
-                                                  );
-                                                  announcement['read'] = true;
-                                                  updateWorkerAnnouncementBadge(
-                                                    announcements,
-                                                  );
-                                                  setDialogState(() {});
-                                                } catch (error) {
-                                                  if (pageContext.mounted) {
-                                                    ScaffoldMessenger.of(
-                                                      pageContext,
-                                                    ).showSnackBar(
-                                                      SnackBar(
-                                                        content: Text(
-                                                          'Unable to mark notification as read: $error',
-                                                        ),
-                                                      ),
-                                                    );
-                                                  }
-                                                } finally {
-                                                  markingIds.remove(id);
-                                                  setDialogState(() {});
-                                                }
-                                              },
-                                        icon: Icon(
-                                          read
-                                              ? Icons.done_all_rounded
-                                              : Icons.mark_email_read_outlined,
-                                          size: 16,
-                                        ),
-                                        label: Text(
-                                          read ? 'Read' : 'Mark as read',
-                                        ),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      isAllSelected
+                                          ? 'Deselect All'
+                                          : 'Select All',
+                                      style: GoogleFonts.inter(
+                                        fontSize: 11.5,
+                                        fontWeight: FontWeight.w600,
+                                        color: const Color(0xFFA63228),
                                       ),
                                     ),
                                   ],
                                 ),
-                              );
-                            },
-                          ),
-                  ),
-                ],
+                              ),
+                            ),
+                            const Spacer(),
+                            TextButton.icon(
+                              onPressed: isDeleting ? null : deleteSelected,
+                              icon: isDeleting
+                                  ? const SizedBox(
+                                      width: 14,
+                                      height: 14,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: Color(0xFFA63228),
+                                      ),
+                                    )
+                                  : const Icon(Icons.delete_outline, size: 16),
+                              label: Text(
+                                'Delete (${selectedIds.length})',
+                                style: GoogleFonts.inter(
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              style: TextButton.styleFrom(
+                                foregroundColor: const Color(0xFFA63228),
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 8),
+                                visualDensity: VisualDensity.compact,
+                              ),
+                            ),
+                            TextButton(
+                              onPressed: isDeleting
+                                  ? null
+                                  : () => setDialogState(selectedIds.clear),
+                              style: TextButton.styleFrom(
+                                foregroundColor: Colors.grey.shade700,
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 6),
+                                visualDensity: VisualDensity.compact,
+                              ),
+                              child: Text(
+                                'Cancel',
+                                style: GoogleFonts.inter(fontSize: 11.5),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                    const Divider(height: 16),
+                    Expanded(
+                      child: announcements.isEmpty
+                          ? Center(
+                              child: Text(
+                                'No notifications at this time.',
+                                style: GoogleFonts.inter(
+                                  fontSize: 12,
+                                  color: Colors.grey.shade600,
+                                ),
+                              ),
+                            )
+                          : ListView.separated(
+                              itemCount: announcements.length,
+                              separatorBuilder: (_, __) =>
+                                  const SizedBox(height: 8),
+                              itemBuilder: (context, index) {
+                                final announcement = announcements[index];
+                                final rawId = announcement['id'];
+                                final id = rawId?.toString() ?? '';
+                                final read = announcement['read'] == true ||
+                                    announcement['read']
+                                            ?.toString()
+                                            .toLowerCase() ==
+                                        'true';
+                                final isMarking = markingIds.contains(id);
+                                final isSelected = selectedIds.contains(id);
+
+                                return Listener(
+                                  onPointerDown: (event) {
+                                    if (id.isEmpty || isDeleting) return;
+                                    holdTimers.remove(id)?.cancel();
+                                    longPressSelectedIds.remove(id);
+                                    holdingPointers[event.pointer] = id;
+                                    holdStarts[event.pointer] = event.position;
+                                    holdTimers[id] = Timer(
+                                      const Duration(seconds: 3),
+                                      () {
+                                        if (holdingPointers[event.pointer] !=
+                                            id) {
+                                          return;
+                                        }
+                                        HapticFeedback.heavyImpact();
+                                        longPressSelectedIds.add(id);
+                                        setDialogState(
+                                          () => selectedIds.add(id),
+                                        );
+                                      },
+                                    );
+                                  },
+                                  onPointerMove: (event) {
+                                    final start = holdStarts[event.pointer];
+                                    if (holdingPointers[event.pointer] == id &&
+                                        start != null &&
+                                        (event.position - start).distance >
+                                            12) {
+                                      holdTimers.remove(id)?.cancel();
+                                      holdingPointers.remove(event.pointer);
+                                      holdStarts.remove(event.pointer);
+                                    }
+                                  },
+                                  onPointerUp: (event) {
+                                    if (holdingPointers.remove(event.pointer) ==
+                                        id) {
+                                      holdTimers.remove(id)?.cancel();
+                                      holdStarts.remove(event.pointer);
+                                    }
+                                  },
+                                  onPointerCancel: (event) {
+                                    if (holdingPointers.remove(event.pointer) ==
+                                        id) {
+                                      holdTimers.remove(id)?.cancel();
+                                      holdStarts.remove(event.pointer);
+                                      longPressSelectedIds.remove(id);
+                                    }
+                                  },
+                                  child: Container(
+                                    decoration: BoxDecoration(
+                                      color: isSelected
+                                          ? const Color(0xFFA63228)
+                                              .withValues(alpha: 0.06)
+                                          : read
+                                              ? const Color(0xFFFAF8F5)
+                                              : Colors.red.shade50
+                                                  .withValues(alpha: 0.35),
+                                      borderRadius: BorderRadius.circular(10),
+                                      border: Border.all(
+                                        color: isSelected
+                                            ? const Color(0xFFA63228)
+                                            : read
+                                                ? Colors.grey.shade200
+                                                : const Color(0xFFA63228)
+                                                    .withValues(alpha: 0.3),
+                                        width: isSelected ? 1.5 : 1.0,
+                                      ),
+                                    ),
+                                    child: Material(
+                                      color: Colors.transparent,
+                                      child: InkWell(
+                                        borderRadius: BorderRadius.circular(10),
+                                        onTap: id.isEmpty || isDeleting
+                                            ? null
+                                            : () {
+                                                if (longPressSelectedIds
+                                                    .remove(id)) {
+                                                  return;
+                                                }
+                                                if (isSelectionMode) {
+                                                  toggleSelection(id);
+                                                  return;
+                                                }
+                                                Navigator.pop(dialogContext);
+                                                if (!pageContext.mounted) {
+                                                  return;
+                                                }
+                                                _showWorkerAnnouncementDetails(
+                                                  pageContext,
+                                                  announcement,
+                                                );
+                                              },
+                                        child: Padding(
+                                          padding: const EdgeInsets.all(11),
+                                          child: Row(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              if (isSelectionMode) ...[
+                                                Padding(
+                                                  padding: const EdgeInsets.only(
+                                                    top: 2,
+                                                    right: 8,
+                                                  ),
+                                                  child: Checkbox(
+                                                    value: isSelected,
+                                                    onChanged: isDeleting ||
+                                                            id.isEmpty
+                                                        ? null
+                                                        : (_) =>
+                                                            toggleSelection(id),
+                                                    activeColor: const Color(
+                                                      0xFFA63228,
+                                                    ),
+                                                    visualDensity:
+                                                        VisualDensity.compact,
+                                                    materialTapTargetSize:
+                                                        MaterialTapTargetSize
+                                                            .shrinkWrap,
+                                                  ),
+                                                ),
+                                              ],
+                                              Expanded(
+                                                child: Column(
+                                                  crossAxisAlignment:
+                                                      CrossAxisAlignment.start,
+                                                  children: [
+                                                    Row(
+                                                      mainAxisAlignment:
+                                                          MainAxisAlignment
+                                                              .spaceBetween,
+                                                      children: [
+                                                        Text(
+                                                          (announcement[
+                                                                      'date'] ??
+                                                                  '')
+                                                              .toString(),
+                                                          style: GoogleFonts.inter(
+                                                            fontSize: 10,
+                                                            color: Colors.grey
+                                                                .shade600,
+                                                          ),
+                                                        ),
+                                                        _buildNotificationTypeBadge(
+                                                          announcement,
+                                                        ),
+                                                      ],
+                                                    ),
+                                                    const SizedBox(height: 4),
+                                                    Text(
+                                                      (announcement['title'] ??
+                                                              'Notification')
+                                                          .toString(),
+                                                      style: GoogleFonts.inter(
+                                                        fontSize: 13,
+                                                        fontWeight:
+                                                            FontWeight.bold,
+                                                        color: read
+                                                            ? Colors.black87
+                                                            : const Color(
+                                                                0xFFA63228,
+                                                              ),
+                                                      ),
+                                                    ),
+                                                    const SizedBox(height: 3),
+                                                    Text(
+                                                      (announcement[
+                                                                  'message'] ??
+                                                              '')
+                                                          .toString(),
+                                                      maxLines: 2,
+                                                      overflow:
+                                                          TextOverflow.ellipsis,
+                                                      style: GoogleFonts.inter(
+                                                        fontSize: 11,
+                                                        color: Colors
+                                                            .grey.shade700,
+                                                      ),
+                                                    ),
+                                                    if (!isSelectionMode)
+                                                      Align(
+                                                        alignment:
+                                                            Alignment.centerRight,
+                                                        child: TextButton.icon(
+                                                          onPressed: read ||
+                                                                  isMarking ||
+                                                                  id.isEmpty
+                                                              ? null
+                                                              : () async {
+                                                                  setDialogState(
+                                                                    () =>
+                                                                        markingIds
+                                                                            .add(
+                                                                      id,
+                                                                    ),
+                                                                  );
+                                                                  try {
+                                                                    await ApiService
+                                                                        .markWorkerNotificationRead(
+                                                                      id,
+                                                                    );
+                                                                    announcement[
+                                                                            'read'] =
+                                                                        true;
+                                                                    updateWorkerAnnouncementBadge(
+                                                                      announcements,
+                                                                    );
+                                                                    setDialogState(
+                                                                        () {});
+                                                                  } catch (
+                                                                      error) {
+                                                                    if (pageContext
+                                                                        .mounted) {
+                                                                      ScaffoldMessenger.of(
+                                                                        pageContext,
+                                                                      ).showSnackBar(
+                                                                        SnackBar(
+                                                                          content: Text(
+                                                                            'Unable to mark notification as read: $error',
+                                                                          ),
+                                                                        ),
+                                                                      );
+                                                                    }
+                                                                  } finally {
+                                                                    markingIds
+                                                                        .remove(
+                                                                      id,
+                                                                    );
+                                                                    setDialogState(
+                                                                        () {});
+                                                                  }
+                                                                },
+                                                          icon: Icon(
+                                                            read
+                                                                ? Icons
+                                                                    .done_all_rounded
+                                                                : Icons
+                                                                    .mark_email_read_outlined,
+                                                            size: 16,
+                                                          ),
+                                                          label: Text(
+                                                            read
+                                                                ? 'Read'
+                                                                : 'Mark as read',
+                                                          ),
+                                                        ),
+                                                      ),
+                                                  ],
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                    ),
+                  ],
+                ),
               ),
             ),
-          ),
-        ),
+          );
+        },
       ),
     );
+    cancelAllTimers();
   } catch (error) {
+    cancelAllTimers();
     if (!pageContext.mounted) return;
     ScaffoldMessenger.of(pageContext).showSnackBar(
       SnackBar(content: Text('Unable to load announcements: $error')),
