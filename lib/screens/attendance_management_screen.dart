@@ -347,7 +347,7 @@ class _AttendanceManagementScreenState extends State<AttendanceManagementScreen>
     setState(() => _isRecordingScan = true);
     try {
       final result = await submit();
-      await _loadData();
+      await _loadData(showSpinner: false);
       if (!mounted) return;
       final workerName = (result['worker_name'] ?? 'Worker').toString();
       final action = (result['action'] ?? 'Attendance recorded').toString();
@@ -1011,7 +1011,7 @@ class _AttendanceManagementScreenState extends State<AttendanceManagementScreen>
           'rejection_reason': rejectionReason,
       });
 
-      await _loadData();
+      await _loadData(showSpinner: false);
       _showMessage(
         status == 'Approved'
             ? 'Request approved and applied to attendance.'
@@ -1045,7 +1045,7 @@ class _AttendanceManagementScreenState extends State<AttendanceManagementScreen>
           'rejection_reason': rejectionReason,
       });
 
-      await _loadData();
+      await _loadData(showSpinner: false);
       _showMessage(
         status == 'Approved'
             ? 'Correction approved and applied to attendance.'
@@ -1063,194 +1063,14 @@ class _AttendanceManagementScreenState extends State<AttendanceManagementScreen>
   Future<String?> _showRejectReasonDialog({
     required String workerName,
     String title = 'Reject Request',
-  }) async {
-    final controller = TextEditingController();
-    String? validationError;
-
-    final result = await showDialog<String>(
+  }) {
+    return showDialog<String>(
       context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialogState) => Dialog(
-          backgroundColor: Colors.white,
-          insetPadding: const EdgeInsets.symmetric(
-            horizontal: 20,
-            vertical: 24,
-          ),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 400),
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      const Icon(
-                        Icons.block_rounded,
-                        color: _primary,
-                        size: 20,
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          title,
-                          style: GoogleFonts.inter(
-                            fontSize: 14.5,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.close, size: 16),
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(),
-                        onPressed: () => Navigator.pop(ctx),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    'Please provide a reason why you are rejecting '
-                    '$workerName\'s request. This will be visible '
-                    'to the worker.',
-                    style: GoogleFonts.inter(
-                      fontSize: 11,
-                      color: Colors.grey.shade600,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: controller,
-                    maxLength: 100,
-                    maxLines: 3,
-                    autofocus: true,
-                    inputFormatters: [
-                      LengthLimitingTextInputFormatter(100),
-                      _NoLeadingOrRepeatedSpacesFormatter(),
-                    ],
-                    onChanged: (_) {
-                      if (validationError != null) {
-                        setDialogState(() => validationError = null);
-                      }
-                    },
-                    style: GoogleFonts.inter(fontSize: 12),
-                    decoration: InputDecoration(
-                      filled: true,
-                      fillColor: const Color(0xFFFAF8F5),
-                      isDense: true,
-                      hintText: 'e.g. Insufficient manpower today, '
-                          'schedule conflict, etc.',
-                      hintStyle: GoogleFonts.inter(
-                        color: Colors.grey.shade400,
-                        fontSize: 11,
-                      ),
-                      errorText: validationError,
-                      errorStyle: GoogleFonts.inter(
-                        fontSize: 10.5,
-                        color: _primary,
-                        fontWeight: FontWeight.w600,
-                      ),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(10),
-                        borderSide: BorderSide(
-                          color: validationError != null
-                              ? _primary
-                              : Colors.grey.shade300,
-                        ),
-                      ),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(10),
-                        borderSide: BorderSide(
-                          color: validationError != null
-                              ? _primary
-                              : Colors.grey.shade300,
-                        ),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(10),
-                        borderSide: const BorderSide(
-                          color: _primary,
-                          width: 1.5,
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: OutlinedButton(
-                          style: OutlinedButton.styleFrom(
-                            padding:
-                                const EdgeInsets.symmetric(vertical: 10),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            side: BorderSide(
-                              color: Colors.grey.shade300,
-                            ),
-                          ),
-                          onPressed: () => Navigator.pop(ctx),
-                          child: Text(
-                            'Cancel',
-                            style: GoogleFonts.inter(
-                              fontSize: 11.5,
-                              color: Colors.grey.shade700,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: ElevatedButton(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: _primary,
-                            elevation: 0,
-                            padding:
-                                const EdgeInsets.symmetric(vertical: 10),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                          ),
-                          onPressed: () {
-                            final raw = controller.text;
-                            if (raw.trim().isEmpty) {
-                              setDialogState(() {
-                                validationError = raw.isEmpty
-                                    ? 'Rejection reason is required.'
-                                    : 'Spaces only are not allowed.';
-                              });
-                              return;
-                            }
-                            Navigator.pop(ctx, raw.trim());
-                          },
-                          child: Text(
-                            'Confirm Reject',
-                            style: GoogleFonts.inter(
-                              fontSize: 11.5,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.white,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
+      builder: (_) => _RejectReasonDialog(
+        title: title,
+        workerName: workerName,
       ),
     );
-
-    controller.dispose();
-    return result;
   }
 
   void _showMessage(String message) {
@@ -1639,7 +1459,7 @@ class _AttendanceManagementScreenState extends State<AttendanceManagementScreen>
     if (id == null) return;
     try {
       await ApiService.deleteAttendanceSchedule(id);
-      await _loadData();
+      await _loadData(showSpinner: false);
       _showMessage('Schedule deleted.');
     } catch (error) {
       _showMessage('Unable to delete schedule: $error');
@@ -1647,6 +1467,9 @@ class _AttendanceManagementScreenState extends State<AttendanceManagementScreen>
   }
 
   Widget _buildRequestsTab() {
+    if (_isLoading && _requests.isEmpty) {
+      return const Center(child: CircularProgressIndicator(color: _primary));
+    }
     final requests = [..._requests]
       ..sort((a, b) {
         final aPending = a['status'] == 'Pending';
@@ -1681,6 +1504,9 @@ class _AttendanceManagementScreenState extends State<AttendanceManagementScreen>
   }
 
   Widget _buildCorrectionRequestsTab() {
+    if (_isLoading && _correctionRequests.isEmpty) {
+      return const Center(child: CircularProgressIndicator(color: _primary));
+    }
     final requests = [..._correctionRequests]
       ..sort((a, b) {
         final aPending = a['status'] == 'Pending';
@@ -1777,8 +1603,8 @@ class _AttendanceManagementScreenState extends State<AttendanceManagementScreen>
                                             workerName: workerName,
                                             title: 'Reject Correction Request',
                                           );
-                                          if (reason != null) {
-                                            _reviewCorrectionRequest(
+                                          if (reason != null && mounted) {
+                                            await _reviewCorrectionRequest(
                                               request,
                                               'Rejected',
                                               rejectionReason: reason,
@@ -1793,10 +1619,12 @@ class _AttendanceManagementScreenState extends State<AttendanceManagementScreen>
                                 child: FilledButton(
                                   onPressed: isBusy
                                       ? null
-                                      : () => _reviewCorrectionRequest(
-                                          request,
-                                          'Approved',
-                                        ),
+                                      : () async {
+                                          await _reviewCorrectionRequest(
+                                            request,
+                                            'Approved',
+                                          );
+                                        },
                                   style: FilledButton.styleFrom(
                                     backgroundColor: _primary,
                                   ),
@@ -1917,8 +1745,8 @@ class _AttendanceManagementScreenState extends State<AttendanceManagementScreen>
                                 workerName: workerName,
                                 title: 'Reject Early-Out Request',
                               );
-                              if (reason != null) {
-                                _reviewRequest(
+                              if (reason != null && mounted) {
+                                await _reviewRequest(
                                   request,
                                   'Rejected',
                                   rejectionReason: reason,
@@ -1933,7 +1761,9 @@ class _AttendanceManagementScreenState extends State<AttendanceManagementScreen>
                     child: FilledButton(
                       onPressed: isBusy
                           ? null
-                          : () => _reviewRequest(request, 'Approved'),
+                          : () async {
+                              await _reviewRequest(request, 'Approved');
+                            },
                       style: FilledButton.styleFrom(backgroundColor: _primary),
                       child: isBusy
                           ? const SizedBox(
@@ -2099,6 +1929,22 @@ class _AttendanceManagementScreenState extends State<AttendanceManagementScreen>
   }
 
   Widget _buildAttendanceMonitorTab() {
+    if (_isLoading && _workers.isEmpty) {
+      return const Center(child: CircularProgressIndicator(color: _primary));
+    }
+    if (_loadError != null && _workers.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(_loadError!, textAlign: TextAlign.center),
+            ],
+          ),
+        ),
+      );
+    }
     final date = _formatDate(_selectedAttendanceDate);
     final recordsByWorkerId = <String, Map<String, dynamic>>{};
     final recordsByWorkerName = <String, Map<String, dynamic>>{};
@@ -2640,29 +2486,11 @@ class _AttendanceManagementScreenState extends State<AttendanceManagementScreen>
       body: TabBarView(
         controller: _tabController,
         children: [
-          _isLoading
-              ? const Center(child: CircularProgressIndicator(color: _primary))
-              : _loadError != null
-              ? Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(_loadError!, textAlign: TextAlign.center),
-                      ],
-                    ),
-                  ),
-                )
-              : _canMonitorAttendance
+          _canMonitorAttendance
               ? _buildAttendanceMonitorTab()
               : _buildRulesTab(),
-          _isLoading
-              ? const Center(child: CircularProgressIndicator(color: _primary))
-              : _buildRequestsTab(),
-          _isLoading
-              ? const Center(child: CircularProgressIndicator(color: _primary))
-              : _buildCorrectionRequestsTab(),
+          _buildRequestsTab(),
+          _buildCorrectionRequestsTab(),
         ],
       ),
       bottomNavigationBar: _isAdminMobile
@@ -3389,6 +3217,213 @@ class _NoLeadingOrRepeatedSpacesFormatter extends TextInputFormatter {
     return TextEditingValue(
       text: text,
       selection: TextSelection.collapsed(offset: newOffset),
+    );
+  }
+}
+
+class _RejectReasonDialog extends StatefulWidget {
+  final String title;
+  final String workerName;
+
+  const _RejectReasonDialog({
+    required this.title,
+    required this.workerName,
+  });
+
+  @override
+  State<_RejectReasonDialog> createState() => _RejectReasonDialogState();
+}
+
+class _RejectReasonDialogState extends State<_RejectReasonDialog> {
+  static const _primary = Color(0xFFA63228);
+  late final TextEditingController _controller;
+  String? _validationError;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: Colors.white,
+      insetPadding: const EdgeInsets.symmetric(
+        horizontal: 20,
+        vertical: 24,
+      ),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 400),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Icon(
+                    Icons.block_rounded,
+                    color: _primary,
+                    size: 20,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      widget.title,
+                      style: GoogleFonts.inter(
+                        fontSize: 14.5,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close, size: 16),
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'Please provide a reason why you are rejecting '
+                '${widget.workerName}\'s request. This will be visible '
+                'to the worker.',
+                style: GoogleFonts.inter(
+                  fontSize: 11,
+                  color: Colors.grey.shade600,
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _controller,
+                maxLength: 100,
+                maxLines: 3,
+                autofocus: true,
+                inputFormatters: [
+                  LengthLimitingTextInputFormatter(100),
+                  _NoLeadingOrRepeatedSpacesFormatter(),
+                ],
+                onChanged: (_) {
+                  if (_validationError != null) {
+                    setState(() => _validationError = null);
+                  }
+                },
+                style: GoogleFonts.inter(fontSize: 12),
+                decoration: InputDecoration(
+                  filled: true,
+                  fillColor: const Color(0xFFFAF8F5),
+                  isDense: true,
+                  hintText: 'e.g. Insufficient manpower today, '
+                      'schedule conflict, etc.',
+                  hintStyle: GoogleFonts.inter(
+                    color: Colors.grey.shade400,
+                    fontSize: 11,
+                  ),
+                  errorText: _validationError,
+                  errorStyle: GoogleFonts.inter(
+                    fontSize: 10.5,
+                    color: _primary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: BorderSide(
+                      color: _validationError != null
+                          ? _primary
+                          : Colors.grey.shade300,
+                    ),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: BorderSide(
+                      color: _validationError != null
+                          ? _primary
+                          : Colors.grey.shade300,
+                    ),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: const BorderSide(
+                      color: _primary,
+                      width: 1.5,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 14),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 10),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        side: BorderSide(color: Colors.grey.shade300),
+                      ),
+                      onPressed: () => Navigator.pop(context),
+                      child: Text(
+                        'Cancel',
+                        style: GoogleFonts.inter(
+                          fontSize: 11.5,
+                          color: Colors.grey.shade700,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: _primary,
+                        elevation: 0,
+                        padding: const EdgeInsets.symmetric(vertical: 10),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                      onPressed: () {
+                        final raw = _controller.text;
+                        if (raw.trim().isEmpty) {
+                          setState(() {
+                            _validationError = raw.isEmpty
+                                ? 'Rejection reason is required.'
+                                : 'Spaces only are not allowed.';
+                          });
+                          return;
+                        }
+                        Navigator.pop(context, raw.trim());
+                      },
+                      child: Text(
+                        'Confirm Reject',
+                        style: GoogleFonts.inter(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

@@ -72,7 +72,11 @@ class _PaginatedListViewState extends State<PaginatedListView> {
           .clamp(0, (_pageCount - 1).clamp(0, _pageCount))
           .toInt();
       if (_scrollController.hasClients) {
-        _scrollController.jumpTo(0);
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted && _scrollController.hasClients) {
+            _scrollController.jumpTo(0);
+          }
+        });
       }
     }
   }
