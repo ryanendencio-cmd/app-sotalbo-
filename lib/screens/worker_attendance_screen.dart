@@ -1063,6 +1063,7 @@ class _WorkerAttendanceScreenState extends State<WorkerAttendanceScreen>
                         fontSize: 11,
                       ),
                       errorText: validationError,
+                      errorMaxLines: 3,
                       errorStyle: GoogleFonts.inter(
                         fontSize: 10.5,
                         color: const Color(0xFFA63228),

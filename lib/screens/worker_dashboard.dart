@@ -1653,6 +1653,7 @@ class _WorkerDashboardState extends State<WorkerDashboard> {
     final List<String> quickAmounts = ['500', '1000', '1500'];
     String? amountError;
     String? reasonError;
+    String? submissionError;
     bool isSubmitting = false;
 
     showDialog(
@@ -1664,7 +1665,7 @@ class _WorkerDashboardState extends State<WorkerDashboard> {
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 400),
-            child: Padding(
+            child: SingleChildScrollView(
               padding: const EdgeInsets.all(16.0),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -1710,8 +1711,11 @@ class _WorkerDashboardState extends State<WorkerDashboard> {
                           onTap: () {
                             amountController.text =
                                 CurrencyInputFormatter.formatEditing(amt);
-                            if (amountError != null) {
-                              setDialogState(() => amountError = null);
+                            if (amountError != null || submissionError != null) {
+                              setDialogState(() {
+                                amountError = null;
+                                submissionError = null;
+                              });
                             }
                           },
                           child: Container(
@@ -1741,8 +1745,11 @@ class _WorkerDashboardState extends State<WorkerDashboard> {
                   CurrencyTextField(
                     controller: amountController,
                     onChanged: (val) {
-                      if (amountError != null) {
-                        setDialogState(() => amountError = null);
+                      if (amountError != null || submissionError != null) {
+                        setDialogState(() {
+                          amountError = null;
+                          submissionError = null;
+                        });
                       }
                     },
                     style: GoogleFonts.inter(
@@ -1765,6 +1772,7 @@ class _WorkerDashboardState extends State<WorkerDashboard> {
                         fontSize: 12,
                       ),
                       errorText: amountError,
+                      errorMaxLines: 3,
                       errorStyle: GoogleFonts.inter(
                         fontSize: 10.5,
                         color: const Color(0xFFA63228),
@@ -1805,8 +1813,11 @@ class _WorkerDashboardState extends State<WorkerDashboard> {
                       _NoLeadingOrRepeatedSpacesFormatter(),
                     ],
                     onChanged: (val) {
-                      if (reasonError != null) {
-                        setDialogState(() => reasonError = null);
+                      if (reasonError != null || submissionError != null) {
+                        setDialogState(() {
+                          reasonError = null;
+                          submissionError = null;
+                        });
                       } else {
                         setDialogState(() {});
                       }
@@ -1822,6 +1833,7 @@ class _WorkerDashboardState extends State<WorkerDashboard> {
                         fontSize: 11,
                       ),
                       errorText: reasonError,
+                      errorMaxLines: 3,
                       errorStyle: GoogleFonts.inter(
                         fontSize: 10.5,
                         color: const Color(0xFFA63228),
@@ -1859,6 +1871,49 @@ class _WorkerDashboardState extends State<WorkerDashboard> {
                       ),
                     ),
                   ),
+                  if (submissionError != null && submissionError!.isNotEmpty) ...[
+                    const SizedBox(height: 10),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 8,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFDF2F2),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: const Color(0xFFA63228).withValues(alpha: 0.35),
+                          width: 1,
+                        ),
+                      ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Padding(
+                            padding: EdgeInsets.only(top: 1.5),
+                            child: Icon(
+                              Icons.error_outline_rounded,
+                              size: 16,
+                              color: Color(0xFFA63228),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              submissionError!,
+                              style: GoogleFonts.inter(
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w600,
+                                color: const Color(0xFFA63228),
+                                height: 1.35,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 14),
                   Row(
                     children: [
@@ -1909,7 +1964,9 @@ class _WorkerDashboardState extends State<WorkerDashboard> {
                                     setDialogState(() {
                                       amountError =
                                           'Please enter an amount greater than ₱0.';
-                                      reasonError = null; // Hindi sabay / doble
+                                      reasonError = null;
+                                      submissionError =
+                                          'Please enter an amount greater than ₱0.';
                                     });
                                     return;
                                   }
@@ -1921,6 +1978,8 @@ class _WorkerDashboardState extends State<WorkerDashboard> {
                                       reasonError =
                                           'Spaces only are not allowed.';
                                       amountError = null;
+                                      submissionError =
+                                          'Spaces only are not allowed.';
                                     });
                                     return;
                                   }
@@ -1931,6 +1990,8 @@ class _WorkerDashboardState extends State<WorkerDashboard> {
                                       reasonError =
                                           'Please enter a reason for cash advance.';
                                       amountError = null;
+                                      submissionError =
+                                          'Please enter a reason for cash advance.';
                                     });
                                     return;
                                   }
@@ -1938,6 +1999,7 @@ class _WorkerDashboardState extends State<WorkerDashboard> {
                                   setDialogState(() {
                                     amountError = null;
                                     reasonError = null;
+                                    submissionError = null;
                                     isSubmitting = true;
                                   });
 
@@ -1989,11 +2051,25 @@ class _WorkerDashboardState extends State<WorkerDashboard> {
                                     if (context.mounted) {
                                       setDialogState(() {
                                         isSubmitting = false;
-                                        reasonError =
+                                        final msg =
                                             ApiService.sanitizeErrorMessage(
-                                              e,
-                                              'Unable to submit cash advance.',
-                                            );
+                                          e,
+                                          'Unable to submit cash advance.',
+                                        );
+                                        submissionError = msg;
+                                        final lower = msg.toLowerCase();
+                                        if (lower.contains('amount') ||
+                                            lower.contains('limit') ||
+                                            lower.contains('exceed')) {
+                                          amountError = 'Exceeds advance limit';
+                                          reasonError = null;
+                                        } else if (lower.contains('reason')) {
+                                          reasonError = 'Invalid reason';
+                                          amountError = null;
+                                        } else {
+                                          amountError = null;
+                                          reasonError = null;
+                                        }
                                       });
                                     }
                                   }
