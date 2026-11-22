@@ -311,22 +311,28 @@ class _AttendanceManagementScreenState extends State<AttendanceManagementScreen>
     if (!mounted || method == null) return;
 
     if (method == 'nfc') {
-      final uid = await Navigator.of(context).push<String>(
-        MaterialPageRoute(builder: (_) => const _NfcAttendanceScannerScreen()),
+      await Navigator.of(context).push<void>(
+        MaterialPageRoute(
+          builder: (_) => _NfcAttendanceScannerScreen(
+            onScan: (uid) => ApiService.scanAttendanceWithNfc(uid),
+            onAttendanceRecorded: _loadData,
+          ),
+        ),
       );
-      if (uid != null && mounted) {
-        await _submitAttendanceScan(
-          () => ApiService.scanAttendanceWithNfc(uid),
-        );
+      if (mounted) {
+        await _loadData();
       }
     } else {
-      final workerCode = await Navigator.of(context).push<String>(
-        MaterialPageRoute(builder: (_) => const _QrAttendanceScannerScreen()),
+      await Navigator.of(context).push<void>(
+        MaterialPageRoute(
+          builder: (_) => _QrAttendanceScannerScreen(
+            onScan: (workerCode) => ApiService.scanAttendanceWithQr(workerCode),
+            onAttendanceRecorded: _loadData,
+          ),
+        ),
       );
-      if (workerCode != null && mounted) {
-        await _submitAttendanceScan(
-          () => ApiService.scanAttendanceWithQr(workerCode),
-        );
+      if (mounted) {
+        await _loadData();
       }
     }
   }
@@ -2514,7 +2520,13 @@ class _AttendanceManagementScreenState extends State<AttendanceManagementScreen>
 }
 
 class _NfcAttendanceScannerScreen extends StatefulWidget {
-  const _NfcAttendanceScannerScreen();
+  final Future<Map<String, dynamic>> Function(String rfidUid) onScan;
+  final VoidCallback? onAttendanceRecorded;
+
+  const _NfcAttendanceScannerScreen({
+    required this.onScan,
+    this.onAttendanceRecorded,
+  });
 
   @override
   State<_NfcAttendanceScannerScreen> createState() =>
@@ -2525,7 +2537,15 @@ class _NfcAttendanceScannerScreenState
     extends State<_NfcAttendanceScannerScreen> {
   bool _isStarting = true;
   bool _sessionActive = false;
+  bool _isProcessing = false;
   String _message = 'Preparing NFC reader...';
+
+  int _scannedCount = 0;
+  bool? _isSuccess;
+  String? _statusTitle;
+  String? _statusSubtitle;
+  String? _lastScannedUid;
+  DateTime? _lastScanTime;
 
   @override
   void initState() {
@@ -2575,17 +2595,80 @@ class _NfcAttendanceScannerScreenState
               .map((byte) => byte.toRadixString(16).padLeft(2, '0'))
               .join()
               .toUpperCase();
-          await NfcManager.instance.stopSession();
-          _sessionActive = false;
-          if (!mounted) return;
+
           if (identifier == null || identifier.isEmpty) {
-            setState(() {
-              _isStarting = false;
-              _message = 'Could not read the card UID. Tap Try Again.';
-            });
+            if (mounted) {
+              setState(() {
+                _isSuccess = false;
+                _statusTitle = 'Invalid Card';
+                _statusSubtitle =
+                    'Could not read the card UID. Please tap again.';
+              });
+            }
             return;
           }
-          Navigator.of(context).pop(identifier);
+
+          // Debounce: prevent same card duplicate within 3 seconds
+          if (_isProcessing) return;
+          if (_lastScannedUid == identifier &&
+              _lastScanTime != null &&
+              DateTime.now().difference(_lastScanTime!) <
+                  const Duration(seconds: 3)) {
+            return;
+          }
+
+          _isProcessing = true;
+          _lastScannedUid = identifier;
+          _lastScanTime = DateTime.now();
+
+          if (mounted) {
+            setState(() {
+              _isSuccess = null;
+              _statusTitle = 'Processing card...';
+              _statusSubtitle = 'RFID UID: $identifier';
+            });
+          }
+
+          try {
+            final result = await widget.onScan(identifier);
+            widget.onAttendanceRecorded?.call();
+            HapticFeedback.mediumImpact();
+
+            if (mounted) {
+              final workerName =
+                  (result['worker_name'] ?? 'Worker').toString();
+              final action =
+                  (result['action'] ?? 'Attendance recorded').toString();
+              final time = (result['time'] ?? '').toString();
+              setState(() {
+                _scannedCount++;
+                _isSuccess = true;
+                _statusTitle = '$action Successful!';
+                _statusSubtitle =
+                    '$workerName${time.isEmpty ? '' : ' • $time'}';
+              });
+            }
+          } catch (error) {
+            HapticFeedback.heavyImpact();
+            if (mounted) {
+              final errStr = ApiService.sanitizeErrorMessage(
+                error,
+                'Unable to record attendance.',
+              );
+              setState(() {
+                _isSuccess = false;
+                _statusTitle = 'Attendance Failed';
+                _statusSubtitle = errStr;
+              });
+            }
+          } finally {
+            await Future.delayed(const Duration(milliseconds: 1500));
+            if (mounted) {
+              setState(() {
+                _isProcessing = false;
+              });
+            }
+          }
         },
       );
       _sessionActive = true;
@@ -2616,35 +2699,199 @@ class _NfcAttendanceScannerScreenState
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: Colors.white,
       appBar: AppBar(
         title: const Text('Scan RFID with NFC'),
-        actions: [TextButton(onPressed: _cancel, child: const Text('Cancel'))],
+        actions: [
+          TextButton(
+            onPressed: _cancel,
+            child: Text(
+              'Cancel',
+              style: GoogleFonts.inter(
+                fontWeight: FontWeight.bold,
+                color: const Color(0xFFA63228),
+              ),
+            ),
+          ),
+        ],
       ),
       body: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              // Continuous scanned count badge
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF5F3EF),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: Colors.grey.shade300),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.people_alt_outlined,
+                      size: 18,
+                      color: Color(0xFFA63228),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Workers Scanned: $_scannedCount',
+                      style: GoogleFonts.inter(
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.black87,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 24),
               Icon(
                 Icons.nfc_rounded,
-                size: 72,
-                color: Theme.of(context).colorScheme.primary,
+                size: 80,
+                color: _isProcessing
+                    ? Colors.amber.shade700
+                    : (_isSuccess == true
+                        ? Colors.green.shade700
+                        : (_isSuccess == false
+                            ? const Color(0xFFA63228)
+                            : Theme.of(context).colorScheme.primary)),
               ),
-              const SizedBox(height: 18),
-              if (_isStarting)
-                const CircularProgressIndicator()
-              else
+              const SizedBox(height: 20),
+              if (_isStarting) ...[
+                const CircularProgressIndicator(color: Color(0xFFA63228)),
+                const SizedBox(height: 12),
                 Text(
                   _message,
                   textAlign: TextAlign.center,
-                  style: GoogleFonts.inter(fontSize: 14),
+                  style: GoogleFonts.inter(fontSize: 13, color: Colors.grey.shade600),
                 ),
+              ] else if (_statusTitle != null) ...[
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: _isSuccess == true
+                        ? const Color(0xFFE8F5E9)
+                        : _isSuccess == false
+                            ? const Color(0xFFFFEBEE)
+                            : Colors.grey.shade50,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: _isSuccess == true
+                          ? Colors.green.shade400
+                          : _isSuccess == false
+                              ? Colors.red.shade400
+                              : Colors.grey.shade300,
+                      width: 1.5,
+                    ),
+                  ),
+                  child: Column(
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          if (_isProcessing)
+                            const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Color(0xFFA63228),
+                              ),
+                            )
+                          else
+                            Icon(
+                              _isSuccess == true
+                                  ? Icons.check_circle_rounded
+                                  : Icons.error_outline_rounded,
+                              color: _isSuccess == true
+                                  ? Colors.green.shade700
+                                  : const Color(0xFFA63228),
+                              size: 24,
+                            ),
+                          const SizedBox(width: 8),
+                          Flexible(
+                            child: Text(
+                              _statusTitle!,
+                              style: GoogleFonts.inter(
+                                fontSize: 15,
+                                fontWeight: FontWeight.bold,
+                                color: _isSuccess == true
+                                    ? Colors.green.shade900
+                                    : _isSuccess == false
+                                        ? const Color(0xFFA63228)
+                                        : Colors.black87,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      if (_statusSubtitle != null && _statusSubtitle!.isNotEmpty) ...[
+                        const SizedBox(height: 6),
+                        Text(
+                          _statusSubtitle!,
+                          textAlign: TextAlign.center,
+                          style: GoogleFonts.inter(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: _isSuccess == true
+                                ? Colors.green.shade800
+                                : _isSuccess == false
+                                    ? Colors.red.shade900
+                                    : Colors.grey.shade700,
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: 8),
+                      Text(
+                        _isProcessing
+                            ? 'Please wait...'
+                            : 'Ready for next worker. Hold next RFID card.',
+                        textAlign: TextAlign.center,
+                        style: GoogleFonts.inter(
+                          fontSize: 11,
+                          color: _isSuccess == true
+                              ? Colors.green.shade700
+                              : _isSuccess == false
+                                  ? Colors.red.shade700
+                                  : Colors.grey.shade600,
+                          fontStyle: FontStyle.italic,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ] else ...[
+                Text(
+                  _message,
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.inter(fontSize: 14, height: 1.4),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Continuous scanning active. Tap Cancel when done.',
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.inter(
+                    fontSize: 11,
+                    color: Colors.grey.shade500,
+                    fontStyle: FontStyle.italic,
+                  ),
+                ),
+              ],
               if (!_isStarting && !_sessionActive) ...[
-                const SizedBox(height: 16),
-                FilledButton(
+                const SizedBox(height: 20),
+                FilledButton.icon(
                   onPressed: _startSession,
-                  child: const Text('Try Again'),
+                  icon: const Icon(Icons.refresh_rounded, size: 18),
+                  label: const Text('Try Again'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xFFA63228),
+                  ),
                 ),
               ],
             ],
@@ -2656,7 +2903,13 @@ class _NfcAttendanceScannerScreenState
 }
 
 class _QrAttendanceScannerScreen extends StatefulWidget {
-  const _QrAttendanceScannerScreen();
+  final Future<Map<String, dynamic>> Function(String workerCode) onScan;
+  final VoidCallback? onAttendanceRecorded;
+
+  const _QrAttendanceScannerScreen({
+    required this.onScan,
+    this.onAttendanceRecorded,
+  });
 
   @override
   State<_QrAttendanceScannerScreen> createState() =>
@@ -2666,16 +2919,81 @@ class _QrAttendanceScannerScreen extends StatefulWidget {
 class _QrAttendanceScannerScreenState
     extends State<_QrAttendanceScannerScreen> {
   final MobileScannerController _controller = MobileScannerController();
-  bool _handled = false;
+  bool _isProcessing = false;
+  String? _lastScannedCode;
+  DateTime? _lastScanTime;
 
-  void _onDetect(BarcodeCapture capture) {
-    if (_handled) return;
+  int _scannedCount = 0;
+  bool? _isSuccess;
+  String? _statusTitle;
+  String? _statusSubtitle;
+
+  void _onDetect(BarcodeCapture capture) async {
+    if (_isProcessing) return;
     for (final barcode in capture.barcodes) {
       final value = barcode.rawValue?.trim();
       if (value == null || value.isEmpty) continue;
-      _handled = true;
-      _controller.stop();
-      Navigator.of(context).pop(value);
+
+      // Debounce: prevent same QR code rapid duplicate within 3 seconds
+      if (_lastScannedCode == value &&
+          _lastScanTime != null &&
+          DateTime.now().difference(_lastScanTime!) <
+              const Duration(seconds: 3)) {
+        continue;
+      }
+
+      _isProcessing = true;
+      _lastScannedCode = value;
+      _lastScanTime = DateTime.now();
+
+      if (mounted) {
+        setState(() {
+          _isSuccess = null;
+          _statusTitle = 'Processing QR code...';
+          _statusSubtitle = value;
+        });
+      }
+
+      try {
+        final result = await widget.onScan(value);
+        widget.onAttendanceRecorded?.call();
+        HapticFeedback.mediumImpact();
+
+        if (mounted) {
+          final workerName =
+              (result['worker_name'] ?? 'Worker').toString();
+          final action =
+              (result['action'] ?? 'Attendance recorded').toString();
+          final time = (result['time'] ?? '').toString();
+          setState(() {
+            _scannedCount++;
+            _isSuccess = true;
+            _statusTitle = '$action Successful!';
+            _statusSubtitle =
+                '$workerName${time.isEmpty ? '' : ' • $time'}';
+          });
+        }
+      } catch (error) {
+        HapticFeedback.heavyImpact();
+        if (mounted) {
+          final errStr = ApiService.sanitizeErrorMessage(
+            error,
+            'Unable to record attendance.',
+          );
+          setState(() {
+            _isSuccess = false;
+            _statusTitle = 'Attendance Failed';
+            _statusSubtitle = errStr;
+          });
+        }
+      } finally {
+        await Future.delayed(const Duration(milliseconds: 2000));
+        if (mounted) {
+          setState(() {
+            _isProcessing = false;
+          });
+        }
+      }
       return;
     }
   }
@@ -2689,21 +3007,178 @@ class _QrAttendanceScannerScreenState
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Scan Worker QR')),
+      appBar: AppBar(
+        title: const Text('Scan Worker QR'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: Text(
+              'Cancel',
+              style: GoogleFonts.inter(
+                fontWeight: FontWeight.bold,
+                color: const Color(0xFFA63228),
+              ),
+            ),
+          ),
+        ],
+      ),
       body: Stack(
         fit: StackFit.expand,
         children: [
           MobileScanner(controller: _controller, onDetect: _onDetect),
+          // Top Chip with Scanned Count
+          Positioned(
+            top: 16,
+            left: 0,
+            right: 0,
+            child: Center(
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.65),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: Colors.white24),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.people_alt_outlined,
+                      color: Colors.white,
+                      size: 16,
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      'Workers Scanned: $_scannedCount',
+                      style: GoogleFonts.inter(
+                        color: Colors.white,
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          // Bottom Confirmation Container
           Align(
             alignment: Alignment.bottomCenter,
             child: Container(
               width: double.infinity,
-              padding: const EdgeInsets.all(16),
-              color: Colors.black54,
-              child: Text(
-                'Point the camera at the QR code on the worker profile.',
-                textAlign: TextAlign.center,
-                style: GoogleFonts.inter(color: Colors.white, fontSize: 13),
+              margin: const EdgeInsets.all(16),
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: _isSuccess == true
+                    ? const Color(0xFFE8F5E9)
+                    : _isSuccess == false
+                        ? const Color(0xFFFFEBEE)
+                        : Colors.black87,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                  color: _isSuccess == true
+                      ? Colors.green.shade400
+                      : _isSuccess == false
+                          ? Colors.red.shade400
+                          : Colors.white24,
+                  width: 1.5,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.25),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (_statusTitle != null) ...[
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        if (_isProcessing)
+                          const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Color(0xFFA63228),
+                            ),
+                          )
+                        else
+                          Icon(
+                            _isSuccess == true
+                                ? Icons.check_circle_rounded
+                                : Icons.error_outline_rounded,
+                            color: _isSuccess == true
+                                ? Colors.green.shade800
+                                : const Color(0xFFA63228),
+                            size: 20,
+                          ),
+                        const SizedBox(width: 8),
+                        Flexible(
+                          child: Text(
+                            _statusTitle!,
+                            style: GoogleFonts.inter(
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                              color: _isSuccess == true
+                                  ? Colors.green.shade900
+                                  : _isSuccess == false
+                                      ? const Color(0xFFA63228)
+                                      : Colors.white,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (_statusSubtitle != null &&
+                        _statusSubtitle!.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        _statusSubtitle!,
+                        textAlign: TextAlign.center,
+                        style: GoogleFonts.inter(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: _isSuccess == true
+                              ? Colors.green.shade800
+                              : _isSuccess == false
+                                  ? Colors.red.shade900
+                                  : Colors.white70,
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 6),
+                    Text(
+                      _isProcessing
+                          ? 'Please wait...'
+                          : 'Ready for next worker. Point camera at next QR code.',
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.inter(
+                        fontSize: 11,
+                        color: _isSuccess == true
+                            ? Colors.green.shade700
+                            : _isSuccess == false
+                                ? Colors.red.shade700
+                                : Colors.white60,
+                        fontStyle: FontStyle.italic,
+                      ),
+                    ),
+                  ] else ...[
+                    Text(
+                      'Point camera at the QR code on the worker profile.\nScreen stays open for continuous scanning.',
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.inter(
+                        color: Colors.white,
+                        fontSize: 12.5,
+                        height: 1.35,
+                      ),
+                    ),
+                  ],
+                ],
               ),
             ),
           ),
