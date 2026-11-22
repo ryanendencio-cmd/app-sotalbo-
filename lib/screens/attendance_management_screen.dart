@@ -481,24 +481,46 @@ class _AttendanceManagementScreenState extends State<AttendanceManagementScreen>
                                 (notification['message'] ?? '').toString(),
                                 style: GoogleFonts.inter(fontSize: 11),
                               ),
-                              onTap: isRead
-                                  ? null
-                                  : () async {
-                                      try {
-                                        await ApiService.markNotificationRead(
-                                          notification['id'],
-                                        );
-                                        if (!mounted) return;
-                                        setState(
-                                          () => notification['read'] = true,
-                                        );
-                                        setSheetState(() {});
-                                      } catch (error) {
-                                        _showMessage(
-                                          'Unable to mark notification as read: $error',
-                                        );
-                                      }
-                                    },
+                              trailing: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  if (!isRead)
+                                    const Padding(
+                                      padding: EdgeInsets.only(right: 6),
+                                      child: Icon(
+                                        Icons.circle,
+                                        size: 8,
+                                        color: Color(0xFFA63228),
+                                      ),
+                                    ),
+                                  Icon(
+                                    Icons.chevron_right_rounded,
+                                    size: 18,
+                                    color: Colors.grey.shade400,
+                                  ),
+                                ],
+                              ),
+                              onTap: () async {
+                                final id = notification['id'];
+                                if (id != null && !isRead) {
+                                  try {
+                                    await ApiService.markNotificationRead(
+                                      id,
+                                    );
+                                    if (mounted) {
+                                      setState(
+                                        () => notification['read'] = true,
+                                      );
+                                    }
+                                  } catch (_) {}
+                                }
+                                if (!context.mounted) return;
+                                Navigator.pop(sheetContext);
+                                navigateFromAdminNotification(
+                                  context,
+                                  notification,
+                                );
+                              },
                             );
                           },
                         ),

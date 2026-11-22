@@ -2343,9 +2343,44 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                                   color: Colors.white,
                                   borderRadius: BorderRadius.circular(12),
                                   child: ListTile(
-                                    onTap: read
-                                        ? null
-                                        : () => markRead(notification),
+                                    onTap: () async {
+                                      final id = notification['id'];
+                                      if (id != null && !read) {
+                                        try {
+                                          await ApiService.markNotificationRead(id);
+                                          if (mounted) {
+                                            setState(() {
+                                              notification['read'] = true;
+                                              _unreadNotifications = _notifications.where((item) {
+                                                final r = item['read'];
+                                                return r != true && r?.toString().toLowerCase() != 'true';
+                                              }).length;
+                                            });
+                                          }
+                                        } catch (_) {}
+                                      }
+                                      if (!context.mounted) return;
+                                      Navigator.pop(sheetContext);
+                                      navigateFromAdminNotification(
+                                        context,
+                                        notification,
+                                        onSwitchTab: (tabIndex) {
+                                          setState(() {
+                                            _currentIndex = tabIndex;
+                                          });
+                                          if (tabIndex == 0) {
+                                            _loadDashboardData();
+                                            _loadAttendanceSummary();
+                                          } else if (tabIndex == 2) {
+                                            _loadPendingValeRequests();
+                                            _loadValeHistory();
+                                          } else if (tabIndex == 3) {
+                                            _loadWorkers();
+                                            _loadPendingRegistrations();
+                                          }
+                                        },
+                                      );
+                                    },
                                     leading: Icon(
                                       read
                                           ? Icons.notifications_none_rounded
@@ -2388,13 +2423,25 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                                         ),
                                       ],
                                     ),
-                                    trailing: read
-                                        ? null
-                                        : const Icon(
-                                            Icons.circle,
-                                            size: 9,
-                                            color: Color(0xFFA63228),
+                                    trailing: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        if (!read)
+                                          const Padding(
+                                            padding: EdgeInsets.only(right: 6),
+                                            child: Icon(
+                                              Icons.circle,
+                                              size: 8,
+                                              color: Color(0xFFA63228),
+                                            ),
                                           ),
+                                        Icon(
+                                          Icons.chevron_right_rounded,
+                                          size: 18,
+                                          color: Colors.grey.shade400,
+                                        ),
+                                      ],
+                                    ),
                                     isThreeLine: message.isNotEmpty,
                                   ),
                                 );

@@ -201,26 +201,44 @@ class _AdminMobileAppBarState extends State<AdminMobileAppBar> {
                                 (notification['message'] ?? '').toString(),
                                 style: GoogleFonts.inter(fontSize: 11),
                               ),
-                              onTap: read
-                                  ? null
-                                  : () async {
-                                      final id = notification['id'];
-                                      if (id == null) return;
-                                      try {
-                                        await ApiService.markNotificationRead(
-                                          id,
-                                        );
-                                        if (!mounted) return;
-                                        setState(
-                                          () => notification['read'] = true,
-                                        );
-                                        setSheetState(() {});
-                                      } catch (error) {
-                                        _showError(
-                                          'Unable to mark notification as read: $error',
-                                        );
-                                      }
-                                    },
+                              trailing: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  if (!read)
+                                    const Padding(
+                                      padding: EdgeInsets.only(right: 6),
+                                      child: Icon(
+                                        Icons.circle,
+                                        size: 8,
+                                        color: _primary,
+                                      ),
+                                    ),
+                                  Icon(
+                                    Icons.chevron_right_rounded,
+                                    size: 18,
+                                    color: Colors.grey.shade400,
+                                  ),
+                                ],
+                              ),
+                              onTap: () async {
+                                final id = notification['id'];
+                                if (id != null && !read) {
+                                  try {
+                                    await ApiService.markNotificationRead(id);
+                                    if (mounted) {
+                                      setState(
+                                        () => notification['read'] = true,
+                                      );
+                                    }
+                                  } catch (_) {}
+                                }
+                                if (!context.mounted) return;
+                                Navigator.pop(sheetContext);
+                                navigateFromAdminNotification(
+                                  context,
+                                  notification,
+                                );
+                              },
                             );
                           },
                         ),
@@ -491,5 +509,143 @@ void navigateAdminMobileSection(BuildContext context, int index) {
     '/admin_dashboard',
     (_) => false,
     arguments: index,
+  );
+}
+
+void navigateFromAdminNotification(
+  BuildContext context,
+  Map<String, dynamic> notification, {
+  void Function(int tabIndex)? onSwitchTab,
+}) {
+  final type = (notification['type'] ?? '').toString().toLowerCase();
+  final title = (notification['title'] ?? '').toString().toLowerCase();
+  final message = (notification['message'] ?? '').toString().toLowerCase();
+  final action = (notification['action'] ?? '').toString().toLowerCase();
+
+  final combined = '$type $title $message $action';
+
+  // 1. Cash Advance / Vale
+  if (combined.contains('cash advance') ||
+      combined.contains('vale') ||
+      type.contains('cash') ||
+      action.contains('vale')) {
+    if (onSwitchTab != null) {
+      onSwitchTab(2);
+    } else {
+      Navigator.pushNamed(context, '/cash_advance');
+    }
+    return;
+  }
+
+  // 2. Attendance / Overtime / Undertime / Time-in / Time-out
+  if (combined.contains('attendance') ||
+      combined.contains('time in') ||
+      combined.contains('time-in') ||
+      combined.contains('time out') ||
+      combined.contains('time-out') ||
+      combined.contains('overtime') ||
+      combined.contains('undertime')) {
+    Navigator.pushNamed(context, '/attendance_management');
+    return;
+  }
+
+  // 3. Tools / Equipment
+  if (combined.contains('tool') || combined.contains('equipment')) {
+    if (onSwitchTab != null) {
+      onSwitchTab(1);
+    } else {
+      navigateAdminMobileSection(context, 1);
+    }
+    return;
+  }
+
+  // 4. Workers / Registrations / Staff / Manpower
+  if (combined.contains('worker') ||
+      combined.contains('register') ||
+      combined.contains('registration') ||
+      combined.contains('staff') ||
+      combined.contains('manpower')) {
+    if (onSwitchTab != null) {
+      onSwitchTab(3);
+    } else {
+      navigateAdminMobileSection(context, 3);
+    }
+    return;
+  }
+
+  // 5. Projects / Site
+  if (combined.contains('project') || combined.contains('site')) {
+    Navigator.pushNamed(context, '/projects');
+    return;
+  }
+
+  // Fallback: If onSwitchTab available, switch to Overview (tab 0), otherwise show details dialog
+  if (onSwitchTab != null) {
+    onSwitchTab(0);
+  } else {
+    _showNotificationDetailDialog(context, notification);
+  }
+}
+
+void _showNotificationDetailDialog(
+  BuildContext context,
+  Map<String, dynamic> notification,
+) {
+  final title = (notification['title'] ?? 'Notification').toString();
+  final message = (notification['message'] ?? '').toString();
+  final type = (notification['type'] ?? '').toString();
+  final date = (notification['date'] ?? '').toString();
+  final time = (notification['time'] ?? '').toString();
+
+  showDialog(
+    context: context,
+    builder: (dialogCtx) => AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      title: Row(
+        children: [
+          const Icon(
+            Icons.notifications_active_outlined,
+            color: Color(0xFFA63228),
+            size: 20,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              title,
+              style: GoogleFonts.inter(
+                fontSize: 15,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ],
+      ),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (type.isNotEmpty || date.isNotEmpty || time.isNotEmpty) ...[
+            Text(
+              [type, date, time].where((s) => s.isNotEmpty).join(' • '),
+              style: GoogleFonts.inter(
+                fontSize: 10.5,
+                color: Colors.grey.shade600,
+              ),
+            ),
+            const SizedBox(height: 10),
+          ],
+          Text(
+            message.isNotEmpty ? message : 'No details provided.',
+            style: GoogleFonts.inter(fontSize: 13, height: 1.4),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(dialogCtx),
+          child: const Text('Close'),
+        ),
+      ],
+    ),
   );
 }
