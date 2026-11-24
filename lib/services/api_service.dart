@@ -17,11 +17,14 @@ class ApiService {
   );
   static String androidHost = const String.fromEnvironment(
     'API_HOST',
-    defaultValue: '192.168.1.17',
+    defaultValue: '127.0.0.1',
   );
+  static const String _wifiHost = '192.168.1.17';
   static String? _customHost;
+  static String? _workingHost;
 
-  static String get effectiveHost => _customHost ?? androidHost;
+  static String get effectiveHost =>
+      _customHost ?? _workingHost ?? androidHost;
 
   static Future<void> initHost() async {
     try {
@@ -760,6 +763,14 @@ class ApiService {
     String usernameOrPhone,
     String password,
   ) async {
+    return _loginInternal(usernameOrPhone, password, allowFallback: true);
+  }
+
+  static Future<Map<String, dynamic>> _loginInternal(
+    String usernameOrPhone,
+    String password, {
+    bool allowFallback = true,
+  }) async {
     final raw = usernameOrPhone.trim();
     final normalized = normalizePhone(raw);
 
@@ -819,6 +830,7 @@ class ApiService {
           if (body['token'] is String) {
             setToken(body['token'] as String);
           }
+          _workingHost = effectiveHost;
           return body;
         }
 
@@ -869,6 +881,15 @@ class ApiService {
       if (str.contains('SocketException') ||
           str.contains('TimeoutException') ||
           str.contains('ClientException')) {
+        if (allowFallback && !kIsWeb && Platform.isAndroid) {
+          final nextHost = effectiveHost == '127.0.0.1' ? _wifiHost : '127.0.0.1';
+          _workingHost = nextHost;
+          try {
+            return await _loginInternal(usernameOrPhone, password, allowFallback: false);
+          } catch (_) {
+            _workingHost = null;
+          }
+        }
         throw Exception(sanitizeErrorMessage(e));
       }
     }
@@ -884,6 +905,7 @@ class ApiService {
           .timeout(requestTimeout);
 
       if (adminRes.statusCode == 200) {
+        _workingHost = effectiveHost;
         final data = jsonDecode(adminRes.body);
         // Store JWT token for subsequent authenticated requests
         if (data['token'] != null) setToken(data['token'] as String);
@@ -911,6 +933,21 @@ class ApiService {
       }
     } catch (e) {
       if (e.toString().contains('Firebase Daily Quota')) rethrow;
+      final str = e.toString();
+      if (allowFallback &&
+          !kIsWeb &&
+          Platform.isAndroid &&
+          (str.contains('SocketException') ||
+              str.contains('TimeoutException') ||
+              str.contains('ClientException'))) {
+        final nextHost = effectiveHost == '127.0.0.1' ? _wifiHost : '127.0.0.1';
+        _workingHost = nextHost;
+        try {
+          return await _loginInternal(usernameOrPhone, password, allowFallback: false);
+        } catch (_) {
+          _workingHost = null;
+        }
+      }
       // continue to error handling
     }
 
