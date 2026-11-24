@@ -61,6 +61,7 @@ class _AttendanceManagementScreenState extends State<AttendanceManagementScreen>
   bool _isLoading = true;
   bool _isLoadingNotifications = false;
   bool _isSavingSettings = false;
+  // ignore: prefer_final_fields
   bool _isRecordingScan = false;
   bool _autoSchedule = true;
   bool _sundaysOff = true;
@@ -338,27 +339,6 @@ class _AttendanceManagementScreenState extends State<AttendanceManagementScreen>
       if (mounted) {
         await _loadData(showSpinner: false);
       }
-    }
-  }
-
-  Future<void> _submitAttendanceScan(
-    Future<Map<String, dynamic>> Function() submit,
-  ) async {
-    setState(() => _isRecordingScan = true);
-    try {
-      final result = await submit();
-      await _loadData(showSpinner: false);
-      if (!mounted) return;
-      final workerName = (result['worker_name'] ?? 'Worker').toString();
-      final action = (result['action'] ?? 'Attendance recorded').toString();
-      final time = (result['time'] ?? '').toString();
-      _showMessage(
-        '$action for $workerName${time.isEmpty ? '' : ' at $time'}.',
-      );
-    } catch (error) {
-      _showMessage('Unable to record attendance: $error');
-    } finally {
-      if (mounted) setState(() => _isRecordingScan = false);
     }
   }
 
@@ -1011,6 +991,40 @@ class _AttendanceManagementScreenState extends State<AttendanceManagementScreen>
           'rejection_reason': rejectionReason,
       });
 
+      // Log notification so worker receives it
+      final workerName = (request['worker_name'] ?? 'Worker').toString();
+      final targetWorkerId =
+          (request['worker_id'] ?? request['workerId'])?.toString();
+      final date = (request['date'] ?? '').toString();
+      final reason = (request['reason'] ?? '').toString();
+      try {
+        if (status == 'Rejected') {
+          await ApiService.logAdminNotification(
+            title: 'Early-Out Request Rejected',
+            message:
+                '$workerName\'s early-out request for $date ($reason) was rejected by ${_adminName()}. Reason: ${rejectionReason ?? '—'}',
+            type: 'Attendance',
+            severity: 'Medium',
+            actorName: _adminName(),
+            actorRole: 'Admin',
+            action: 'EARLY_OUT_REJECTED',
+            workerId: targetWorkerId,
+          );
+        } else {
+          await ApiService.logAdminNotification(
+            title: 'Early-Out Request Approved',
+            message:
+                '$workerName\'s early-out request for $date ($reason) was approved by ${_adminName()}.',
+            type: 'Attendance',
+            severity: 'Low',
+            actorName: _adminName(),
+            actorRole: 'Admin',
+            action: 'EARLY_OUT_APPROVED',
+            workerId: targetWorkerId,
+          );
+        }
+      } catch (_) {}
+
       await _loadData(showSpinner: false);
       _showMessage(
         status == 'Approved'
@@ -1044,6 +1058,40 @@ class _AttendanceManagementScreenState extends State<AttendanceManagementScreen>
         if (status == 'Rejected' && rejectionReason != null)
           'rejection_reason': rejectionReason,
       });
+
+      // Log notification so worker receives it
+      final workerName = (request['worker_name'] ?? 'Worker').toString();
+      final targetWorkerId =
+          (request['worker_id'] ?? request['workerId'])?.toString();
+      final date = (request['date'] ?? '').toString();
+      final reason = (request['reason'] ?? '').toString();
+      try {
+        if (status == 'Rejected') {
+          await ApiService.logAdminNotification(
+            title: 'Correction Request Rejected',
+            message:
+                '$workerName\'s attendance correction for $date (${reason.isNotEmpty ? reason : 'Correction'}) was rejected by ${_adminName()}. Reason: ${rejectionReason ?? '—'}',
+            type: 'Attendance',
+            severity: 'Medium',
+            actorName: _adminName(),
+            actorRole: 'Admin',
+            action: 'CORRECTION_REJECTED',
+            workerId: targetWorkerId,
+          );
+        } else {
+          await ApiService.logAdminNotification(
+            title: 'Correction Request Approved',
+            message:
+                '$workerName\'s attendance correction for $date (${reason.isNotEmpty ? reason : 'Correction'}) was approved by ${_adminName()}.',
+            type: 'Attendance',
+            severity: 'Low',
+            actorName: _adminName(),
+            actorRole: 'Admin',
+            action: 'CORRECTION_APPROVED',
+            workerId: targetWorkerId,
+          );
+        }
+      } catch (_) {}
 
       await _loadData(showSpinner: false);
       _showMessage(

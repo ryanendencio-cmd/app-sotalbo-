@@ -577,6 +577,20 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         statusStr,
         rejectionReason: rejectionReason,
       );
+      try {
+        await ApiService.logAdminNotification(
+          title: isApproved
+              ? 'Worker Account Approved'
+              : 'Worker Registration Rejected',
+          message: isApproved
+              ? '$name\'s worker registration was approved by Admin.'
+              : '$name\'s worker registration was rejected. Reason: ${rejectionReason ?? '—'}',
+          type: 'Staff & Workers',
+          severity: isApproved ? 'Low' : 'Medium',
+          action: isApproved ? 'WORKER_APPROVED' : 'WORKER_REJECTED',
+          workerId: workerId,
+        );
+      } catch (_) {}
       if (mounted) {
         setState(() => _pendingRegistrations.removeAt(index));
         ScaffoldMessenger.of(context).showSnackBar(
@@ -2199,30 +2213,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 if (context.mounted) setSheetState(() {});
               });
             });
-          }
-
-          Future<void> markRead(Map<String, dynamic> notification) async {
-            final id = notification['id'];
-            if (id == null) return;
-            try {
-              await ApiService.markNotificationRead(id);
-              if (!mounted) return;
-              setState(() {
-                notification['read'] = true;
-                _unreadNotifications = _notifications.where((item) {
-                  final read = item['read'];
-                  return read != true &&
-                      read?.toString().toLowerCase() != 'true';
-                }).length;
-              });
-              setSheetState(() {});
-            } catch (e) {
-              if (context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Could not mark as read: $e')),
-                );
-              }
-            }
           }
 
           Future<void> markAllRead() async {

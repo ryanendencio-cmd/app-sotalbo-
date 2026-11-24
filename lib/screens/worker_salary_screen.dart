@@ -594,6 +594,17 @@ class _WorkerSalaryScreenState extends State<WorkerSalaryScreen>
                                       'date': dateStr,
                                       'status': 'Pending',
                                     });
+                                    try {
+                                      await ApiService.logAdminNotification(
+                                        title: 'New Cash Advance Request',
+                                        message:
+                                            '$workerName submitted a cash advance request for ₱${amount.toStringAsFixed(2)}. Reason: $trimmedReason',
+                                        type: 'Cash Advance',
+                                        severity: 'Medium',
+                                        action: 'VALE_REQUESTED',
+                                        workerId: user?['id']?.toString(),
+                                      );
+                                    } catch (_) {}
                                     if (dialogContext.mounted) {
                                       Navigator.of(dialogContext).pop();
                                     }

@@ -17,13 +17,40 @@ class ApiService {
   );
   static String androidHost = const String.fromEnvironment(
     'API_HOST',
-    defaultValue: '192.168.100.75',
+    defaultValue: '192.168.1.17',
   );
+  static String? _customHost;
+
+  static String get effectiveHost => _customHost ?? androidHost;
+
+  static Future<void> initHost() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final savedHost = prefs.getString('custom_server_host');
+      if (savedHost != null && savedHost.trim().isNotEmpty) {
+        _customHost = savedHost.trim();
+      }
+    } catch (_) {}
+  }
+
+  static Future<void> updateHost(String newHost) async {
+    final trimmed = newHost.trim().replaceFirst(RegExp(r'^https?://'), '').replaceFirst(RegExp(r'/.*$'), '');
+    _customHost = trimmed.isNotEmpty ? trimmed : null;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (_customHost == null) {
+        await prefs.remove('custom_server_host');
+      } else {
+        await prefs.setString('custom_server_host', _customHost!);
+      }
+    } catch (_) {}
+  }
+
   static String get baseUrl => resolveBaseUrl(
     configured: _configuredBaseUrl,
-    isReleaseMode: kReleaseMode,
+    isReleaseMode: false,
     isAndroid: !kIsWeb && Platform.isAndroid,
-    androidHost: androidHost,
+    androidHost: effectiveHost,
   );
 
   @visibleForTesting

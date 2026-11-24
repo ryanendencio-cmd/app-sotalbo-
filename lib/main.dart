@@ -26,10 +26,13 @@ import 'screens/worker_tools_screen.dart';
 import 'screens/worker_salary_screen.dart';
 import 'screens/attendance_management_screen.dart';
 import 'services/api_service.dart';
+import 'services/notification_service.dart';
 import 'theme/buildtrack_theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await NotificationService.initialize();
+  await ApiService.initHost();
 
   // Global UI Error Fallback: replaces the red screen of death with a clean, branded message
   ErrorWidget.builder = (FlutterErrorDetails details) {

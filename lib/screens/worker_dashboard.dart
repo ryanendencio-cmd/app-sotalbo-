@@ -854,6 +854,17 @@ class _WorkerDashboardState extends State<WorkerDashboard> {
                               'original_time': original,
                               'reason': reason,
                             });
+                        try {
+                          await ApiService.logAdminNotification(
+                            title: 'New Attendance Correction Request',
+                            message:
+                                '$workerName requested attendance correction ($selectedField to $hour:$minute) for $date. Reason: $reason',
+                            type: 'Attendance',
+                            severity: 'Medium',
+                            action: 'CORRECTION_REQUESTED',
+                            workerId: userId,
+                          );
+                        } catch (_) {}
                         if (mounted && dialogContext.mounted) {
                           Navigator.pop(dialogContext);
                           setState(() {
@@ -908,6 +919,7 @@ class _WorkerDashboardState extends State<WorkerDashboard> {
     await _loadAnnouncements();
   }
 
+  // ignore: unused_element
   Future<void> _showLegacyNotificationDialog() async {
     await _loadAnnouncements();
     if (!mounted) return;

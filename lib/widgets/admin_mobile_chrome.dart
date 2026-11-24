@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../services/api_service.dart';
+import '../services/notification_service.dart';
 
 class AdminMobileAppBar extends StatefulWidget implements PreferredSizeWidget {
   const AdminMobileAppBar({
@@ -62,12 +63,14 @@ class _AdminMobileAppBarState extends State<AdminMobileAppBar> {
     try {
       final result = await ApiService.getNotifications();
       if (!mounted) return;
+      final notifs = result
+          .map((item) => Map<String, dynamic>.from(item as Map))
+          .toList();
       setState(() {
-        _notifications = result
-            .map((item) => Map<String, dynamic>.from(item as Map))
-            .toList();
+        _notifications = notifs;
         _isLoading = false;
       });
+      await NotificationService.checkAndShowNewNotifications(notifs);
     } catch (error) {
       if (!mounted) return;
       setState(() {

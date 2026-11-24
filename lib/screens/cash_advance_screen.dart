@@ -25,6 +25,17 @@ class _CashAdvanceScreenState extends State<CashAdvanceScreen> {
   Future<void> _updateStatus(dynamic id, String status) async {
     try {
       await ApiService.approveCashAdvance(id, status);
+      try {
+        await ApiService.logAdminNotification(
+          title: status == 'Approved'
+              ? 'Cash Advance Approved'
+              : 'Cash Advance Rejected',
+          message: 'Cash advance request #$id has been $status by Admin.',
+          type: 'Cash Advance',
+          severity: status == 'Approved' ? 'Low' : 'Medium',
+          action: status == 'Approved' ? 'VALE_APPROVED' : 'VALE_REJECTED',
+        );
+      } catch (_) {}
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(

@@ -1143,7 +1143,7 @@ class _WorkerAttendanceScreenState extends State<WorkerAttendanceScreen>
                                   final rawDetails = reasonController.text;
                                   final trimmedDetails = rawDetails.trim();
 
-                                  // Bawal kapag spacing lang ang in-input
+                                  // Whitespace-only input is not allowed
                                   if (rawDetails.isNotEmpty &&
                                       trimmedDetails.isEmpty) {
                                     setDialogState(() {
@@ -1153,7 +1153,7 @@ class _WorkerAttendanceScreenState extends State<WorkerAttendanceScreen>
                                     return;
                                   }
 
-                                  // Kapag "Other" ang napiling reason, kailangan maglagay ng detalye
+                                  // Details are required when "Other" is selected as the reason
                                   if (selectedReason == 'Other' &&
                                       trimmedDetails.isEmpty) {
                                     setDialogState(() {
@@ -1195,6 +1195,17 @@ class _WorkerAttendanceScreenState extends State<WorkerAttendanceScreen>
                                       'reason': selectedReason,
                                       'details': trimmedDetails,
                                     });
+                                    try {
+                                      await ApiService.logAdminNotification(
+                                        title: 'New Early-Out Request',
+                                        message:
+                                            '$workerName requested early out at ${requestedOutTime.hour.toString().padLeft(2, '0')}:${requestedOutTime.minute.toString().padLeft(2, '0')} ($selectedReason).',
+                                        type: 'Attendance',
+                                        severity: 'Medium',
+                                        action: 'EARLY_OUT_REQUESTED',
+                                        workerId: workerId.toString(),
+                                      );
+                                    } catch (_) {}
                                     if (dialogContext.mounted) {
                                       Navigator.of(dialogContext).pop();
                                     }

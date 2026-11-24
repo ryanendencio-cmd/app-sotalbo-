@@ -243,6 +243,21 @@ class _WorkersScreenState extends State<WorkersScreen>
         status,
         rejectionReason: rejectionReason,
       );
+      try {
+        final wName = workerName ?? 'Worker';
+        await ApiService.logAdminNotification(
+          title: status == 'Approved'
+              ? 'Worker Account Approved'
+              : 'Worker Registration Rejected',
+          message: status == 'Approved'
+              ? '$wName\'s worker registration was approved by Admin.'
+              : '$wName\'s worker registration was rejected. Reason: ${rejectionReason ?? '—'}',
+          type: 'Staff & Workers',
+          severity: status == 'Approved' ? 'Low' : 'Medium',
+          action: status == 'Approved' ? 'WORKER_APPROVED' : 'WORKER_REJECTED',
+          workerId: id?.toString(),
+        );
+      } catch (_) {}
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(

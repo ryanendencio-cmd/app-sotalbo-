@@ -700,6 +700,19 @@ class _RegisterScreenState extends State<RegisterScreen> {
         'password': _passwordController.text,
       });
 
+      try {
+        final regWorkerName =
+            '${_firstNameController.text.trim()} ${_lastNameController.text.trim()}'.trim();
+        await ApiService.logAdminNotification(
+          title: 'New Worker Registration',
+          message:
+              '$regWorkerName registered an account and is awaiting admin approval.',
+          type: 'Staff & Workers',
+          severity: 'Medium',
+          action: 'WORKER_REGISTERED',
+        );
+      } catch (_) {}
+
       if (mounted) {
         _showApprovalPendingDialog();
       }

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../services/api_service.dart';
+import '../services/notification_service.dart';
 
 final ValueNotifier<bool> workerHasUnreadAnnouncements = ValueNotifier(false);
 
@@ -73,6 +74,10 @@ Future<void> refreshWorkerAnnouncementBadge() async {
         .map((item) => Map<String, dynamic>.from(item as Map))
         .toList();
     updateWorkerAnnouncementBadge(items);
+    final user = ApiService.currentUser;
+    final relevantItems =
+        items.where((item) => isNotificationForWorker(item, user)).toList();
+    await NotificationService.checkAndShowNewNotifications(relevantItems);
   } catch (error) {
     debugPrint('Failed to refresh announcement badge: $error');
   }
