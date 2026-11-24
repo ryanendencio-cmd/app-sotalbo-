@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:http/http.dart' as http;
 import '../services/api_service.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -135,10 +134,8 @@ class _LoginScreenState extends State<LoginScreen> {
           String displayMsg = raw;
           if (raw.toLowerCase().contains('failed host lookup') ||
               raw.toLowerCase().contains('connection refused') ||
-              raw.toLowerCase().contains('clientexception') ||
-              raw.toLowerCase().contains('bad state') ||
-              raw.toLowerCase().contains('timeoutexception')) {
-            displayMsg = 'Unable to connect to server (${ApiService.baseUrl}). Please check Wi-Fi connection.';
+              raw.toLowerCase().contains('clientexception')) {
+            displayMsg = 'Unable to connect to server. Please check your network connection.';
           }
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -148,11 +145,6 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
               backgroundColor: const Color(0xFFA63228),
               behavior: SnackBarBehavior.floating,
-              action: SnackBarAction(
-                label: 'Configure',
-                textColor: Colors.white,
-                onPressed: _showServerConfigDialog,
-              ),
             ),
           );
         }
@@ -160,161 +152,6 @@ class _LoginScreenState extends State<LoginScreen> {
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
-  }
-
-  Future<void> _showServerConfigDialog() async {
-    final hostController = TextEditingController(text: ApiService.effectiveHost);
-    String? statusMessage;
-    bool isTesting = false;
-
-    await showDialog<void>(
-      context: context,
-      builder: (dialogCtx) => StatefulBuilder(
-        builder: (ctx, setDialogState) => AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          title: Row(
-            children: [
-              const Icon(Icons.dns_rounded, color: Color(0xFFA63228)),
-              const SizedBox(width: 8),
-              Text(
-                'Server Settings',
-                style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 18),
-              ),
-            ],
-          ),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Connected PC IP address:',
-                  style: GoogleFonts.inter(fontSize: 13, color: Colors.grey.shade700),
-                ),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: hostController,
-                  decoration: InputDecoration(
-                    hintText: 'e.g. 192.168.1.17',
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                    prefixIcon: const Icon(Icons.lan_outlined),
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  'Current Target: ${ApiService.baseUrl}',
-                  style: GoogleFonts.inter(fontSize: 11, color: Colors.grey.shade600),
-                ),
-                const SizedBox(height: 12),
-                if (statusMessage != null) ...[
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: statusMessage!.contains('Success')
-                          ? Colors.green.shade50
-                          : Colors.red.shade50,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(
-                        color: statusMessage!.contains('Success')
-                            ? Colors.green.shade300
-                            : Colors.red.shade300,
-                      ),
-                    ),
-                    child: Text(
-                      statusMessage!,
-                      style: GoogleFonts.inter(
-                        fontSize: 12,
-                        color: statusMessage!.contains('Success')
-                            ? Colors.green.shade800
-                            : Colors.red.shade800,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                ],
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: isTesting
-                            ? null
-                            : () async {
-                                setDialogState(() {
-                                  isTesting = true;
-                                  statusMessage = 'Testing connection...';
-                                });
-                                final targetHost = hostController.text.trim();
-                                try {
-                                  final uri = Uri.parse('http://$targetHost:5000/api/status');
-                                  final res = await http.get(uri).timeout(const Duration(seconds: 4));
-                                  if (res.statusCode == 200 || res.statusCode == 401) {
-                                    setDialogState(() {
-                                      statusMessage = 'Success! Server is online and reachable.';
-                                    });
-                                  } else {
-                                    setDialogState(() {
-                                      statusMessage = 'Server reached, status code: ${res.statusCode}';
-                                    });
-                                  }
-                                } catch (_) {
-                                  setDialogState(() {
-                                    statusMessage = 'Cannot connect: Ensure phone & PC are on the same Wi-Fi and port 5000 is open.';
-                                  });
-                                } finally {
-                                  setDialogState(() => isTesting = false);
-                                }
-                              },
-                        icon: isTesting
-                            ? const SizedBox(
-                                width: 14,
-                                height: 14,
-                                child: CircularProgressIndicator(strokeWidth: 2),
-                              )
-                            : const Icon(Icons.sync_rounded, size: 16),
-                        label: const Text('Test Ping'),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () async {
-                await ApiService.updateHost('192.168.1.17');
-                if (dialogCtx.mounted) Navigator.pop(dialogCtx);
-                if (mounted) {
-                  setState(() {});
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Server reset to default (192.168.1.17)')),
-                  );
-                }
-              },
-              child: const Text('Reset', style: TextStyle(color: Colors.grey)),
-            ),
-            FilledButton(
-              onPressed: () async {
-                final newHost = hostController.text.trim();
-                if (newHost.isNotEmpty) {
-                  await ApiService.updateHost(newHost);
-                  if (dialogCtx.mounted) Navigator.pop(dialogCtx);
-                  if (mounted) {
-                    setState(() {});
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('Server IP updated to: ${ApiService.baseUrl}')),
-                    );
-                  }
-                }
-              },
-              style: FilledButton.styleFrom(backgroundColor: const Color(0xFFA63228)),
-              child: const Text('Save'),
-            ),
-          ],
-        ),
-      ),
-    );
   }
 
   @override
@@ -769,20 +606,6 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                 );
               },
-            ),
-          ),
-
-          // 3. Server Configuration Button
-          Positioned(
-            top: MediaQuery.of(context).padding.top + 8,
-            right: 12,
-            child: Material(
-              color: Colors.transparent,
-              child: IconButton(
-                icon: const Icon(Icons.dns_outlined, color: Colors.white70, size: 22),
-                tooltip: 'Server Connection Settings',
-                onPressed: _showServerConfigDialog,
-              ),
             ),
           ),
         ],
