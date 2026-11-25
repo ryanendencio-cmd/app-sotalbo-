@@ -31,8 +31,13 @@ import 'theme/buildtrack_theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
   await NotificationService.initialize();
   await ApiService.initHost();
+  final hasSession = await ApiService.restoreSession();
+  if (hasSession) {
+    NotificationService.syncTokenAfterLogin();
+  }
 
   // Global UI Error Fallback: replaces the red screen of death with a clean, branded message
   ErrorWidget.builder = (FlutterErrorDetails details) {
@@ -103,7 +108,6 @@ Future<void> main() async {
     );
   };
 
-  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
   runApp(
     DevicePreview(
       enabled: kIsWeb && !kReleaseMode,
@@ -118,10 +122,15 @@ class BuildTrackApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      navigatorKey: NotificationService.navigatorKey,
       title: 'S-CON BuildTrack',
       debugShowCheckedModeBanner: false,
       theme: BuildTrackTheme.light,
-      home: const LoginScreen(),
+      home: ApiService.currentUser != null
+          ? (ApiService.currentUserRole?.toLowerCase() == 'admin'
+              ? const AdminDashboardScreen()
+              : const WorkerDashboard())
+          : const LoginScreen(),
       routes: {
         '/login': (context) => const LoginScreen(),
         '/forgot_password': (context) => const ForgotPasswordScreen(),

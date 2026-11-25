@@ -82,9 +82,54 @@ class ApiService {
   static Map<String, dynamic>? currentUser;
   static String? _authToken;
 
+  static const String _sessionUserKey = 'saved_user_session';
+  static const String _sessionRoleKey = 'saved_user_role';
+  static const String _sessionTokenKey = 'saved_auth_token';
+
   static String? get authToken => _authToken;
   static void setToken(String? token) => _authToken = token;
   static void clearToken() => _authToken = null;
+
+  /// Persists current user session to local phone storage so closing the app does not log out
+  static Future<void> saveSession({
+    required Map<String, dynamic> user,
+    required String role,
+    String? token,
+  }) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_sessionUserKey, jsonEncode(user));
+      await prefs.setString(_sessionRoleKey, role);
+      if (token != null && token.isNotEmpty) {
+        await prefs.setString(_sessionTokenKey, token);
+      }
+      currentUser = user;
+      currentUserRole = role;
+      if (token != null) _authToken = token;
+    } catch (e) {
+      debugPrint('Failed to save user session: $e');
+    }
+  }
+
+  /// Restores session from local phone storage on app launch
+  static Future<bool> restoreSession() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final userJson = prefs.getString(_sessionUserKey);
+      final role = prefs.getString(_sessionRoleKey);
+      final token = prefs.getString(_sessionTokenKey);
+
+      if (userJson != null && userJson.isNotEmpty && role != null && role.isNotEmpty) {
+        currentUser = jsonDecode(userJson) as Map<String, dynamic>;
+        currentUserRole = role;
+        _authToken = token;
+        return true;
+      }
+    } catch (e) {
+      debugPrint('Failed to restore user session: $e');
+    }
+    return false;
+  }
 
   static Future<void> logout() async {
     try {
@@ -107,6 +152,12 @@ class ApiService {
       currentUser = null;
       currentUserRole = null;
       clearToken();
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.remove(_sessionUserKey);
+        await prefs.remove(_sessionRoleKey);
+        await prefs.remove(_sessionTokenKey);
+      } catch (_) {}
     }
   }
 
@@ -626,6 +677,21 @@ class ApiService {
     final notificationId = id.toString();
     await _put('/notifications/$notificationId/read', {});
     await _saveReadNotificationIds([notificationId]);
+  }
+
+  static Future<void> registerDeviceToken(String fcmToken) async {
+    try {
+      final user = currentUser;
+      final userId = user?['id']?.toString() ?? user?['worker_id']?.toString();
+      final role = currentUserRole;
+      await _post('/device-token', {
+        'fcm_token': fcmToken,
+        if (userId != null) 'user_id': userId,
+        if (role != null) 'role': role,
+      });
+    } catch (_) {
+      // Backend device-token endpoint is optional; local SharedPreferences is preserved
+    }
   }
 
   static Future<void> markAllNotificationsRead({

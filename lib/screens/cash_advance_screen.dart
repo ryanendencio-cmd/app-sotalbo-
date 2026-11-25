@@ -22,15 +22,74 @@ class _CashAdvanceScreenState extends State<CashAdvanceScreen> {
     _future = ApiService.getPendingCashAdvances();
   }
 
-  Future<void> _updateStatus(dynamic id, String status) async {
+  Future<void> _updateStatus(dynamic id, String status, {String? workerName}) async {
+    String? rejectionReason;
+    if (status == 'Rejected') {
+      final controller = TextEditingController();
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: Text(
+            'Reject Cash Advance',
+            style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 16),
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Please specify the reason for rejecting${workerName != null ? " $workerName's" : ""} cash advance request:',
+                style: GoogleFonts.inter(fontSize: 13, color: Colors.grey.shade700),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: controller,
+                maxLines: 2,
+                autofocus: true,
+                decoration: InputDecoration(
+                  hintText: 'e.g., Exceeded monthly quota, insufficient details...',
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: const BorderSide(color: Color(0xFFA63228)),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFA63228),
+                foregroundColor: Colors.white,
+              ),
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Reject'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true) return;
+      rejectionReason = controller.text.trim().isNotEmpty
+          ? controller.text.trim()
+          : 'Rejected by Administrator';
+    }
+
     try {
-      await ApiService.approveCashAdvance(id, status);
+      await ApiService.approveCashAdvance(id, status, rejectionReason: rejectionReason);
       try {
         await ApiService.logAdminNotification(
           title: status == 'Approved'
               ? 'Cash Advance Approved'
               : 'Cash Advance Rejected',
-          message: 'Cash advance request #$id has been $status by Admin.',
+          message: status == 'Approved'
+              ? 'Cash advance request #$id has been approved by Admin.'
+              : 'Cash advance request #$id was rejected. Reason: ${rejectionReason ?? "Rejected by Administrator"}',
           type: 'Cash Advance',
           severity: status == 'Approved' ? 'Low' : 'Medium',
           action: status == 'Approved' ? 'VALE_APPROVED' : 'VALE_REJECTED',
@@ -291,7 +350,7 @@ class _CashAdvanceScreenState extends State<CashAdvanceScreen> {
                                 ),
                               ),
                               onPressed: () =>
-                                  _updateStatus(ca['id'], 'Rejected'),
+                                  _updateStatus(ca['id'], 'Rejected', workerName: name),
                               child: Text(
                                 'Reject',
                                 style: GoogleFonts.inter(

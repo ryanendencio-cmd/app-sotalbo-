@@ -380,8 +380,10 @@ class _WorkerAttendanceScreenState extends State<WorkerAttendanceScreen>
   Widget _buildAttendanceRecordCard({
     required String date,
     required String day,
-    required String timeIn,
-    required String timeOut,
+    required String morningIn,
+    required String morningOut,
+    required String afternoonIn,
+    required String afternoonOut,
     required String status,
     required String hours,
     required String overtime,
@@ -496,25 +498,127 @@ class _WorkerAttendanceScreenState extends State<WorkerAttendanceScreen>
           ),
           const SizedBox(height: 14),
           const Divider(height: 1, color: Color(0xFFF0EEEC)),
-          const SizedBox(height: 13),
-          Row(
-            children: [
-              Expanded(
-                child: _attendanceTimeColumn(
-                  icon: Icons.login_rounded,
-                  label: 'TIME IN',
-                  value: timeIn,
+          const SizedBox(height: 12),
+          // --- 1st Shift (Morning) ---
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFAF9F8),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: const Color(0xFFF0EEEC)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFA63228).withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        '1st Shift (Morning)',
+                        style: GoogleFonts.inter(
+                          fontSize: 9.5,
+                          fontWeight: FontWeight.w700,
+                          color: const Color(0xFFA63228),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-              ),
-              Container(width: 1, height: 30, color: const Color(0xFFECE9E7)),
-              Expanded(
-                child: _attendanceTimeColumn(
-                  icon: Icons.logout_rounded,
-                  label: 'TIME OUT',
-                  value: timeOut,
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _attendanceTimeColumn(
+                        icon: Icons.login_rounded,
+                        label: 'TIME IN',
+                        value: morningIn,
+                      ),
+                    ),
+                    Container(
+                      width: 1,
+                      height: 28,
+                      color: const Color(0xFFECE9E7),
+                    ),
+                    Expanded(
+                      child: _attendanceTimeColumn(
+                        icon: Icons.logout_rounded,
+                        label: 'TIME OUT',
+                        value: morningOut,
+                      ),
+                    ),
+                  ],
                 ),
-              ),
-            ],
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
+          // --- 2nd Shift (Afternoon) ---
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFAF9F8),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: const Color(0xFFF0EEEC)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFE89005).withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        '2nd Shift (Afternoon)',
+                        style: GoogleFonts.inter(
+                          fontSize: 9.5,
+                          fontWeight: FontWeight.w700,
+                          color: const Color(0xFFB76E00),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _attendanceTimeColumn(
+                        icon: Icons.login_rounded,
+                        label: 'TIME IN',
+                        value: afternoonIn,
+                      ),
+                    ),
+                    Container(
+                      width: 1,
+                      height: 28,
+                      color: const Color(0xFFECE9E7),
+                    ),
+                    Expanded(
+                      child: _attendanceTimeColumn(
+                        icon: Icons.logout_rounded,
+                        label: 'TIME OUT',
+                        value: afternoonOut,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
           const SizedBox(height: 13),
           Container(
@@ -1441,26 +1545,76 @@ class _WorkerAttendanceScreenState extends State<WorkerAttendanceScreen>
                               final day = _dayOfWeek(
                                 record['date']?.toString(),
                               );
-                              final timeIn = _formatAttendanceTime(
+                              String morningIn = _formatAttendanceTime(
                                 _firstTimeValue(record, const [
-                                  'time_in',
-                                  'timeIn',
                                   'morning_in',
                                   'morningIn',
-                                  'afternoon_in',
-                                  'afternoonIn',
                                 ]),
                               );
-                              final timeOut = _formatAttendanceTime(
+                              String morningOut = _formatAttendanceTime(
                                 _firstTimeValue(record, const [
-                                  'time_out',
-                                  'timeOut',
-                                  'afternoon_out',
-                                  'afternoonOut',
                                   'morning_out',
                                   'morningOut',
                                 ]),
                               );
+                              String afternoonIn = _formatAttendanceTime(
+                                _firstTimeValue(record, const [
+                                  'afternoon_in',
+                                  'afternoonIn',
+                                ]),
+                              );
+                              String afternoonOut = _formatAttendanceTime(
+                                _firstTimeValue(record, const [
+                                  'afternoon_out',
+                                  'afternoonOut',
+                                ]),
+                              );
+
+                              // Fallbacks for legacy single-session records
+                              if (morningIn == '—' && afternoonIn == '—') {
+                                final legacyIn = _formatAttendanceTime(
+                                  _firstTimeValue(record, const [
+                                    'time_in',
+                                    'timeIn',
+                                  ]),
+                                );
+                                if (legacyIn != '—') {
+                                  final rawMin = _parseTimeMinutes(
+                                    _firstTimeValue(record, const [
+                                      'time_in',
+                                      'timeIn',
+                                    ]),
+                                  );
+                                  if (rawMin != null && rawMin >= 12 * 60) {
+                                    afternoonIn = legacyIn;
+                                  } else {
+                                    morningIn = legacyIn;
+                                  }
+                                }
+                              }
+
+                              if (morningOut == '—' && afternoonOut == '—') {
+                                final legacyOut = _formatAttendanceTime(
+                                  _firstTimeValue(record, const [
+                                    'time_out',
+                                    'timeOut',
+                                  ]),
+                                );
+                                if (legacyOut != '—') {
+                                  final rawMin = _parseTimeMinutes(
+                                    _firstTimeValue(record, const [
+                                      'time_out',
+                                      'timeOut',
+                                    ]),
+                                  );
+                                  if (rawMin != null && rawMin >= 12 * 60) {
+                                    afternoonOut = legacyOut;
+                                  } else {
+                                    morningOut = legacyOut;
+                                  }
+                                }
+                              }
+
                               final status =
                                   record['status']?.toString() ?? 'Present';
                               final hours = _displayWorkingHours(record);
@@ -1470,8 +1624,10 @@ class _WorkerAttendanceScreenState extends State<WorkerAttendanceScreen>
                               return _buildAttendanceRecordCard(
                                 date: dateStr,
                                 day: day,
-                                timeIn: timeIn,
-                                timeOut: timeOut,
+                                morningIn: morningIn,
+                                morningOut: morningOut,
+                                afternoonIn: afternoonIn,
+                                afternoonOut: afternoonOut,
                                 status: status,
                                 hours: hours,
                                 overtime: ot,

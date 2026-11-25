@@ -8,6 +8,7 @@ import 'worker_tools_screen.dart';
 import 'worker_salary_screen.dart';
 import 'worker_profile_screen.dart';
 import '../services/api_service.dart';
+import '../services/notification_service.dart';
 import '../widgets/currency_text_field.dart';
 import '../widgets/worker_app_header.dart';
 
@@ -40,6 +41,7 @@ class _WorkerDashboardState extends State<WorkerDashboard> {
   List<Map<String, dynamic>> _announcements = [];
   List<Map<String, dynamic>> _allAnnouncements = [];
   List<Map<String, dynamic>> _correctionRequests = [];
+  Timer? _notificationSyncTimer;
 
   @override
   void initState() {
@@ -48,6 +50,19 @@ class _WorkerDashboardState extends State<WorkerDashboard> {
     _user = ApiService.currentUser;
     _loadDashboardData();
     _loadDashboardExtras();
+
+    // Periodically poll for new approvals, rejections, and requests (every 10 seconds)
+    _notificationSyncTimer = Timer.periodic(const Duration(seconds: 10), (_) {
+      if (mounted) {
+        _loadAnnouncements();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _notificationSyncTimer?.cancel();
+    super.dispose();
   }
 
   Future<void> _loadDashboardData() async {
@@ -451,6 +466,10 @@ class _WorkerDashboardState extends State<WorkerDashboard> {
           )
           .toList();
       updateWorkerAnnouncementBadge(announcements);
+
+      // Check and show real push/heads-up notification on phone for new announcements/approvals
+      NotificationService.checkAndShowNewNotifications(announcements);
+
       if (mounted) {
         setState(() {
           _allAnnouncements = announcements;

@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
+import '../services/notification_service.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -115,13 +116,21 @@ class _LoginScreenState extends State<LoginScreen> {
         final role = (response['role'] ?? response['user']?['role'] ?? '').toString();
         final username = _usernameController.text.trim().toLowerCase();
 
-        ApiService.currentUser = response['user'] ?? response['admin'] ?? response['worker'] ?? response;
+        final userObj = Map<String, dynamic>.from(response['user'] ?? response['admin'] ?? response['worker'] ?? response);
+        final assignedRole = (role.toLowerCase() == 'admin' || username == 'admin') ? 'admin' : 'worker';
+        final token = (response['token'] is String) ? response['token'] as String : ApiService.authToken;
 
-        if (role.toLowerCase() == 'admin' || username == 'admin') {
-          ApiService.currentUserRole = 'admin';
+        await ApiService.saveSession(
+          user: userObj,
+          role: assignedRole,
+          token: token,
+        );
+        NotificationService.syncTokenAfterLogin();
+
+        if (!mounted) return;
+        if (assignedRole == 'admin') {
           Navigator.pushReplacementNamed(context, '/admin_dashboard');
         } else {
-          ApiService.currentUserRole = 'worker';
           Navigator.pushReplacementNamed(context, '/dashboard');
         }
       }
